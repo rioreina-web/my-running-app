@@ -34,6 +34,30 @@ const SERVER_ONLY_FUNCTIONS: Record<string, string> = {
   "process-training-memo":
     "Called from iOS (URLSession, no CORS enforcement) and the Next.js " +
     "api/retry-processing route (server-to-server fetch). Never browser-direct.",
+  "vital-webhook":
+    "Svix-signed webhook delivered server-to-server by Junction/Vital. The " +
+    "credential is an HMAC over the raw body, not an ambient browser " +
+    "credential, and no browser ever posts to it.",
+};
+
+/**
+ * Functions that serve a PUBLIC protocol to third-party clients and therefore
+ * cannot pin `Access-Control-Allow-Origin` to our own app origin. Distinct
+ * from SERVER_ONLY_FUNCTIONS: these genuinely do answer cross-origin callers,
+ * on purpose.
+ *
+ * The bar for this list is deliberately high — an entry is only safe when the
+ * endpoint carries NO ambient credential (no cookie, no Supabase session), so
+ * a permissive origin grants a hostile page nothing it could not get with
+ * curl. Anything authenticated by a session belongs behind `corsHeaders`.
+ */
+const PUBLIC_PROTOCOL_FUNCTIONS: Record<string, string> = {
+  mcp:
+    "Model Context Protocol endpoint for third-party MCP clients. Pinning the " +
+    "origin to our app would break every legitimate caller, and the protocol " +
+    "needs its own headers (mcp-protocol-version, mcp-session-id) that " +
+    "corsHeaders does not carry. The credential is a path-segment token, " +
+    "never a cookie or Supabase session, so '*' grants a hostile page nothing.",
 };
 
 // ── cors.ts itself ────────────────────────────────────────
@@ -81,6 +105,8 @@ Deno.test("no edge function inlines Access-Control-Allow-Origin", async () => {
   const functions = await listFunctionDirs();
 
   for (const fn of functions) {
+    if (fn in PUBLIC_PROTOCOL_FUNCTIONS) continue; // documented public protocol
+
     const indexPath = `${FUNCTIONS_DIR}${fn}/index.ts`;
     let src: string;
     try {
@@ -113,6 +139,7 @@ Deno.test("every browser-reachable function imports corsHeaders from _shared/cor
 
   for (const fn of functions) {
     if (fn in SERVER_ONLY_FUNCTIONS) continue; // explicit opt-out
+    if (fn in PUBLIC_PROTOCOL_FUNCTIONS) continue; // documented public protocol
 
     const indexPath = `${FUNCTIONS_DIR}${fn}/index.ts`;
     let src: string;

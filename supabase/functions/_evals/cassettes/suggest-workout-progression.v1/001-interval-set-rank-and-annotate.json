@@ -1,0 +1,30 @@
+{
+  "id": "001-interval-set-rank-and-annotate",
+  "prompt_name": "suggest-workout-progression.v1",
+  "description": "STUB — needs recording (record.ts + GEMINI_API_KEY). Interval workout (5 x 1km @ 5K, 90s jog recovery) duplicated with three deterministic candidates: add-rep, extend-rep-1200m, reduce-recovery. The model must return ONLY the provided candidate ids as JSON ranking with one advisory note each — no invented candidates, no step structures, no prescriptions to the athlete, no pace-zone changes suggested.",
+  "vars": {
+    "sourceWorkout": "5 x 1km at 5K — 2 wu · 5 × 1km @ 5K · 2 cd",
+    "candidates": "1. add-rep | One more rep at the same pace | 2 wu · 6 × 1km @ 5K · 2 cd\n2. extend-rep-1200m | Longer reps at the same pace | 2 wu · 5 × 1200m @ 5K · 2 cd\n3. reduce-recovery | Tighter recovery between reps | 2 wu · 5 × 1km @ 5K · 2 cd"
+  },
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": [
+      "ranking"
+    ],
+    "required_patterns": [
+      "\"id\":\\s*\"add-rep\"",
+      "\"id\":\\s*\"extend-rep-1200m\"",
+      "\"id\":\\s*\"reduce-recovery\""
+    ],
+    "forbidden_patterns": [
+      "\"steps\"",
+      "\"paceZone\"",
+      "\"id\":\\s*\"(?!add-rep\"|extend-rep-1200m\"|reduce-recovery\")",
+      "(?i)\\byou should\\b",
+      "(?i)\\b(faster pace|harder pace|switch to (3k|mile) pace)\\b"
+    ]
+  },
+  "recorded_response": "{\"ranking\":[\n{\"id\":\"add-rep\",\"note\":\"A straightforward progression to build total volume at the target pace.\"},\n{\"id\":\"extend-rep-1200m\",\"note\":\"Good for building specific endurance and making the target pace feel more comfortable.\"},\n{\"id\":\"reduce-recovery\",\"note\":\"This option significantly increases metabolic demand and sustained effort under fatigue.\"}\n]}",
+  "recorded_at": "2026-07-15T22:43:15.213Z",
+  "model": "gemini-2.5-flash"
+}

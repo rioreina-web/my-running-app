@@ -1,0 +1,174 @@
+<!doctype html>
+<!-- @dsCard group="Screens" name="Workout sheet · canonical" subtitle="Akzidenz labels, Crimson Pro prose, Inter data — the workout detail sheet rebuilt" viewport="900x1010" -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Post Run Drip · Workout Sheet</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="styles.css">
+<style>
+/* Tokens come from styles.css. Local role aliases only. */
+:root{--well:var(--paper-deep);--grot:var(--font-label);--haas:var(--font-display);--serif:var(--font-prose);--ui:var(--font-data)}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:#C6C6C6;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+.sheetwrap{padding:30px 28px 40px;display:flex;gap:34px;align-items:flex-start}
+.col{display:flex;flex-direction:column;gap:12px;flex:none;width:393px}
+.cap{font-family:var(--grot);font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#4A4A4A;line-height:1.4}
+.cap b{color:#111}
+.phone{width:393px;height:852px;flex:none;background:#8E8E8E;color:var(--ink);font-family:var(--grot);border-radius:46px;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;box-shadow:0 22px 60px rgba(0,0,0,.28),0 0 0 10px #0C0C0C,0 0 0 11px #2C2C2C}
+a{color:var(--ink);text-decoration:none}a:hover{color:var(--red-text)}
+button{font-family:var(--grot);cursor:pointer}
+
+/* status bar over the dimmed parent screen */
+.sb{position:absolute;top:0;left:0;right:0;height:54px;padding:0 30px 0 34px;display:flex;align-items:center;justify-content:space-between;font-family:var(--ui);font-size:15px;font-weight:600;color:#fff}
+.sb .g{display:flex;align-items:center;gap:6px}
+.sb .bars{display:flex;align-items:flex-end;gap:2px;height:11px}
+.sb .bars i{width:3px;background:#fff;border-radius:1px;display:block}
+.sb .bars i:nth-child(1){height:4px}.sb .bars i:nth-child(2){height:6px}.sb .bars i:nth-child(3){height:9px}.sb .bars i:nth-child(4){height:11px}
+.sb .batt{display:flex;align-items:center;justify-content:center;min-width:29px;height:16px;background:#fff;color:#111;border-radius:4px;font-size:10px;font-weight:700;padding:0 4px}
+.stage{position:relative;flex:1;min-height:0;display:flex;flex-direction:column;justify-content:flex-end}
+
+/* the sheet */
+.sheet{background:var(--paper);border-radius:26px 26px 46px 46px;height:786px;display:flex;flex-direction:column;overflow:hidden}
+.grab{flex:none;display:flex;justify-content:center;padding:9px 0 0}
+.grab i{display:block;width:44px;height:5px;border-radius:999px;background:#D6D6D2}
+.sheettop{flex:none;display:flex;align-items:center;justify-content:space-between;padding:8px 20px 0}
+.tbtn{background:transparent;border:0;padding:10px 6px;font-family:var(--grot);font-size:14px;font-weight:600;letter-spacing:.01em;color:var(--ink)}
+.tbtn.edit{color:var(--red-text)}
+
+/* colophon */
+.colo{flex:none;display:grid;grid-template-columns:1fr auto;gap:8px;padding:10px 22px 12px;border-bottom:1px solid var(--rule)}
+.colo .l,.colo .r{display:flex;flex-direction:column;gap:3px}
+.colo .r{text-align:right}
+.colo b{font-family:var(--grot);font-size:11px;font-weight:600;letter-spacing:.19em;text-transform:uppercase;color:var(--ink);white-space:nowrap}
+.colo span{font-family:var(--ui);font-size:11px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap;font-variant-numeric:tabular-nums}
+
+.scroll{flex:1;min-height:0;overflow-y:auto;scrollbar-width:none;padding:0 22px}
+.scroll::-webkit-scrollbar{display:none}
+
+/* head */
+.date{display:flex;align-items:baseline;gap:9px;padding:22px 0 0;font-family:var(--ui);font-size:11px;font-weight:500;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-2)}
+.date i{font-style:normal;color:var(--ink-3)}
+h1{font-family:var(--haas);font-size:44px;font-weight:700;letter-spacing:-.038em;line-height:.98;margin:12px 0 0}
+.tagrow{display:flex;align-items:center;gap:10px;margin-top:16px}
+.mood{display:flex;align-items:center;gap:7px;border:1px solid var(--rule);border-radius:999px;padding:6px 12px 7px;font-family:var(--grot);font-size:10px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:var(--ink-2);background:transparent}
+.mood i{width:6px;height:6px;border-radius:999px;background:#9B9590;display:block;flex:none}
+.ghost{background:transparent;border:0;padding:6px 2px;font-family:var(--grot);font-size:10px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:var(--ink-2)}
+.ghost:hover{color:var(--ink)}
+
+/* stats */
+.stats{display:grid;grid-template-columns:repeat(3,1fr);margin-top:22px;border-top:1px solid var(--ink);border-bottom:1px solid var(--rule)}
+.st{padding:14px 12px 15px;border-right:1px solid var(--rule);display:flex;flex-direction:column;gap:9px}
+.st:first-child{padding-left:0}
+.st:last-child{border-right:0;padding-right:0;text-align:right}
+.st b{font-family:var(--grot);font-size:10px;font-weight:600;letter-spacing:.19em;text-transform:uppercase;color:var(--ink-2)}
+.st span{font-family:var(--ui);font-size:26px;font-weight:600;letter-spacing:-.03em;line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap}
+.st span i{font-style:normal;font-size:11px;font-weight:500;letter-spacing:0;color:var(--ink-3);margin-left:2px}
+
+/* add workout */
+.add{width:100%;margin-top:18px;background:transparent;border:1px dashed #D9D9D5;border-radius:3px;padding:14px 0 15px;display:flex;align-items:center;justify-content:center;gap:9px;font-family:var(--grot);font-size:10px;font-weight:600;letter-spacing:.19em;text-transform:uppercase;color:var(--ink-2)}
+.add:hover{border-color:var(--ink-3);color:var(--ink)}
+.add em{font-style:normal;font-size:14px;line-height:1;color:var(--ink-3)}
+
+/* summary */
+.sum{margin-top:24px;padding-top:15px;border-top:1px solid var(--rule)}
+.sumhd{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.sumhd b{font-family:var(--grot);font-size:10px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:var(--ink)}
+.sumhd .acts{display:flex;align-items:center;gap:14px}
+.sumhd a{font-family:var(--grot);font-size:10px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:var(--ink-2)}
+.sumhd a.play{display:flex;align-items:center;gap:6px;color:var(--red-text)}
+.sumhd a.play em{font-style:normal;font-size:9px}
+.sum p{font-family:var(--serif);font-size:20px;line-height:1.48;letter-spacing:.001em;color:var(--ink);margin:13px 0 0;text-wrap:pretty}
+.sum p::first-letter{font-size:19px}
+.more{margin-top:14px;display:inline-flex;width:max-content;white-space:nowrap;align-items:center;gap:7px;font-family:var(--grot);font-size:10px;font-weight:600;letter-spacing:.17em;text-transform:uppercase;color:var(--ink-2);background:transparent;border:0;padding:0}
+.more:hover{color:var(--ink)}
+
+/* conditions */
+.cond{margin-top:24px;background:var(--well);display:grid;grid-template-columns:repeat(5,1fr);padding:13px 0 14px}
+.cd{display:flex;flex-direction:column;align-items:center;gap:6px;padding:0 4px;border-right:1px solid #E4E4E0}
+.cd:last-child{border-right:0}
+.cd span{font-family:var(--ui);font-size:15px;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums;white-space:nowrap}
+.cd b{font-family:var(--grot);font-size:9px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
+.pad{height:22px}
+
+/* date rail */
+.rail{flex:none;border-top:1px solid var(--rule);padding:11px 0 0;display:flex;align-items:flex-start;gap:0}
+.rail .track{flex:1;min-width:0;display:flex;gap:14px;justify-content:flex-end;overflow-x:auto;scrollbar-width:none;padding:0 6px 0 22px}
+.rail .track::-webkit-scrollbar{display:none}
+.day{flex:none;background:transparent;border:0;padding:0 0 2px;display:flex;flex-direction:column;align-items:center;gap:7px}
+.day i{width:5px;height:5px;border-radius:999px;background:#CFCFCB;display:block}
+.day span{font-family:var(--ui);font-size:10px;font-weight:500;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap;font-variant-numeric:tabular-nums}
+.day.on i{background:var(--red)}
+.day.on span{color:var(--red-text);font-weight:700}
+.rail .count{flex:none;font-family:var(--ui);font-size:10px;font-weight:500;letter-spacing:.11em;color:var(--ink-3);padding:12px 22px 0 10px;font-variant-numeric:tabular-nums}
+.home{flex:none;display:flex;justify-content:center;padding:10px 0 9px}
+.home i{display:block;width:134px;height:5px;border-radius:999px;background:var(--ink)}
+</style>
+</head>
+<body>
+<div class="sheetwrap">
+  <div class="col">
+    <span class="cap"><b>Workout sheet</b> &nbsp;· akzidenz labels · crimson pro prose · inter data</span>
+    <div class="phone" data-screen-label="Workout sheet">
+      <div class="stage">
+        <div class="sb"><span>11:26</span><span class="g"><span class="bars"><i></i><i></i><i></i><i></i></span><svg width="16" height="12" viewBox="0 0 16 12" fill="none"><path d="M8 11.2 .5 3.6a10.5 10.5 0 0 1 15 0L8 11.2Z" fill="#fff"/></svg><span class="batt">98</span></span></div>
+        <div class="sheet">
+          <div class="grab"><i></i></div>
+          <div class="sheettop"><button class="tbtn edit">Edit</button><button class="tbtn">Done</button></div>
+          <div class="colo">
+            <span class="l"><b>Running log</b><span>&mdash; Workout</span></span>
+            <span class="r"><b>Aug 21</b><span>08:40</span></span>
+          </div>
+
+          <div class="scroll">
+            <div class="date">Friday <i>&middot;</i> Aug 21</div>
+            <h1>Recovery.</h1>
+            <div class="tagrow">
+              <button class="mood"><i></i>Neutral</button>
+              <button class="ghost">Connect</button>
+            </div>
+
+            <div class="stats">
+              <div class="st"><b>Dist</b><span>7.47<i>mi</i></span></div>
+              <div class="st"><b>Time</b><span>53:51</span></div>
+              <div class="st"><b>Pace</b><span>7:13<i>/mi</i></span></div>
+            </div>
+
+            <button class="add"><em>+</em>Add the workout</button>
+
+            <div class="sum">
+              <div class="sumhd"><b>Summary</b><span class="acts"><a class="play" href="#"><em>&#9654;</em>Memo</a><a href="#">Edit</a></span></div>
+              <p>I&rsquo;m still feeling a bit sick, but managed an easy run. My left ankle felt a little stiff, but my knee, which had been a concern, felt good today.</p>
+              <button class="more">Read the words &darr;</button>
+            </div>
+
+            <div class="cond">
+              <div class="cd"><span>80&deg;</span><b>Temp</b></div>
+              <div class="cd"><span>73&deg;</span><b>Dewpoint</b></div>
+              <div class="cd"><span>+16s</span><b>Heat cost</b></div>
+              <div class="cd"><span>+420</span><b>Climb ft</b></div>
+              <div class="cd"><span>154</span><b>Avg hr</b></div>
+            </div>
+            <div class="pad"></div>
+          </div>
+
+          <div class="rail">
+            <div class="track">
+              <button class="day"><i></i><span>Aug 13</span></button>
+              <button class="day"><i></i><span>Aug 16</span></button>
+              <button class="day"><i></i><span>Aug 18</span></button>
+              <button class="day"><i></i><span>Aug 20</span></button>
+              <button class="day on"><i></i><span>Aug 21</span></button>
+            </div>
+            <span class="count">50/50</span>
+          </div>
+          <div class="home"><i></i></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

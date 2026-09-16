@@ -1,0 +1,26 @@
+{
+  "id": "002-episode-worthy-moment",
+  "prompt_name": "process-training-memo.v3",
+  "description": "A memo with a genuinely distinctive moment — a long-run breakthrough the athlete names in their own words ('the day it clicked'). v3 must emit an episode memory_candidate carrying the athlete's verbatim phrase in their_words. The memory writer dates it (memory_date) so the coach can quote it back later. Episodes require their_words; a routine good run would NOT qualify.",
+  "vars": {
+    "coachAnchorContext": "",
+    "recentContext": ""
+  },
+  "input": "\n\n## Audio Transcript (from groq)\n\"I have to tell you about this one. Did 20 on the trails this morning and somewhere around mile 14 everything just clicked, legs and breathing all of it. Honestly the day it clicked for this whole build. Best I've felt in months.\"",
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": ["transcription", "cleaned_notes", "mood", "coach_insight", "extracted_data", "memory_candidates"],
+    "forbidden_pattern_groups": ["diagnosis_terms", "action_bans", "stop_training_bans", "medical_claim_bans"],
+    "forbidden_patterns": [
+      "\"mood\":\\s*\"(?!(energized|positive|neutral|tired|struggling|injured)\")[^\"]*\""
+    ],
+    "required_patterns": [
+      "(?i)\"category\"\\s*:\\s*\"episode\"",
+      "(?i)\"their_words\"\\s*:\\s*\"[^\"]*clicked",
+      "\"memory_candidates\"\\s*:\\s*\\["
+    ]
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-flash"
+}

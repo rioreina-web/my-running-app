@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ask — the analysis surface inside Coach</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;600;700&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F5F3F0; --card:#FFFFFF; --deep:#E8E4DF; --rule:#E8E4E0;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-wash:rgba(212,89,42,.10);
+  --m-positive:#4A9E6B; --m-neutral:#9B9590; --m-tired:#C4873A;
+  --m-struggling:#C45A3A;
+  --z1:#C9D6E8; --z2:#9FB6DA; --z3:#7191C7; --z4:#4A6BAE; --z5:#2E4780;
+  --fd:"Crimson Pro",Georgia,serif; --fb:"PT Serif",Georgia,serif;
+  --fm:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:#EDEAE5;color:var(--ink);font-family:var(--fb);
+  -webkit-font-smoothing:antialiased}
+
+/* ---------- page chrome ---------- */
+.page{max-width:1180px;margin:0 auto;padding:36px 24px 90px;
+  display:grid;grid-template-columns:390px 1fr;gap:44px;align-items:start}
+@media(max-width:900px){.page{grid-template-columns:1fr;gap:32px}}
+
+.notes{position:sticky;top:36px}
+.notes .strip{font-family:var(--fm);font-size:10.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-2);border-bottom:1px solid #DAD5CE;
+  padding-bottom:10px;display:flex;justify-content:space-between}
+.notes .strip b{color:var(--coral);font-weight:500}
+.notes h1{font-family:var(--fd);font-weight:700;font-size:40px;line-height:1.04;
+  letter-spacing:-.01em;margin:22px 0 0}
+.notes .lede{font-size:15.5px;line-height:1.66;color:var(--ink-2);max-width:56ch;margin:16px 0 0}
+.notes .lede b{color:var(--ink)}
+.layers{margin:26px 0 0;border-top:1px solid #DAD5CE}
+.layer{display:grid;grid-template-columns:64px 1fr;gap:14px;padding:15px 0;
+  border-bottom:1px solid #DAD5CE}
+.layer .n{font-family:var(--fm);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3);padding-top:3px}
+.layer .n b{display:block;color:var(--coral);font-weight:500;font-size:15px;letter-spacing:0}
+.layer h3{font-family:var(--fd);font-size:19px;font-weight:600;margin:0 0 5px}
+.layer p{margin:0;font-size:13.5px;line-height:1.6;color:var(--ink-2)}
+.layer p b{color:var(--ink)}
+.hintbox{margin:24px 0 0;background:var(--coral-wash);border-left:2px solid var(--coral);
+  padding:13px 15px;font-size:13.5px;line-height:1.6;color:var(--ink)}
+.hintbox > b:first-child{font-family:var(--fm);font-size:9.5px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--coral);display:block;margin-bottom:5px;font-weight:500}
+
+/* ---------- phone ---------- */
+.phone{width:390px;background:var(--paper);border-radius:34px;overflow:hidden;
+  box-shadow:0 30px 70px rgba(26,24,21,.18),0 2px 6px rgba(26,24,21,.08);
+  border:1px solid #DAD5CE;position:relative}
+.screen{height:790px;overflow-y:auto;scroll-behavior:smooth}
+.screen::-webkit-scrollbar{width:0}
+.pad{padding:0 20px}
+
+.navbar{position:sticky;top:0;z-index:30;background:rgba(245,243,240,.96);
+  backdrop-filter:blur(10px);border-bottom:1px solid var(--rule);
+  padding:14px 20px 11px;display:flex;justify-content:space-between;align-items:baseline}
+.navbar .t{font-family:var(--fd);font-size:22px;font-weight:700;letter-spacing:-.01em}
+.navbar .d{font-family:var(--fm);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink-3)}
+
+.eyebrow{font-family:var(--fm);font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--ink-3);display:block}
+.eyebrow b{color:var(--coral);font-weight:500}
+
+/* daily read */
+.read{padding:22px 20px 20px;border-bottom:1px solid var(--rule)}
+.read h2{font-family:var(--fd);font-size:25px;font-weight:700;line-height:1.14;
+  letter-spacing:-.01em;margin:9px 0 0}
+.read p{font-size:14.5px;line-height:1.68;color:var(--ink-2);margin:12px 0 0}
+.read .q{font-style:italic;color:var(--ink-3);font-size:14px;margin-top:13px}
+
+/* section header */
+.sect{padding:24px 20px 0}
+.sect .hd{display:flex;justify-content:space-between;align-items:baseline;
+  border-bottom:1px solid var(--rule);padding-bottom:9px}
+.sect .hd h3{font-family:var(--fd);font-size:20px;font-weight:700;margin:0;letter-spacing:-.01em}
+.sect .hd span{font-family:var(--fm);font-size:9px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--ink-3)}
+
+/* chips */
+.rail{display:flex;gap:6px;flex-wrap:wrap;margin:13px 0 0}
+.chip{font-family:var(--fm);font-size:10px;letter-spacing:.045em;color:var(--ink);
+  background:var(--card);border:1px solid var(--rule);border-radius:999px;
+  padding:7px 12px;cursor:pointer;transition:.14s;line-height:1.3;text-align:left}
+.chip:hover{border-color:var(--ink-3)}
+.chip.ctx{border-color:rgba(212,89,42,.4);background:var(--coral-wash)}
+.chip.ctx b{color:var(--coral);font-weight:500}
+.chip.grp{background:transparent;border-style:dashed}
+.chip.grp.open{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+
+.grpbody{display:none;margin:9px 0 0;padding:11px 12px;background:var(--card);
+  border:1px solid var(--rule);border-radius:12px}
+.grpbody.open{display:block}
+.grpbody .rail{margin:0}
+
+/* input */
+.askbar{display:flex;gap:8px;align-items:center;margin:15px 0 0;background:var(--card);
+  border:1px solid var(--rule);border-radius:999px;padding:5px 5px 5px 15px}
+.askbar input{flex:1;border:0;outline:0;background:transparent;font-family:var(--fb);
+  font-size:14px;color:var(--ink);padding:8px 0}
+.askbar input::placeholder{color:var(--ink-3)}
+.askbar button{border:0;background:var(--ink);color:var(--paper);border-radius:999px;
+  width:32px;height:32px;cursor:pointer;font-size:15px;line-height:1}
+.askbar button:hover{background:var(--coral)}
+
+/* answers */
+#answers{padding:0 20px 40px}
+.ans{background:var(--card);border:1px solid var(--rule);border-radius:14px;
+  margin:16px 0 0;overflow:hidden;animation:rise .3s ease both}
+@keyframes rise{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
+.ans .q{padding:12px 15px 0}
+.ans .q .qt{font-family:var(--fd);font-size:17px;font-weight:600;line-height:1.25;margin:5px 0 0}
+.ans .body{padding:14px 15px 15px}
+
+.narr{font-size:14.5px;line-height:1.62;margin:0}
+.narr b{color:var(--ink)}
+.caveat{font-size:13px;line-height:1.55;color:var(--ink-3);font-style:italic;margin:8px 0 0}
+
+.facts{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--rule);
+  border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);margin:14px 0 0}
+.facts.one{grid-template-columns:1fr}
+.fact{background:var(--card);padding:11px 13px 10px}
+.fact .v{font-family:var(--fm);font-weight:600;font-size:20px;line-height:1;
+  font-variant-numeric:tabular-nums;display:block}
+.fact .v small{font-size:11.5px;color:var(--ink-2);font-weight:400;margin-left:3px}
+.fact .v em{font-style:normal;font-size:12px;margin-left:5px}
+.fact .v em.good{color:var(--m-positive)} .fact .v em.watch{color:var(--m-tired)}
+.fact .k{font-family:var(--fm);font-size:8px;letter-spacing:.1em;color:var(--ink-3);
+  text-transform:uppercase;display:block;margin-top:7px;line-height:1.45}
+
+.chart{margin:14px 0 0}
+svg{display:block;width:100%;overflow:visible}
+.axl{font-family:var(--fm);font-size:7.5px;fill:var(--ink-3);letter-spacing:.06em}
+
+.cov{display:flex;justify-content:space-between;align-items:center;gap:10px;
+  margin:13px 0 0;padding-top:11px;border-top:1px solid var(--rule)}
+.cov .c{font-family:var(--fm);font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-3);line-height:1.5}
+.tier{font-family:var(--fm);font-size:8px;letter-spacing:.1em;text-transform:uppercase;
+  padding:3px 7px;border-radius:999px;white-space:nowrap}
+.tier.high{background:rgba(74,158,107,.13);color:#3B7D55}
+.tier.moderate{background:rgba(196,135,58,.15);color:#9A6A2C}
+.tier.low{background:var(--deep);color:var(--ink-2)}
+
+.follow{padding:0 15px 14px}
+.follow .lbl{font-family:var(--fm);font-size:8px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--ink-3);margin-bottom:7px}
+
+.badge{font-family:var(--fm);font-size:7.5px;letter-spacing:.1em;text-transform:uppercase;
+  padding:2px 6px;border-radius:3px;background:var(--deep);color:var(--ink-2)}
+.badge.det{background:rgba(46,71,128,.1);color:var(--z5)}
+.badge.prose{background:var(--coral-wash);color:var(--coral)}
+.badge.st-wrap{background:rgba(74,158,107,.14);color:#3B7D55}
+.badge.st-join{background:rgba(196,135,58,.16);color:#9A6A2C}
+.badge.st-build{background:rgba(46,71,128,.1);color:var(--z5)}
+.badge.st-blocked{background:var(--deep);color:var(--ink-2)}
+
+.empty{text-align:left}
+.empty .nudge{font-size:14.5px;line-height:1.62;color:var(--ink-2);margin:7px 0 0}
+.empty .cta{display:inline-block;margin-top:11px;font-family:var(--fm);font-size:10px;
+  letter-spacing:.06em;color:var(--coral);border:1px solid rgba(212,89,42,.4);
+  border-radius:999px;padding:6px 12px;cursor:pointer}
+
+.disamb{padding:2px 15px 15px}
+.thinking{font-family:var(--fm);font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-3);padding:14px 15px}
+
+/* tabbar */
+.tabbar{position:sticky;bottom:0;background:rgba(245,243,240,.97);backdrop-filter:blur(10px);
+  border-top:1px solid var(--rule);display:grid;grid-template-columns:repeat(4,1fr);
+  padding:11px 0 15px}
+.tab{text-align:center;font-family:var(--fm);font-size:9px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-3)}
+.tab.on{color:var(--coral)}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ===================== PHONE ===================== -->
+  <div class="phone">
+    <div class="screen" id="screen">
+
+      <div class="navbar">
+        <div class="t">Coach</div>
+        <div class="d">Wed · Aug 5</div>
+      </div>
+
+      <!-- Daily Read (existing surface, unchanged) -->
+      <div class="read">
+        <span class="eyebrow"><b>The Read</b> · generated 6:42 am</span>
+        <h2>Three weeks of heat, and the band held.</h2>
+        <p>You went into July worried the summer was undoing the spring, and it
+        wasn't. Tuesday's reps came in at the same effort you were holding in
+        May, on a morning eleven degrees warmer at the dew point.</p>
+        <p>The easy days have been genuinely easy. That's the part that's new.</p>
+        <p class="q">What would it feel like to trust the block right now?</p>
+      </div>
+
+      <!-- ASK -->
+      <div class="sect">
+        <div class="hd">
+          <h3>Ask</h3>
+          <span>50 analyzers · 11 principles</span>
+        </div>
+
+        <!-- contextual chips -->
+        <div class="rail" style="margin-top:14px">
+          <div class="chip ctx" onclick="ask('compare_session')"><b>↳</b> Compare Tuesday's LT 6×1k</div>
+          <div class="chip ctx" onclick="ask('race_projection')"><b>↳</b> Chicago is 63 days out</div>
+        </div>
+
+        <!-- group chips -->
+        <div class="rail" style="margin-top:9px" id="groups">
+          <div class="chip grp" data-g="load" onclick="tg('load')">Load</div>
+          <div class="chip grp" data-g="mix" onclick="tg('mix')">Mix</div>
+          <div class="chip grp" data-g="adaptation" onclick="tg('adaptation')">Adaptation</div>
+          <div class="chip grp" data-g="durability" onclick="tg('durability')">Durability</div>
+          <div class="chip grp" data-g="specificity" onclick="tg('specificity')">Specificity</div>
+          <div class="chip grp" data-g="recovery" onclick="tg('recovery')">Recovery</div>
+          <div class="chip grp" data-g="consistency" onclick="tg('consistency')">Consistency</div>
+          <div class="chip grp" data-g="block" onclick="tg('block')">Block</div>
+          <div class="chip grp" data-g="conditions" onclick="tg('conditions')">Conditions</div>
+          <div class="chip grp" data-g="body" onclick="tg('body')">Body</div>
+        </div>
+        <div class="grpbody" id="gb"><div class="rail" id="gbr"></div></div>
+
+        <!-- free text -->
+        <form class="askbar" onsubmit="submitText(event)">
+          <input id="q" placeholder="Ask about your training…" autocomplete="off">
+          <button type="submit">↑</button>
+        </form>
+      </div>
+
+      <div id="answers"></div>
+
+      <div class="tabbar">
+        <div class="tab">Log</div><div class="tab">Trends</div>
+        <div class="tab">Train</div><div class="tab on">Coach</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== NOTES ===================== -->
+  <div class="notes">
+    <div class="strip"><span>Post Run Drip · prototype</span><span><b>Ask</b> · v1</span></div>
+    <h1>Computed first.<br>Narrated second.</h1>
+    <p class="lede">Every answer below is real math over real rows, rendered as
+    <b>fact lines</b>. The model writes two sentences <i>on top of</i> those
+    facts and is mechanically forbidden from speaking a number that isn't in
+    them. <b>Chips run the same code path with no model at all.</b></p>
+    <p class="lede">The chip rail is grouped by <b>training principle</b>, not by
+    metric — overload, intensity distribution, specificity, durability,
+    adaptation, recovery, consistency, periodization, conditions, the body.
+    Full registry and coverage audit in <b>ASK-REGISTRY.md</b>.</p>
+    <p class="lede">Try the chips, then type something. Type <b>threshold</b> on
+    its own to see the ambiguity handler, or ask something open-ended like
+    <b>what should I eat before a long run</b> to see it fall through to the
+    existing Coach agent.</p>
+
+    <div class="layers">
+      <div class="layer">
+        <div class="n"><b>0</b>Route</div>
+        <div><h3>Free text → analyzer</h3>
+        <p>One cheap classifier picks from a <b>closed enum</b> of analyzer ids
+        and fills a closed param schema. It cannot invent a question. Chips skip
+        this layer entirely.</p></div>
+      </div>
+      <div class="layer">
+        <div class="n"><b>1</b>Analyze</div>
+        <div><h3>Deterministic. Auditable.</h3>
+        <p>Wraps math that already ships — <b>workoutComparison</b>,
+        <b>fast-segment-trends</b>, <b>fitnessSignal</b>,
+        <b>pace-heat-adjustment</b>. Emits fact lines, a chart spec, and a
+        coverage statement. No model in this layer.</p></div>
+      </div>
+      <div class="layer">
+        <div class="n"><b>2</b>Narrate</div>
+        <div><h3>Two sentences, on a leash.</h3>
+        <p>The model sees the fact lines and nothing else. Every numeric token
+        in its output is checked against them — one violation and the answer
+        falls back to bare facts. <b>The facts always render.</b></p></div>
+      </div>
+    </div>
+
+    <div class="hintbox">
+      <b>Coverage · audited against the repo</b>
+      50 analyzers across 11 training principles. <b>33 wrap math that already
+      ships</b> and is already tested. 8 are an arithmetic gap — both operands
+      persisted, missing the line that combines them. 7 need real new math.
+      2 are blocked on one unwritten webhook branch.<br><br>
+      Tap any chip that isn't mocked and the card tells you which tier it's in.
+      <b>Ask is a distribution project, not an analytics project.</b>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/* ---------------- chip library ---------------- */
+/* ten training principles · 44 analyzers */
+const GROUPS = {
+  load:[['volume_trend','How has my mileage moved?'],['load_balance','Am I ramping too fast?'],
+        ['monotony_strain','Is my training too samey?'],['ramp_rate','Is this jump normal for me?'],
+        ['long_run_share','Is my long run too big a slice?'],['session_load','How hard was that, really?']],
+  mix:[['zone_minutes','Where did my time actually go?'],['quality_share','How much of my week is quality?'],
+       ['easy_discipline','Are my easy days actually easy?'],['polarization','Polarized, pyramidal, or muddled?'],
+       ['system_volume','Enough volume at LT?']],
+  adaptation:[['zone_trend','Is my LT pace improving?'],['efficiency','Metres per heartbeat'],
+              ['race_projection','What am I on track to run?'],['block_compare','Better than the last block?'],
+              ['detraining','What did that layoff cost me?'],['velocity_duration','What is my critical speed?']],
+  durability:[['fade','Do I fade in the back half?'],['decoupling','Am I decoupling less?'],
+              ['durability_curve','How does pace hold past 90 minutes?']],
+  specificity:[['race_pace_specificity','How much work is at goal pace?'],
+               ['long_run_progression','Are my long runs getting race-ready?'],
+               ['terrain_match','Does my terrain match the course?'],['race_sim','Have I rehearsed the demand?']],
+  recovery:[['readiness','Push or pull today?'],['hard_day_spacing','Enough between hard days?'],
+            ['rpe_trend','Is the same work feeling harder?'],['rpe_vs_pace','Effort up, pace flat?'],
+            ['sleep_self_report','Does rough sleep show up?'],['hr_zones','What are my HR zones doing?'],
+            ['hrv_trend','What is my HRV doing?'],['overnight_recovery','Sleep, resting HR, overnight']],
+  consistency:[['compliance','Am I hitting the plan?'],['missed_sessions','What have I been skipping?'],
+               ['streak','How consistent have I been?'],['gap_analysis','What do my breaks look like?']],
+  block:[['phase','What phase am I in?'],['week_shape','Is my week structured?'],
+         ['taper','Am I tapering correctly?']],
+  conditions:[['heat_normalize','Was that pace real, or the heat?'],['heat_season','What has summer cost me?'],
+              ['grade_normalize','How much did the hills cost?'],['conditions_log','What were the conditions?']],
+  body:[['niggle_timeline','Where has the calf shown up?'],['niggle_vs_load','Do niggles follow load spikes?'],
+        ['mood_trend','How has my mood moved?'],['mood_vs_load','Does my mood track the load?']]
+};
+
+/* build status per the coverage audit — WRAP / JOIN / BUILD / BLOCKED */
+const STATUS={};
+'volume_trend load_balance monotony_strain session_load ramp_rate zone_minutes quality_share easy_discipline system_volume fade decoupling zone_trend efficiency race_projection block_compare detraining readiness hard_day_spacing rpe_trend sleep_self_report compliance missed_sessions phase heat_normalize heat_season grade_normalize conditions_log niggle_timeline niggle_vs_load mood_trend mood_vs_load compare_session segmentation'
+  .split(' ').forEach(k=>STATUS[k]='wrap');
+'long_run_share polarization race_pace_specificity long_run_progression rpe_vs_pace streak week_shape best_sessions'
+  .split(' ').forEach(k=>STATUS[k]='join');
+'terrain_match race_sim durability_curve velocity_duration taper gap_analysis hr_zones'
+  .split(' ').forEach(k=>STATUS[k]='build');
+'hrv_trend overnight_recovery'.split(' ').forEach(k=>STATUS[k]='blocked');
+
+const STATUS_COPY={
+  wrap:['Wraps existing math','The math ships today and is tested. This analyzer is a fact-line adapter over it — about forty lines plus a registry entry.'],
+  join:['Arithmetic gap','Both operands are already computed and persisted. What is missing is the line that combines them. Cheapest tier in the registry.'],
+  build:['Needs new math','A real module with tests. The schema supports it; nobody has written it yet.'],
+  blocked:['Blocked on data','The table is migrated and empty. Needs the vital-webhook daily-sleep branch before any math is possible.']
+};
+
+/* ---------------- charts ---------------- */
+function lineChart(pts, opts){
+  const W=310,H=112,P=18,L=6;
+  const xs=(i)=>L+ i*(W-L-P)/(pts.length-1);
+  const vals=pts.map(p=>p.v), adj=pts.map(p=>p.a??p.v);
+  const all=vals.concat(adj), lo=Math.min(...all)-4, hi=Math.max(...all)+4;
+  const ys=(v)=>10+(v-lo)/(hi-lo)*(H-30);           // inverted: faster pace = higher
+  const path=(arr)=>arr.map((v,i)=>(i?'L':'M')+xs(i).toFixed(1)+' '+ys(v).toFixed(1)).join(' ');
+  let s=`<svg viewBox="0 0 ${W} ${H}">`;
+  if(opts.band){
+    const b1=ys(opts.band[0]), b2=ys(opts.band[1]);
+    s+=`<rect x="${L}" y="${Math.min(b1,b2).toFixed(1)}" width="${W-L-P}"
+        height="${Math.abs(b1-b2).toFixed(1)}" fill="rgba(113,145,199,.13)"/>`;
+  }
+  if(pts[0].a!==undefined)
+    s+=`<path d="${path(adj)}" fill="none" stroke="var(--ink-3)" stroke-width="1.2"
+        stroke-dasharray="3 3"/>`;
+  s+=`<path d="${path(vals)}" fill="none" stroke="var(--z4)" stroke-width="2"
+      stroke-linejoin="round"/>`;
+  pts.forEach((p,i)=>{
+    const last=i===pts.length-1;
+    s+=`<circle cx="${xs(i).toFixed(1)}" cy="${ys(p.v).toFixed(1)}" r="${last?4:2.6}"
+        fill="${last?'var(--coral)':'var(--z4)'}"/>`;
+    if(p.l) s+=`<text class="axl" x="${xs(i).toFixed(1)}" y="${H-4}" text-anchor="middle">${p.l}</text>`;
+  });
+  s+=`<text class="axl" x="${L}" y="6">${opts.top}</text>`;
+  return s+'</svg>';
+}
+function barChart(bars){
+  const W=310,H=104,L=6,P=18,n=bars.length;
+  const bw=(W-L-P)/n, max=Math.max(...bars.map(b=>b.v))*1.18;
+  let s=`<svg viewBox="0 0 ${W} ${H}">`;
+  if(bars[0].band!==undefined){
+    const y1=H-22-(bars[0].band[1]/max)*(H-34), y2=H-22-(bars[0].band[0]/max)*(H-34);
+    s+=`<rect x="${L}" y="${y1.toFixed(1)}" width="${W-L-P}" height="${(y2-y1).toFixed(1)}"
+        fill="rgba(74,158,107,.12)"/>`;
+  }
+  bars.forEach((b,i)=>{
+    const h=(b.v/max)*(H-34), x=L+i*bw+bw*.18, w=bw*.64;
+    s+=`<rect x="${x.toFixed(1)}" y="${(H-22-h).toFixed(1)}" width="${w.toFixed(1)}"
+        height="${h.toFixed(1)}" rx="2" fill="${b.c||'var(--z3)'}"/>`;
+    s+=`<text class="axl" x="${(x+w/2).toFixed(1)}" y="${H-8}" text-anchor="middle">${b.l}</text>`;
+  });
+  return s+'</svg>';
+}
+function pairChart(rows){
+  const W=310,H=26*rows.length+16;
+  const max=Math.max(...rows.flatMap(r=>[r.a,r.b]))*1.1;
+  let s=`<svg viewBox="0 0 ${W} ${H}">`;
+  rows.forEach((r,i)=>{
+    const y=i*26+8;
+    s+=`<text class="axl" x="0" y="${y+7}">${r.l}</text>`;
+    s+=`<rect x="62" y="${y}" width="${(r.b/max*228).toFixed(1)}" height="7" rx="1.5" fill="var(--z2)"/>`;
+    s+=`<rect x="62" y="${y+9}" width="${(r.a/max*228).toFixed(1)}" height="7" rx="1.5" fill="var(--z5)"/>`;
+    s+=`<text class="axl" x="${(66+r.b/max*228).toFixed(1)}" y="${y+6}">${r.bl}</text>`;
+    s+=`<text class="axl" x="${(66+r.a/max*228).toFixed(1)}" y="${y+15}">${r.al}</text>`;
+  });
+  return s+'</svg>';
+}
+
+/* ---------------- the answers ---------------- */
+const A = {
+zone_trend:{
+  q:'Is my LT pace improving?', det:true,
+  narr:'Your LT band has come down <b>9 seconds</b> since the start of June while the dew point climbed 14°F. Heat-neutral, the last three sessions are the fastest of the block.',
+  caveat:'Two of the nine sessions had no HR, so the effort side of this is thinner than the pace side.',
+  facts:[
+    {v:'7:03',u:'/mi',k:'LT pace · last 3 sessions',d:'−9s',t:'good'},
+    {v:'7:12',u:'/mi',k:'LT pace · first 3 sessions'},
+    {v:'6:58',u:'/mi',k:'Heat-neutral equivalent',d:'−14s',t:'good'},
+    {v:'34',u:'min',k:'LT volume · 4-wk average',d:'in range',t:'good'}],
+  chart:lineChart([
+    {v:432,a:431,l:'JUN 3'},{v:430,a:428},{v:434,a:427},{v:429,a:421},{v:431,a:419,l:'JUL 1'},
+    {v:428,a:418},{v:426,a:417},{v:425,a:415},{v:423,a:414,l:'AUG 4'}],
+    {top:'7:12 → 7:03 /mi · dashed = heat-neutral',band:[420,432]}),
+  cov:'9 sessions · 63 days · 2 without HR', tier:'high',
+  rel:[['heat_normalize','How much of that is the heat?'],['system_volume','Am I getting enough LT volume?'],['compare_session','Compare the two fastest']]
+},
+compare_session:{
+  q:"Compare Tuesday's LT 6×1k to similar sessions", det:true,
+  narr:'Closest match is <b>June 17</b> — same structure, same rep length, 11°F cooler at the dew point. You held <b>4 seconds per mile faster</b> on Tuesday at 3 bpm lower average HR.',
+  caveat:'Comparability is moderate: the June session ran 5×1k, not 6, so the last rep has no counterpart.',
+  facts:[
+    {v:'−4s',u:'/mi',k:'Rep pace vs. Jun 17',t:'good'},
+    {v:'−3',u:'bpm',k:'Avg HR across reps',t:'good'},
+    {v:'+1',u:'rep',k:'Volume at LT'},
+    {v:'+11°',u:'F',k:'Dew point vs. Jun 17',t:'watch'}],
+  chart:pairChart([
+    {l:'REP 1',a:428,b:433,al:'7:08',bl:'7:13'},{l:'REP 2',a:426,b:431,al:'7:06',bl:'7:11'},
+    {l:'REP 3',a:425,b:432,al:'7:05',bl:'7:12'},{l:'REP 4',a:427,b:434,al:'7:07',bl:'7:14'},
+    {l:'REP 5',a:424,b:436,al:'7:04',bl:'7:16'}]),
+  cov:'Auto-matched from 14 candidates · 180-day window', tier:'moderate',
+  rel:[['zone_trend','Show the whole LT trend'],['heat_normalize','Normalise both for heat'],['best_sessions','My three best this year']]
+},
+load_balance:{
+  q:'Am I ramping too fast?', det:true,
+  narr:'No. Your acute-to-chronic ratio is <b>1.06</b>, sitting inside the band it has held for five weeks. The step up to 46 miles was the largest jump of the block and it still landed in range.',
+  facts:[
+    {v:'1.06',k:'Acute : chronic ratio',t:'good'},
+    {v:'46.2',u:'mi',k:'This week'},
+    {v:'43.5',u:'mi',k:'28-day average',d:'+6%'},
+    {v:'1.9',k:'Monotony · 7 day',t:'good'}],
+  chart:barChart([
+    {l:'W-5',v:38.4,band:[0.8,1.3]},{l:'W-4',v:41.0},{l:'W-3',v:44.2},
+    {l:'W-2',v:39.8},{l:'W-1',v:43.1},{l:'NOW',v:46.2,c:'var(--coral)'}]),
+  cov:'6 weeks · 34 sessions · complete', tier:'high',
+  rel:[['quality_share','How much of that is quality?'],['week_shape','Is the week shaped right?'],['recovery_context','What does sleep say?']]
+},
+heat_normalize:{
+  q:'Was that pace real, or was it the heat?', det:true,
+  narr:'Real. Tuesday ran at a <b>71°F dew point</b>, which carries a 9 s/mi adjustment at that rep length. Heat-neutral, your 7:07 average is a <b>6:58</b>.',
+  caveat:'The adjustment is a model, not a measurement. It gets applied above a 68°F dew point and only ever mentioned below it.',
+  facts:[
+    {v:'71°',u:'F',k:'Dew point at start',t:'watch'},
+    {v:'9s',u:'/mi',k:'Adjustment applied'},
+    {v:'7:07',u:'/mi',k:'Raw rep average'},
+    {v:'6:58',u:'/mi',k:'Heat-neutral equivalent',t:'good'}],
+  chart:lineChart([
+    {v:52,l:'MAY'},{v:58},{v:61},{v:64,l:'JUN'},{v:67},{v:69},{v:71,l:'JUL'},{v:73},{v:71,l:'AUG'}],
+    {top:'Dew point °F at session start · 68°F = adjustment threshold',band:[68,74]}),
+  cov:'Weather on 9 of 9 sessions', tier:'high',
+  rel:[['heat_season','What has summer cost in total?'],['zone_trend','Show the neutral trend'],['efficiency','Metres per heartbeat']]
+},
+mood_vs_load:{
+  q:'Does my mood track the load?', det:true,
+  narr:'Not closely. Your heaviest three weeks were logged <b>positive or energized</b> six times out of nine, and the two <i>struggling</i> entries both landed on light weeks following travel.',
+  caveat:'This is a correlation across 26 entries. It describes what you wrote, not why.',
+  facts:[
+    {v:'+0.11',k:'Mood ↔ weekly load correlation'},
+    {v:'26',k:'Voice logs with a mood label'},
+    {v:'6 / 9',k:'Positive on heavy weeks',t:'good'},
+    {v:'2',k:'Struggling entries · both light weeks'}],
+  chart:barChart([
+    {l:'W-5',v:3.1,c:'var(--m-positive)'},{l:'W-4',v:2.2,c:'var(--m-neutral)'},
+    {l:'W-3',v:3.4,c:'var(--m-positive)'},{l:'W-2',v:1.4,c:'var(--m-struggling)'},
+    {l:'W-1',v:2.9,c:'var(--m-positive)'},{l:'NOW',v:3.3,c:'var(--m-positive)'}]),
+  cov:'26 voice logs · 6 weeks', tier:'moderate',
+  rel:[['recovery_context','Line it up with sleep'],['load_balance','Show the load side'],['niggle_timeline','Any niggles in those weeks?']]
+},
+race_projection:{
+  q:'What am I on track to run at Chicago?', det:true,
+  narr:'<b>3:21</b>, at moderate confidence. That is seven minutes inside your 3:28 personal best and five outside the 3:16 you are chasing — and the long-run base is the piece still moving.',
+  caveat:'Moderate rather than high: you have two runs over 16 miles in this block, and the model wants three.',
+  facts:[
+    {v:'3:21',k:'Projection · Chicago',t:'good'},
+    {v:'MODERATE',k:'Confidence tier'},
+    {v:'3:28',k:'Lifetime PR · Grandma\'s 2025'},
+    {v:'2 / 3',k:'Long runs ≥ 16 mi',t:'watch'}],
+  cov:'63 days out · anchored on Grandma\'s 2025 · 34 sessions', tier:'moderate',
+  rel:[['zone_trend','What is driving it?'],['load_balance','Is the ramp supporting it?'],['week_shape','Where is the gap?']]
+},
+niggle_timeline:{
+  q:'Where has the calf shown up?', det:true, empty:true,
+  eb:'Not enough to draw a line',
+  nudge:'The calf appears in two voice logs, both in April. A timeline needs a third mention before it says anything a single entry doesn\'t already say.',
+  cta:'Read the two entries',
+  cov:'2 mentions · 26 weeks scanned', tier:'low',
+  rel:[['mood_vs_load','Does mood track the load?'],['load_balance','Am I ramping too fast?']]
+},
+efficiency:{
+  q:'Metres per heartbeat', det:true,
+  narr:'Flat across the block at <b>1.34 m/beat</b> on easy running. Through a July that added 14°F of dew point, flat is the win — the same output is costing the same heartbeats in worse air.',
+  facts:[
+    {v:'1.34',u:'m/beat',k:'Easy runs · last 4 weeks'},
+    {v:'1.35',u:'m/beat',k:'Easy runs · first 4 weeks',d:'−0.7%'},
+    {v:'142',u:'bpm',k:'Avg easy HR'},
+    {v:'18',k:'Easy runs with HR'}],
+  chart:lineChart([{v:135,l:'JUN'},{v:134},{v:136},{v:133},{v:134,l:'JUL'},{v:132},{v:135},{v:134,l:'AUG'}],
+    {top:'Metres per heartbeat ×100 · easy running only'}),
+  cov:'18 of 24 easy runs had HR · 63 days', tier:'moderate',
+  rel:[['decoupling','Am I decoupling less?'],['heat_normalize','Adjust for the heat'],['zone_trend','Show the LT side']]
+}
+};
+['decoupling','segmentation','best_sessions','quality_share','week_shape','recovery_context','heat_season','system_volume']
+  .forEach(k=>{ if(!A[k]) A[k]=null; });
+
+/* ---------------- render ---------------- */
+const answers=document.getElementById('answers');
+
+function factHTML(f){
+  return `<div class="fact"><span class="v">${f.v}${f.u?`<small>${f.u}</small>`:''}${
+    f.d?`<em class="${f.t||''}">${f.d}</em>`:''}</span><span class="k">${f.k}</span></div>`;
+}
+function chipsHTML(list){
+  return list.map(r=>`<div class="chip" onclick="ask('${r[0]}',&quot;${r[1].replace(/"/g,'')}&quot;)">${r[1]}</div>`).join('');
+}
+
+function render(a, qText){
+  const el=document.createElement('div'); el.className='ans';
+  const head=`<div class="q"><span class="eyebrow"><span class="badge det">Layer 1 · computed</span></span>
+    <div class="qt">${qText||a.q}</div></div>`;
+  let body;
+  if(a.empty){
+    body=`<div class="body empty"><span class="eyebrow">${a.eb}</span>
+      <p class="nudge">${a.nudge}</p><span class="cta">${a.cta}</span>
+      <div class="cov"><span class="c">${a.cov}</span><span class="tier low">Low coverage</span></div></div>`;
+  } else {
+    body=`<div class="body">
+      <p class="narr">${a.narr}</p>
+      ${a.caveat?`<p class="caveat">${a.caveat}</p>`:''}
+      <div class="facts">${a.facts.map(factHTML).join('')}</div>
+      ${a.chart?`<div class="chart">${a.chart}</div>`:''}
+      <div class="cov"><span class="c">${a.cov}</span>
+        <span class="tier ${a.tier}">${a.tier} confidence</span></div>
+    </div>`;
+  }
+  const foot=a.rel?`<div class="follow"><div class="lbl">Next</div>
+    <div class="rail">${chipsHTML(a.rel)}</div></div>`:'';
+  el.innerHTML=head+body+foot;
+  answers.appendChild(el);
+  if(!booting) el.scrollIntoView({block:'start'});
+}
+let booting=true;
+
+function stub(id, qText){
+  const st=STATUS[id]||'wrap', copy=STATUS_COPY[st];
+  const el=document.createElement('div'); el.className='ans';
+  el.innerHTML=`<div class="q"><span class="eyebrow"><span class="badge st-${st}">${copy[0]}</span></span>
+    <div class="qt">${qText}</div></div>
+    <div class="body empty">
+    <span class="eyebrow">Analyzer <b>${id}</b> · not mocked in this prototype</span>
+    <p class="nudge">${copy[1]}</p>
+    <p class="nudge" style="font-size:13px;color:var(--ink-3)">The contract is identical
+    either way — fact lines, coverage statement, follow-up chips. Only the cost
+    of getting there differs.</p></div>`;
+  answers.appendChild(el); el.scrollIntoView({block:'start'});
+}
+
+function ask(id, qText){
+  const a=A[id];
+  if(a) render(a, qText); else stub(id, qText||id.replace(/_/g,' '));
+}
+
+/* group toggling */
+function tg(g){
+  const gb=document.getElementById('gb'), gbr=document.getElementById('gbr');
+  const btn=document.querySelector(`.chip.grp[data-g="${g}"]`);
+  const wasOpen=btn.classList.contains('open');
+  document.querySelectorAll('.chip.grp').forEach(c=>c.classList.remove('open'));
+  if(wasOpen){ gb.classList.remove('open'); return; }
+  btn.classList.add('open'); gb.classList.add('open');
+  gbr.innerHTML=chipsHTML(GROUPS[g]);
+}
+
+/* ---------------- Layer 0: the router demo ---------------- */
+const ROUTES=[
+  [/\b(lt|threshold)\s+(pace|improv|trend|faster|getting)/i,'zone_trend'],
+  [/\b(compare|similar|versus|vs)\b/i,'compare_session'],
+  [/\b(ramp|acwr|too (fast|much)|load|mileage jump)\b/i,'load_balance'],
+  [/\b(heat|dew|humid|weather|hot)\b/i,'heat_normalize'],
+  [/\b(mood|feel.*(load|weeks)|motivat)\b/i,'mood_vs_load'],
+  [/\b(project|on track|marathon time|goal time|predict|race time)\b/i,'race_projection'],
+  [/\b(efficien|heartbeat|metres per|meters per)\b/i,'efficiency'],
+  [/\b(calf|niggle|shin|achilles|knee|hamstring)\b/i,'niggle_timeline'],
+  [/\b(decoupl|drift)\b/i,'decoupling'],
+  [/\b(fade|back half|second half|fall apart|late in)\b/i,'fade'],
+  [/\b(polar|80.?20|pyramid|distribution|mix)\b/i,'polarization'],
+  [/\b(quality|hard (miles|volume))\b/i,'quality_share'],
+  [/\b(easy day|easy runs? (too|actually)|discipline)\b/i,'easy_discipline'],
+  [/\b(monoton|samey|variet|strain)\b/i,'monotony_strain'],
+  [/\b(taper)\b/i,'taper'],
+  [/\b(phase|base|build|peak)\b/i,'phase'],
+  [/\b(streak|consisten)\b/i,'streak'],
+  [/\b(compliance|hitting the plan|missed|skipp)\b/i,'compliance'],
+  [/\b(rpe|perceived|feel.*harder|effort)\b/i,'rpe_trend'],
+  [/\b(readiness|push or pull|should i (go|train))\b/i,'readiness'],
+  [/\b(critical speed|d.?prime|velocity.duration)\b/i,'velocity_duration'],
+  [/\b(hill|grade|elevation|climb)\b/i,'grade_normalize'],
+  [/\b(sleep|hrv|resting hr)\b/i,'hrv_trend'],
+  [/\b(block|cycle|last (year|build))\b/i,'block_compare'],
+  [/\b(long run)\b/i,'long_run_share'],
+  [/\b(goal pace|specific|race pace)\b/i,'race_pace_specificity'],
+  [/\b(mileage|volume|weekly miles)\b/i,'volume_trend']
+];
+const AMBIG={ 'threshold':[['zone_trend','The LT pace trend'],['system_volume','My weekly LT volume'],['compare_session',"Tuesday's LT session"]],
+              'pace':[['zone_trend','LT pace over the block'],['heat_normalize','Pace vs. the heat'],['compare_session','A single session']],
+              'heat':[['heat_normalize','One session, adjusted'],['heat_season','The whole summer']] };
+
+function submitText(e){
+  e.preventDefault();
+  const inp=document.getElementById('q'), text=inp.value.trim();
+  if(!text) return; inp.value='';
+  const think=document.createElement('div'); think.className='ans';
+  think.innerHTML=`<div class="thinking">Layer 0 · routing…</div>`;
+  answers.appendChild(think); think.scrollIntoView({block:'start'});
+
+  setTimeout(()=>{
+    think.remove();
+    const key=text.toLowerCase().replace(/[?.!]/g,'').trim();
+    if(AMBIG[key]) return ambiguous(text, AMBIG[key]);
+    const hit=ROUTES.find(r=>r[0].test(text));
+    if(hit) return ask(hit[1], text);
+    prose(text);
+  }, 520);
+}
+
+function ambiguous(text, opts){
+  const el=document.createElement('div'); el.className='ans';
+  el.innerHTML=`<div class="q"><span class="eyebrow"><span class="badge">Layer 0 · ambiguous</span></span>
+    <div class="qt">${text}</div></div>
+    <div class="body"><p class="narr">Three ways to read that. Which one?</p></div>
+    <div class="disamb"><div class="rail">${chipsHTML(opts)}</div></div>`;
+  answers.appendChild(el); el.scrollIntoView({block:'start'});
+}
+
+function prose(text){
+  const el=document.createElement('div'); el.className='ans';
+  el.innerHTML=`<div class="q"><span class="eyebrow"><span class="badge prose">No analyzer · Coach agent</span></span>
+    <div class="qt">${text}</div></div>
+    <div class="body">
+      <p class="narr">Nothing in the registry answers that, so it falls through to
+      the existing <b>coaching-agent</b> — the prose path you already ship. You
+      get the warm, contextual answer; you just don't get fact lines, a chart,
+      or a coverage statement, and the reply is marked as unverified.</p>
+      <p class="caveat">This fallthrough is the reason free text is safe to add:
+      the worst case is today's behaviour, not a wrong number.</p>
+    </div>
+    <div class="follow"><div class="lbl">Did you mean</div><div class="rail">
+      ${chipsHTML([['race_projection','What am I on track to run?'],['zone_trend','Is my LT pace improving?']])}
+    </div></div>`;
+  answers.appendChild(el); el.scrollIntoView({block:'start'});
+}
+
+/* open on a real answer so the surface isn't cold — but don't steal the scroll */
+ask('zone_trend');
+booting=false;
+</script>
+</body>
+</html>

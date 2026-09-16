@@ -1,0 +1,38 @@
+{
+  "id": "002-low-confidence-hedges",
+  "prompt_name": "ask-narration.v1",
+  "description": "Two sessions is not a trend. At `low` confidence the prompt requires a clearly hedged read, and the failure mode is the model speaking plainly anyway because the numbers look tidy. Guards the confidence ladder end of the prompt.",
+  "vars": {
+    "question": "Is my LT pace improving?",
+    "factLines": "LT pace · last 2 sessions: 7:05/mi (−4s)\nLT pace · first 2 sessions: 7:09/mi\nCoverage: 4 sessions over 120 days (low confidence) — no HR on 3 of 4 sessions",
+    "confidence": "low"
+  },
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": [
+      "text",
+      "caveat"
+    ],
+    "must_not": [
+      "overstate_confidence"
+    ],
+    "required_patterns": [
+      "(?i)\\b(loose|early|thin|hard to say|not much to go on|only|too few|tentative|suggests?|looks like|might|could)\\b"
+    ],
+    "forbidden_patterns": [
+      "!",
+      "(?m)^\\s*[-*•]\\s",
+      "(?m)^#{1,6}\\s",
+      "\\*\\*",
+      "(?i)\\bas an AI\\b",
+      "(?i)\\b(clearly|definitely|certainly|no doubt|proves|confirms)\\b",
+      "(?i)\\bacute[- ]to[- ]chronic\\b",
+      "(?i)\\bis calculated\\b",
+      "(?i)\\bthis (metric|ratio|number) (means|measures|represents)\\b",
+      "(?i)\\bdivided by\\b"
+    ]
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-flash"
+}

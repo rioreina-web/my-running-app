@@ -12,77 +12,22 @@ import SwiftUI
 
 // MARK: - Route Map Card
 
+/// Thin card wrapper around the shared `RouteMapView`. The section eyebrow
+/// ("ROUTE") is supplied by the callsite, so this only adds the card chrome —
+/// the map itself (real tiles, pace coloring, markers, tap-to-expand) lives
+/// in `RouteMapView` and is identical to the interval-receipt map.
 struct RouteMapCard: View {
     let route: [CLLocation]
 
-    var region: MKCoordinateRegion {
-        guard !route.isEmpty else {
-            return MKCoordinateRegion()
-        }
-        let lats = route.map(\.coordinate.latitude)
-        let lngs = route.map(\.coordinate.longitude)
-        let minLat = lats.min() ?? 0
-        let maxLat = lats.max() ?? 0
-        let minLng = lngs.min() ?? 0
-        let maxLng = lngs.max() ?? 0
-        let center = CLLocationCoordinate2D(
-            latitude: (minLat + maxLat) / 2,
-            longitude: (minLng + maxLng) / 2
-        )
-        let span = MKCoordinateSpan(
-            latitudeDelta: (maxLat - minLat) * 1.4 + 0.002,
-            longitudeDelta: (maxLng - minLng) * 1.4 + 0.002
-        )
-        return MKCoordinateRegion(center: center, span: span)
-    }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "map.fill")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Color.drip.coral)
-                Text("ROUTE")
-                    .font(.dripCaption(11))
-                    .foregroundStyle(Color.drip.textSecondary)
-                    .tracking(1.2)
-            }
-
-            Map(initialPosition: .region(region)) {
-                MapPolyline(coordinates: route.map(\.coordinate))
-                    .stroke(Color.drip.coral, lineWidth: 3)
-
-                // Start marker
-                if let start = route.first?.coordinate {
-                    Annotation("Start", coordinate: start) {
-                        Circle()
-                            .fill(Color.green)
-                            .frame(width: 12, height: 12)
-                            .overlay(Circle().stroke(.white, lineWidth: 2))
-                    }
-                }
-
-                // End marker
-                if let end = route.last?.coordinate {
-                    Annotation("Finish", coordinate: end) {
-                        Circle()
-                            .fill(Color.drip.coral)
-                            .frame(width: 12, height: 12)
-                            .overlay(Circle().stroke(.white, lineWidth: 2))
-                    }
-                }
-            }
-            .mapStyle(.standard(elevation: .realistic))
-            .frame(height: 240)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-        }
-        .padding(20)
-        .background(Color.drip.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.drip.divider, lineWidth: 1)
-        )
+        RouteMapView(route: route, showMileMarkers: true, height: 240)
+            .padding(20)
+            .background(Color.drip.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color.drip.divider, lineWidth: 1)
+            )
     }
 }
 

@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Post Run Drip — Trends, simplified</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,200..900;1,200..900&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF; --paper-deep:#E8E4DF;
+  --rule:#E8E4E0; --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-light:#E8764A; --coral-deep:#B84420; --coral-wash:rgba(212,89,42,.12);
+  --bar:#CFC9C2; --bar-soft:#DFDAD4;
+  --m-positive:#4A9E6B; --m-tired:#C4873A; --m-struggling:#C45A3A;
+  --fd:"Crimson Pro",Georgia,serif; --fb:"PT Serif",Georgia,serif;
+  --fm:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#DCD6CE;font-family:var(--fb);color:var(--ink);
+  -webkit-font-smoothing:antialiased;padding:40px 20px 80px;display:flex;
+  flex-direction:column;align-items:center;gap:28px}
+
+/* ---------- device frame ---------- */
+.frame{width:390px;background:var(--paper);border-radius:38px;overflow:hidden;
+  box-shadow:0 24px 60px rgba(0,0,0,.20),0 2px 6px rgba(0,0,0,.08)}
+.statusbar{display:flex;justify-content:space-between;align-items:center;
+  padding:14px 26px 6px;font-family:var(--fm);font-size:13px;font-weight:600;color:var(--ink)}
+.statusbar .right{display:flex;gap:6px;align-items:center;font-size:11px;color:var(--ink-2)}
+.batt{background:#34C759;color:#fff;border-radius:4px;padding:1px 5px;font-size:10px;font-weight:700}
+
+.screen{padding:0 24px 0}
+.eyebrow{font-family:var(--fm);font-size:11px;font-weight:500;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-2)}
+.eyebrow.coral{color:var(--coral)}
+.display{font-family:var(--fd);font-weight:700;letter-spacing:-.015em;line-height:1.03;color:var(--ink)}
+
+/* ---------- plate ---------- */
+.plate{padding:10px 0 20px}
+.plate .toprow{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.lab{font-family:var(--fm);font-size:11px;letter-spacing:.06em;color:var(--ink-2);
+  border:1px solid var(--rule);background:var(--card);border-radius:999px;padding:5px 12px}
+.plate h1{font-family:var(--fd);font-weight:700;font-size:38px;line-height:1.02;letter-spacing:-.02em}
+.plate .sub{font-family:var(--fb);font-size:15px;line-height:1.5;color:var(--ink-2);margin-top:10px}
+.plate .sub b{color:var(--ink);font-weight:700}
+
+/* block rail */
+.rail{margin-top:18px}
+.railbar{display:flex;gap:3px;height:6px}
+.railbar i{flex:1;background:var(--bar-soft);border-radius:2px}
+.railbar i.done{background:var(--ink-3)}
+.railbar i.now{background:var(--coral)}
+.raillabels{display:flex;justify-content:space-between;margin-top:7px;
+  font-family:var(--fm);font-size:10px;letter-spacing:.08em;color:var(--ink-3);text-transform:uppercase}
+
+/* ---------- rules & sections ---------- */
+.hr{display:flex;align-items:center;gap:8px;margin:6px 0}
+.hr::before,.hr::after{content:"";flex:1;height:1px;background:var(--rule)}
+.hr span{width:3px;height:3px;border-radius:99px;background:var(--rule)}
+
+section{padding:24px 0}
+.shead{display:flex;align-items:baseline;gap:10px;margin-bottom:6px}
+.snum{font-family:var(--fm);font-size:11px;font-weight:600;color:var(--coral);letter-spacing:.08em}
+.shead h2{font-family:var(--fd);font-weight:700;font-size:21px;letter-spacing:-.01em}
+.verdict{font-family:var(--fb);font-size:15.5px;line-height:1.5;color:var(--ink);margin:8px 0 16px}
+.verdict b{font-weight:700}
+.verdict em{font-style:italic;color:var(--ink-2)}
+
+.chartwrap{background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:14px 12px 10px}
+svg{display:block;width:100%;height:auto}
+
+.footstats{display:flex;gap:0;margin-top:12px;border-top:1px solid var(--rule);padding-top:10px}
+.footstats div{flex:1;font-family:var(--fm);font-size:10px;letter-spacing:.08em;color:var(--ink-3);text-transform:uppercase}
+.footstats div b{display:block;font-size:15px;letter-spacing:0;color:var(--ink);font-weight:600;margin-top:3px;text-transform:none}
+.footstats div.on b{color:var(--coral)}
+
+.chip{display:inline-flex;align-items:center;gap:7px;font-family:var(--fm);font-size:10px;
+  letter-spacing:.10em;text-transform:uppercase;background:var(--coral-wash);color:var(--coral-deep);
+  border-radius:999px;padding:5px 11px;font-weight:600;margin-top:14px}
+.chip small{color:var(--ink-2);letter-spacing:.04em;font-weight:500}
+
+/* moments */
+.moment{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;
+  padding:14px 0;border-bottom:1px solid var(--rule)}
+.moment:last-child{border-bottom:0}
+.moment .l .k{font-family:var(--fm);font-size:10px;letter-spacing:.10em;color:var(--ink-3);text-transform:uppercase}
+.moment .l .t{font-family:var(--fd);font-weight:700;font-size:17px;margin-top:4px}
+.moment .l .w{font-family:var(--fb);font-size:12.5px;color:var(--ink-2);margin-top:3px;font-style:italic}
+.moment .r{font-family:var(--fm);font-size:10px;letter-spacing:.08em;color:var(--ink-3);
+  text-transform:uppercase;white-space:nowrap;padding-top:2px}
+
+/* one thing */
+.onething{background:var(--card);border:1px solid var(--rule);border-left:2px solid var(--coral);
+  border-radius:0 12px 12px 0;padding:18px 18px}
+.onething p{font-family:var(--fb);font-size:15px;line-height:1.55;margin-top:8px}
+.onething .tag{font-family:var(--fm);font-size:10px;letter-spacing:.12em;color:var(--coral);text-transform:uppercase}
+.more{width:100%;margin-top:16px;background:none;border:1px solid var(--rule);border-radius:10px;
+  padding:13px;font-family:var(--fd);font-weight:600;font-size:14.5px;color:var(--ink-2);
+  background:var(--card);cursor:pointer}
+
+/* tab bar */
+.tabbar{display:flex;border-top:1px solid var(--rule);background:var(--paper-elevated);
+  padding:12px 0 22px;margin-top:16px}
+.tabbar div{flex:1;text-align:center;font-family:var(--fm);font-size:11px;letter-spacing:.10em;
+  color:var(--ink-3);text-transform:uppercase}
+.tabbar div .dot{width:6px;height:6px;border-radius:99px;background:var(--bar);margin:0 auto 7px}
+.tabbar div.on{color:var(--ink);font-weight:600}
+.tabbar div.on .dot{background:var(--coral)}
+
+/* ---------- notes panel ---------- */
+.notes{width:720px;max-width:100%;background:var(--paper);border-radius:16px;padding:34px 38px;
+  box-shadow:0 8px 30px rgba(0,0,0,.10)}
+.notes h3{font-family:var(--fd);font-size:26px;font-weight:700;margin:0 0 4px}
+.notes h4{font-family:var(--fd);font-size:16px;font-weight:700;margin:22px 0 5px}
+.notes p{font-family:var(--fb);font-size:14.5px;line-height:1.6;color:var(--ink);margin:6px 0}
+.notes p.m{color:var(--ink-2)}
+.notes ul{margin:6px 0 0 18px}
+.notes li{font-family:var(--fb);font-size:14.5px;line-height:1.6;margin:5px 0}
+.notes li b{font-weight:700}
+.notes .prov{font-family:var(--fm);font-size:11px;color:var(--ink-3);line-height:1.7;
+  border-top:1px solid var(--rule);margin-top:24px;padding-top:14px;letter-spacing:.02em}
+</style>
+</head>
+<body>
+
+<div class="frame">
+  <div class="statusbar">
+    <span>2:53</span>
+    <span class="right">▮▮▮ &nbsp;WiFi&nbsp; <span class="batt">91</span></span>
+  </div>
+
+  <div class="screen">
+
+    <!-- ============ PLATE ============ -->
+    <div class="plate">
+      <div class="toprow">
+        <span class="eyebrow coral">Trends · Marathon block</span>
+        <span class="lab">lab ›</span>
+      </div>
+      <h1>Week 12<br>of sixteen.</h1>
+      <p class="sub"><b>721 miles</b> behind you. <b>21 key sessions.</b><br>Four weeks until the line.</p>
+      <div class="rail">
+        <div class="railbar" id="rail"></div>
+        <div class="raillabels"><span>Base</span><span>Build</span><span>Peak</span><span>Taper</span></div>
+      </div>
+    </div>
+
+    <div class="hr"><span></span></div>
+
+    <!-- ============ 01 LOAD ============ -->
+    <section>
+      <div class="shead"><span class="snum">01</span><h2>The shape of it</h2></div>
+      <p class="verdict">Three weeks up, one down — twice over. Then <b>75 miles two weeks ago</b>, the biggest week you've run. You're easing off it now.</p>
+
+      <div class="chartwrap"><svg id="c-load" viewBox="0 0 342 168"></svg></div>
+
+      <div class="footstats">
+        <div class="on">This week<b>50 → 59</b></div>
+        <div>4-wk avg<b>64</b></div>
+        <div>Peak<b>75</b></div>
+      </div>
+      <span class="chip">Balanced <small>acute : chronic 0.92</small></span>
+    </section>
+
+    <div class="hr"><span></span></div>
+
+    <!-- ============ 02 THRESHOLD ============ -->
+    <section>
+      <div class="shead"><span class="snum">02</span><h2>What's actually changed</h2></div>
+      <p class="verdict"><b>33 minutes at threshold last week, at 5:16/mi.</b> In late May you held 5:27 for twelve. More time, faster pace — that's fitness, not a good day.</p>
+
+      <div class="chartwrap"><svg id="c-thresh" viewBox="0 0 342 196"></svg></div>
+
+      <div class="footstats">
+        <div>Minutes in band<b>+71%</b></div>
+        <div>Band pace<b>−11 s/mi</b></div>
+        <div>vs. first 3 wks<b>May 25–Jun 8</b></div>
+      </div>
+    </section>
+
+    <div class="hr"><span></span></div>
+
+    <!-- ============ 03 MIX ============ -->
+    <section>
+      <div class="shead"><span class="snum">03</span><h2>Where the miles go</h2></div>
+      <p class="verdict"><b>A third of your miles sit between 5:51 and 7:04</b> — faster than easy, slower than marathon pace. <em>That's the grey zone.</em></p>
+
+      <div class="chartwrap"><svg id="c-mix" viewBox="0 0 342 96"></svg></div>
+    </section>
+
+    <div class="hr"><span></span></div>
+
+    <!-- ============ 04 MOMENTS ============ -->
+    <section>
+      <div class="shead"><span class="snum">04</span><h2>Best of the block</h2></div>
+
+      <div class="moment">
+        <div class="l">
+          <div class="k">Biggest week</div>
+          <div class="t">75 miles</div>
+          <div class="w">Seven runs, no day off, and you still ran Sunday easy.</div>
+        </div><div class="r">Jul 27</div>
+      </div>
+      <div class="moment">
+        <div class="l">
+          <div class="k">Longest run</div>
+          <div class="t">17.8 mi · 2:00</div>
+          <div class="w">Two hours on the feet. Faded 19s/mi in the last third.</div>
+        </div><div class="r">Jul 31</div>
+      </div>
+      <div class="moment">
+        <div class="l">
+          <div class="k">Best split</div>
+          <div class="t">20K steady · −27 s/mi</div>
+          <div class="w">Second half faster than the first. Nothing else came close.</div>
+        </div><div class="r">Jun 24</div>
+      </div>
+    </section>
+
+    <div class="hr"><span></span></div>
+
+    <!-- ============ 05 ONE THING ============ -->
+    <section>
+      <div class="onething">
+        <div class="tag">One thing</div>
+        <p>Pull the grey-zone miles down. <b>216 of your 721 miles</b> landed between easy and marathon pace — too hard to recover from, too slow to build anything. Run those at 7:15 and the threshold work lands harder for free.</p>
+      </div>
+      <button class="more">Everything else ›</button>
+    </section>
+
+  </div>
+
+  <div class="tabbar">
+    <div><div class="dot"></div>Log</div>
+    <div><div class="dot"></div>Train</div>
+    <div class="on"><div class="dot"></div>Trends</div>
+    <div><div class="dot"></div>Ask</div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<div class="notes">
+  <h3>What changed, and why</h3>
+  <p class="m">Trends · simplified · sample data from the May–Aug block</p>
+
+  <h4>The screen answers before it reports</h4>
+  <p>Every section now leads with a sentence in plain English, then shows the chart that proves it. The old screen stated facts — 50, 64, 75, 0.93 — and left you to work out what they meant. Numbers still carry the weight, per the voice rules, but they sit inside a claim.</p>
+
+  <h4>The three stat cards became one chart</h4>
+  <p>This week, 4-week average and peak are all readable off a single 12-week bar chart: current week in coral with the projection dashed above it, the average as a dashed rule, the peak labelled where it happened. You get the three numbers <i>and</i> the shape — the down weeks, the 3:1 rhythm — which the cards could never show. The numbers repeat once underneath as a quiet footer row.</p>
+
+  <h4>ACWR is a word now, with the number as a footnote</h4>
+  <p>"Balanced · 0.93" instead of a bare ratio on a grey track. The state is what a runner acts on; the ratio is evidence.</p>
+
+  <h4>The pace histogram became a stacked bar</h4>
+  <p>Twenty-three pace bins is a shape you have to study. One 342px bar split easy / steady / quality, with your zone boundaries labelled underneath, is a shape you read in a second — and it surfaces the actual finding, which is that a third of the block sits in the grey zone.</p>
+
+  <h4>Two new sections earn the open</h4>
+  <p><b>02 · What's actually changed</b> is the fitness proof — threshold minutes rising while band pace falls. That's the section that makes the tab worth opening on a Tuesday. <b>04 · Best of the block</b> is the reward: three things you did that were hard, written the way you'd tell a training partner about them.</p>
+
+  <h4>One shared 12-week axis</h4>
+  <p>Sections 01 and 02 use the identical x-axis, so scrolling reads as the same twelve weeks through a second lens. Key-session ticks sit under the load bars, which is the only place load and quality currently touch.</p>
+
+  <h4>Six tabs became four</h4>
+  <p>Trends, Charts and Sheet were three flavours of the same thing. Folding Charts and Sheet behind "Everything else ›" at the bottom of Trends gives the tab a job: <i>the block, summarised</i>. Ask takes the freed slot.</p>
+
+  <div class="prov">
+    SAMPLE DATA · Weekly mileage, threshold minutes and band pace are modelled on the May–Aug block in trends-page-v3.html, re-phased onto a 12-week window ending Sat 15 Aug so the summary figures reconcile (721 mi total · 64 mi 4-wk avg · 0.92 ACWR).<br>
+    TOKENS · colors_and_type.css — paper #F5F3F0, ink #1A1815, coral #D4592A, Crimson Pro display / PT Serif body / mono numerals.<br>
+    NOT WIRED · charts are static SVG; "lab ›" and "Everything else ›" are inert.
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   Sample block — 12 weeks ending Sat 15 Aug 2026
+   ============================================================ */
+const MI    = [52,58,63,45,60,66,70,48,68,75,66,50];   // wk 12 partial
+const PROJ  = 59;                                       // wk 12 projected finish
+const KEYS  = [2,2,2,1,2,2,2,1,2,2,2,1];
+const THMIN = [12,18,22,0,20,24,28,0,26,30,33,22];      // min in threshold band
+const THPCE = [327,324,322,null,323,320,320,null,318,320,316,317]; // heat-adj sec/mi
+const AVG4 = 64, PEAK = 75, PEAKI = 9;
+const MONTH = [['Jun',1],['Jul',6],['Aug',10]];
+
+const NS='http://www.w3.org/2000/svg';
+const el=(t,a)=>{const n=document.createElementNS(NS,t);for(const k in a)n.setAttribute(k,a[k]);return n;};
+const txt=(x,y,s,o={})=>{const n=el('text',Object.assign({x,y,
+  'font-family':'ui-monospace,monospace','font-size':9,fill:'#9B9590'},o));n.textContent=s;return n;};
+const mmss=s=>`${Math.floor(s/60)}:${String(Math.round(s%60)).padStart(2,'0')}`;
+
+/* ---- block rail ---- */
+(function(){
+  const r=document.getElementById('rail');
+  for(let i=0;i<16;i++){const b=document.createElement('i');
+    if(i<11)b.className='done'; if(i===11)b.className='now'; r.appendChild(b);}
+})();
+
+/* ============ 01 · LOAD ============ */
+(function(){
+  const s=document.getElementById('c-load');
+  const L=26,R=6,T=16,B=42, W=342, H=168;
+  const pw=W-L-R, ph=H-T-B, max=84;
+  const cw=pw/12, bw=cw-9;
+  const y=v=>T+ph-(v/max)*ph;
+
+  // horizontal gridlines
+  [25,50,75].forEach(v=>{
+    s.appendChild(el('line',{x1:L,x2:W-R,y1:y(v),y2:y(v),stroke:'#EFEBE7','stroke-width':1}));
+    s.appendChild(txt(L-6,y(v)+3,v,{'text-anchor':'end',fill:'#C6C0BA'}));
+  });
+
+  // bars
+  MI.forEach((v,i)=>{
+    const x=L+i*cw+4.5, cur=(i===11);
+    if(cur){
+      // projection ghost
+      s.appendChild(el('rect',{x,y:y(PROJ),width:bw,height:y(v)-y(PROJ),rx:2,
+        fill:'rgba(212,89,42,.14)',stroke:'#D4592A','stroke-width':1,'stroke-dasharray':'2.5 2'}));
+      s.appendChild(el('rect',{x,y:y(v),width:bw,height:T+ph-y(v),rx:2,fill:'#D4592A'}));
+    }else{
+      s.appendChild(el('rect',{x,y:y(v),width:bw,height:T+ph-y(v),rx:2,fill:'#CFC9C2'}));
+    }
+    // key-session ticks
+    for(let k=0;k<KEYS[i];k++){
+      s.appendChild(el('circle',{cx:x+bw/2+(k-(KEYS[i]-1)/2)*5.5,cy:T+ph+9,r:1.8,
+        fill:cur?'#D4592A':'#9B9590'}));
+    }
+  });
+
+  // 4-week average rule
+  s.appendChild(el('line',{x1:L,x2:W-R,y1:y(AVG4),y2:y(AVG4),stroke:'#6B6560',
+    'stroke-width':1,'stroke-dasharray':'4 3'}));
+  s.appendChild(el('rect',{x:L+1,y:y(AVG4)-11,width:66,height:11,rx:2,fill:'#FFFFFF'}));
+  s.appendChild(txt(L+4,y(AVG4)-3,'4-WK AVG 64',{fill:'#6B6560',
+    'letter-spacing':'.06em','font-size':8.5}));
+
+  // peak marker
+  const px=L+PEAKI*cw+4.5+bw/2;
+  s.appendChild(txt(px,y(PEAK)-6,'PEAK 75',{'text-anchor':'middle',fill:'#1A1815',
+    'font-size':8.5,'letter-spacing':'.08em','font-weight':600}));
+
+  // month axis
+  MONTH.forEach(([m,i])=>s.appendChild(txt(L+i*cw+4.5,T+ph+26,m.toUpperCase(),
+    {fill:'#9B9590','font-size':8.5,'letter-spacing':'.10em'})));
+  // legend
+  s.appendChild(el('circle',{cx:L+2,cy:H-6,r:1.8,fill:'#9B9590'}));
+  s.appendChild(txt(L+9,H-3,'KEY SESSION',{fill:'#C6C0BA','font-size':8,'letter-spacing':'.08em'}));
+  s.appendChild(txt(W-R,H-3,'MILES / WEEK',{'text-anchor':'end',fill:'#C6C0BA','font-size':8,'letter-spacing':'.08em'}));
+})();
+
+/* ============ 02 · THRESHOLD — two lanes, one axis ============ */
+(function(){
+  const s=document.getElementById('c-thresh');
+  const L=34,R=8,W=342,H=190;
+  const pw=W-L-R, cw=pw/12, bw=cw-9;
+
+  /* lane A · band pace (top) */
+  const aT=16, aH=52, pLo=313, pHi=330;
+  const yp=v=>aT+((v-pLo)/(pHi-pLo))*aH;
+  s.appendChild(el('line',{x1:L,x2:W-R,y1:aT-4,y2:aT-4,stroke:'#EFEBE7','stroke-width':1}));
+  s.appendChild(el('line',{x1:L,x2:W-R,y1:aT+aH+4,y2:aT+aH+4,stroke:'#EFEBE7','stroke-width':1}));
+  s.appendChild(txt(L-7,aT+3,'FAST',{'text-anchor':'end',fill:'#C6C0BA','font-size':7.5,'letter-spacing':'.08em'}));
+  s.appendChild(txt(L-7,aT+aH+6,'SLOW',{'text-anchor':'end',fill:'#C6C0BA','font-size':7.5,'letter-spacing':'.08em'}));
+
+  let d='',prev=false;
+  THPCE.forEach((v,i)=>{
+    if(v==null){prev=false;return;}
+    const x=L+i*cw+4.5+bw/2;
+    d+=(prev?'L':'M')+x+' '+yp(v)+' '; prev=true;
+  });
+  s.appendChild(el('path',{d,fill:'none',stroke:'#D4592A','stroke-width':1.6,
+    'stroke-linejoin':'round','stroke-linecap':'round'}));
+  THPCE.forEach((v,i)=>{
+    if(v==null)return;
+    const x=L+i*cw+4.5+bw/2;
+    s.appendChild(el('circle',{cx:x,cy:yp(v),r:2.6,fill:'#FFFFFF',stroke:'#D4592A','stroke-width':1.6}));
+  });
+  s.appendChild(txt(L+4.5+bw/2+7,yp(327)+12,'5:27',{fill:'#D4592A','font-size':9,'font-weight':600}));
+  s.appendChild(txt(L+10*cw+4.5+bw/2,yp(316)-7,'5:16',{fill:'#D4592A','font-size':9,'font-weight':600,'text-anchor':'middle'}));
+  s.appendChild(txt(L,aT-9,'BAND PACE, HEAT-ADJUSTED',{fill:'#9B9590','font-size':7.5,'letter-spacing':'.10em'}));
+
+  /* lane B · minutes in band (bottom) */
+  const bT=aT+aH+27, bH=62, max=40;
+  const y=v=>bT+bH-(v/max)*bH;
+  [20,40].forEach(v=>{
+    s.appendChild(el('line',{x1:L,x2:W-R,y1:y(v),y2:y(v),stroke:'#EFEBE7','stroke-width':1}));
+    s.appendChild(txt(L-7,y(v)+3,v,{'text-anchor':'end',fill:'#C6C0BA','font-size':8}));
+  });
+  THMIN.forEach((v,i)=>{
+    if(!v)return;
+    const x=L+i*cw+4.5;
+    s.appendChild(el('rect',{x,y:y(v),width:bw,height:bT+bH-y(v),rx:2,
+      fill:i===11?'#E5DED7':'#CFC9C2'}));
+  });
+  s.appendChild(txt(L,bT-6,'MINUTES IN BAND',{fill:'#9B9590','font-size':7.5,'letter-spacing':'.10em'}));
+  s.appendChild(txt(W-R,bT-6,'· NO SESSION IN DOWN WEEKS',{'text-anchor':'end',fill:'#C6C0BA','font-size':7.5,'letter-spacing':'.06em'}));
+
+  MONTH.forEach(([m,i])=>s.appendChild(txt(L+i*cw+4.5,bT+bH+16,m.toUpperCase(),
+    {fill:'#9B9590','font-size':8.5,'letter-spacing':'.10em'})));
+})();
+
+/* ============ 03 · MIX ============ */
+(function(){
+  const s=document.getElementById('c-mix');
+  const W=342,L=0,R=0,BW=W, y0=14, h=30;
+  const segs=[
+    {n:'EASY',   pct:61.8, mi:399, fill:'#CFC9C2'},
+    {n:'STEADY', pct:33.5, mi:216, fill:'#B0A89F'},
+    {n:'QUALITY',pct:4.7,  mi:30,  fill:'#D4592A'}
+  ];
+  let x=0;
+  segs.forEach((g,i)=>{
+    const w=BW*g.pct/100;
+    s.appendChild(el('rect',{x,y:y0,width:w-(i<2?2:0),height:h,rx:2,fill:g.fill}));
+    if(w>52){
+      s.appendChild(txt(x+9,y0+14,g.n,{fill:i===0?'#6B6560':'#FFFFFF','font-size':9,
+        'letter-spacing':'.10em','font-weight':600}));
+      s.appendChild(txt(x+9,y0+25,Math.round(g.pct)+'%',{fill:i===0?'#9B9590':'rgba(255,255,255,.80)',
+        'font-size':11,'font-weight':600}));
+    }
+    x+=w;
+  });
+  // quality label outside
+  s.appendChild(txt(W,y0-4,'QUALITY 5%',{'text-anchor':'end',fill:'#D4592A','font-size':8.5,
+    'letter-spacing':'.08em','font-weight':600}));
+
+  // zone boundary ticks below
+  const bounds=[{p:0,l:'slower'},{p:61.8,l:'7:04'},{p:95.3,l:'5:51'},{p:100,l:'faster'}];
+  bounds.forEach((b,i)=>{
+    const bx=Math.min(BW-1,BW*b.p/100);
+    if(i>0&&i<3){
+      s.appendChild(el('line',{x1:bx,x2:bx,y1:y0+h,y2:y0+h+7,stroke:'#9B9590','stroke-width':1}));
+      s.appendChild(txt(bx,y0+h+18,b.l+'/mi',{'text-anchor':i===1?'middle':'end',
+        fill:'#6B6560','font-size':9}));
+    }
+  });
+  s.appendChild(txt(0,y0+h+36,'646 paced miles · 12 weeks',{fill:'#9B9590','font-size':8.5,'letter-spacing':'.06em'}));
+})();
+</script>
+</body>
+</html>

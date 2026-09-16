@@ -299,6 +299,15 @@ struct ScheduledWorkout: Identifiable, Codable {
     /// taps the time pill on the workout detail and picks something
     /// custom.
     var scheduledHour: Int?
+    /// Plan intent: was this session scheduled AS a key session?
+    ///
+    /// THREE STATES. nil = nothing said, fall through to the derived rule.
+    /// true = key. false = deliberately not key. Set when the session is
+    /// scheduled, which is what makes a key session knowable BEFORE you run it.
+    ///
+    /// Intent only — no pipeline writes it. Requires migration
+    /// 20260810190200; decodes to nil against an older schema.
+    var isKeySession: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -321,6 +330,7 @@ struct ScheduledWorkout: Identifiable, Codable {
         case poolTemplateId = "pool_template_id"
         case weatherForecast = "weather_forecast"
         case scheduledHour = "scheduled_hour"
+        case isKeySession = "is_key_session"
     }
 
     init(
@@ -526,17 +536,21 @@ enum ScheduledWorkoutType: String, Codable, CaseIterable {
         }
     }
 
+    // Running workout types ride the universal pace depth ramp (source of
+    // truth: PaceSpectrum) — deepening with intensity, never the mood greens
+    // (green = mood, coral = alert only). Non-running types keep their own
+    // categorical hues; rest/recovery sit below Easy → neutral gray.
     var color: Color {
         switch self {
         case .rest: return Color.drip.textTertiary
-        case .easy: return Color.drip.positive
-        case .tempo: return Color.drip.coralLight
-        case .intervals: return Color.drip.coral
-        case .longRun: return Color.drip.energized
-        case .recovery: return Color.drip.positive
-        case .race: return Color.drip.coral
-        case .progression: return Color.drip.coralLight
-        case .strides: return Color.drip.energized
+        case .recovery: return Color.drip.textTertiary
+        case .easy: return PaceSpectrum.easy
+        case .longRun: return PaceSpectrum.steady
+        case .progression: return PaceSpectrum.mp
+        case .tempo: return PaceSpectrum.lt
+        case .intervals: return PaceSpectrum.fiveK
+        case .strides: return PaceSpectrum.threeK
+        case .race: return PaceSpectrum.mile
         case .strength: return .purple
         case .crossTraining: return .cyan
         }

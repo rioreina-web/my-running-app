@@ -160,9 +160,11 @@ struct InjuryDetailSheet: View {
                             .padding(.horizontal, 20)
                         }
 
-                        // AI Analysis section
-                        InjuryAnalysisSection(injury: currentInjury, injuryService: injuryService)
-                            .padding(.horizontal, 20)
+                        // AI injury analysis removed — it produced diagnoses,
+                        // severity/risk, recovery timelines, and treatment
+                        // recommendations, which violate the niggles rule
+                        // (surface, never diagnose) and hard rule #2. Niggles
+                        // surface the athlete's own words only.
 
                         // Timeline
                         VStack(alignment: .leading, spacing: 8) {

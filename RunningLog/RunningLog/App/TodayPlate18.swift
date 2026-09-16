@@ -397,6 +397,9 @@ func formatDeltaSeconds(_ seconds: Int) -> String {
 struct TodayJournalEntry: View {
     let log: TodayLastLog
 
+    @AppStorage("distanceUnit") private var distanceUnitRaw = DistanceUnit.miles.rawValue
+    private var unit: DistanceUnit { DistanceUnit(rawValue: distanceUnitRaw) ?? .miles }
+
     private var moodColor: Color {
         let m = (log.mood ?? "").lowercased()
         switch m {
@@ -471,14 +474,14 @@ struct TodayJournalEntry: View {
     private var headlineLine: String {
         let typeName = CoachIntent.displayName(for: log.typeKey)
         if let m = log.distanceMiles, m > 0 {
-            return "\(typeName), \(formatMiles(m)) mi."
+            return "\(typeName), \(DistanceFormat.string(miles: m, unit: unit))."
         }
         return "\(typeName)."
     }
 
     private var metaLine: String? {
         var parts: [String] = []
-        if let p = log.pacePerMile { parts.append("\(p) / mi") }
+        if let p = log.pacePerMile { parts.append("\(DistanceFormat.convertPaceString(p, to: unit)) / \(unit.short)") }
         if let dur = log.durationMinutes, dur > 0 {
             parts.append("\(Int(dur.rounded())) min")
         }
@@ -486,11 +489,6 @@ struct TodayJournalEntry: View {
             parts.append(mood.uppercased())
         }
         return parts.isEmpty ? nil : parts.joined(separator: "   ·   ")
-    }
-
-    private func formatMiles(_ m: Double) -> String {
-        if m == m.rounded() { return String(format: "%.0f", m) }
-        return String(format: "%.1f", m)
     }
 }
 
@@ -553,9 +551,23 @@ struct TodayTomorrowSection: View {
 /// tracked uppercase label with a dot in the mood color, sitting in a
 /// 12% wash capsule. Selected pill fills solid in the mood color with
 /// white text. Per the spec's "tracked uppercase pills + dot color,
-/// not faces" rule. v1 stores in @AppStorage keyed by today's date.
+/// not faces" rule.
+///
+/// **Writes through (2026-08-06).** It used to store the tap in @AppStorage
+/// only — the recovery ledger's lead factor could then see a mood only on
+/// days with a voice-logged run, so coverage collapsed to near zero off the
+/// run (backtest, 2026-08-05). It now upserts one row per local date into
+/// `daily_checkins` (the same table and pattern as `SleepCheckInPrompt`),
+/// which `trends-timeline` merges onto the day when no run carried a mood,
+/// and the ledger reads. The @AppStorage key stays as a render-fast,
+/// offline-tolerant echo; a failed write rolls it back. The word is the
+/// input — the closed vocabulary is stored lowercase to match
+/// `training_logs.mood`; points are derived downstream, never stored.
 struct TodayMoodPrompt: View {
+    /// Render-fast echo of today's tap, "YYYY-MM-DD:LABEL". The
+    /// `daily_checkins` row is the source of truth.
     @AppStorage("todayMoodCheckIn") private var todayMoodKey: String = ""
+    @State private var saving = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -599,6 +611,7 @@ struct TodayMoodPrompt: View {
                             .clipShape(Capsule())
                         }
                         .buttonStyle(.plain)
+                        .disabled(saving)
                     }
                 }
             }
@@ -631,14 +644,43 @@ struct TodayMoodPrompt: View {
     }
 
     private func select(_ mood: String) {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        todayMoodKey = "\(f.string(from: Date())):\(mood)"
-        // V2: also write to a `daily_check_ins` table via Supabase. The
-        // current persistence is local-only — the DCO and downstream
-        // analyses still read mood from `training_logs.mood`, which only
-        // attaches to logged runs. Closing that gap requires the new
-        // table per design/PLATE_18_DATA.md §2.
+        let date = todayDateKey
+        let previous = todayMoodKey
+        todayMoodKey = "\(date):\(mood)"   // optimistic; it's one tap
+        saving = true
+
+        Task {
+            defer { saving = false }
+            guard let userId = AuthManager.shared.currentUserId else {
+                todayMoodKey = previous
+                return
+            }
+            // Stored lowercase to match `training_logs.mood` and the ledger's
+            // `moodPoints` keys. Only `mood` is sent, so a same-day sleep
+            // check-in on the shared `daily_checkins` row is preserved by the
+            // upsert (ON CONFLICT updates only the columns in the payload).
+            struct MoodRow: Encodable {
+                let user_id: String
+                let date: String
+                let mood: String
+                let updated_at: String
+            }
+            let row = MoodRow(
+                user_id: userId,
+                date: String(date),
+                mood: mood.lowercased(),
+                updated_at: ISO8601DateFormatter().string(from: Date())
+            )
+            do {
+                try await supabase
+                    .from("daily_checkins")
+                    .upsert(row, onConflict: "user_id,date")
+                    .execute()
+            } catch {
+                Log.app.error("mood check-in failed: \(error.localizedDescription)")
+                todayMoodKey = previous   // roll back the optimistic tap
+            }
+        }
     }
 }
 
@@ -771,12 +813,16 @@ struct TodayZoneShiftsRow: View {
         }
     }
 
+    /// Zone labels ride the universal pace ramp (PaceSpectrum).
+    /// These are 9 pt text labels, so EASY/MODERATE step down to darker
+    /// stops than their fills would use — the pale ends are illegible
+    /// as small text on card white.
     private func zoneColor(_ label: String) -> Color {
         switch label {
-        case "EASY": return Color.drip.energized
-        case "MODERATE": return Color.drip.textSecondary
-        case "THRESHOLD": return Color.drip.coral
-        case "HARD": return Color.drip.textPrimary
+        case "EASY": return PaceSpectrum.easyText
+        case "MODERATE": return PaceSpectrum.mp
+        case "THRESHOLD": return PaceSpectrum.lt
+        case "HARD": return PaceSpectrum.mile
         default: return Color.drip.textTertiary
         }
     }

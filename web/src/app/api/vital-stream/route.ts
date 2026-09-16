@@ -25,6 +25,27 @@ export async function GET(request: NextRequest) {
   }
   const workoutId = parsed.data.id;
 
+  // Ownership check: the workout ID must map to a training_logs row owned by
+  // the caller. Without this, any authenticated user could pass another
+  // athlete's vital_workout_id and pull their per-second GPS (home address)
+  // + heart rate via the shared server-side Vital key. RLS on training_logs
+  // already scopes this select to the caller; the explicit user_id filter is
+  // defense in depth.
+  const { data: ownedWorkout, error: ownershipError } = await supabase
+    .from("training_logs")
+    .select("id")
+    .eq("vital_workout_id", workoutId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (ownershipError) {
+    return NextResponse.json({ error: "Failed to verify workout" }, { status: 500 });
+  }
+  if (!ownedWorkout) {
+    // 404, not 403 — don't confirm the ID exists for someone else.
+    return NextResponse.json({ error: "Workout not found" }, { status: 404 });
+  }
+
   const data = await fetchVitalStream(workoutId);
   if (!data) {
     return NextResponse.json({ error: "Failed to fetch data" }, { status: 500 });

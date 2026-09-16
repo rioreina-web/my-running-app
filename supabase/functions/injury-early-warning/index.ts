@@ -15,7 +15,7 @@ import { loadPrompt } from "../_shared/prompt-library.ts";
 
 import { corsHeaders } from "../_shared/cors.ts";
 import { requireAuthOrServiceRole } from "../_shared/auth.ts";
-import { enforceFeatureRateLimit } from "../_shared/rateLimit.ts";
+import { enforceFeatureRateLimit, enforceMonthlyCap } from "../_shared/rateLimit.ts";
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
@@ -125,6 +125,7 @@ function splitIntoWeeks(logs: TrainingLog[], weeksBack: number): TrainingLog[][]
 function computeRiskSignals(
   logs: TrainingLog[],
   activeInjuries: Injury[],
+  canonicalAcwr: number | null,
 ): { signals: RiskSignal[]; riskScore: number } {
   const signals: RiskSignal[] = [];
   const weeks = splitIntoWeeks(logs, 4);
@@ -137,19 +138,24 @@ function computeRiskSignals(
   const chronicWeeklyMiles = (weekMiles[0] + weekMiles[1] + weekMiles[2] + weekMiles[3]) / 4;
 
   // ── ACWR ──
-  const acwr = chronicWeeklyMiles > 0 ? currentWeekMiles / chronicWeeklyMiles : 0;
+  // Use the canonical intensity-weighted ratio from athlete_state (builder B) —
+  // the SAME number the app displays — so the injury trigger and the UI never
+  // fire on different values. Raw-miles ratio is only a fallback for when
+  // athlete_state hasn't been built yet. Miles below are descriptive context,
+  // not the ratio's components (the canonical ratio is intensity-weighted).
+  const acwr = canonicalAcwr ?? (chronicWeeklyMiles > 0 ? currentWeekMiles / chronicWeeklyMiles : 0);
   if (acwr > 1.5) {
     signals.push({
       signal: "ACWR",
       level: "red",
-      detail: `Acute:Chronic ratio is ${acwr.toFixed(2)} — well above the 1.5 danger zone. ${currentWeekMiles.toFixed(1)} miles this week vs ${chronicWeeklyMiles.toFixed(1)} avg.`,
+      detail: `Acute:Chronic load ratio is ${acwr.toFixed(2)} — well above the 1.5 danger zone (${currentWeekMiles.toFixed(1)} mi this week vs ${chronicWeeklyMiles.toFixed(1)} avg).`,
       score_contribution: 3,
     });
   } else if (acwr > 1.3) {
     signals.push({
       signal: "ACWR",
       level: "orange",
-      detail: `Acute:Chronic ratio is ${acwr.toFixed(2)} — elevated above 1.3. ${currentWeekMiles.toFixed(1)} miles this week vs ${chronicWeeklyMiles.toFixed(1)} avg.`,
+      detail: `Acute:Chronic load ratio is ${acwr.toFixed(2)} — elevated above 1.3 (${currentWeekMiles.toFixed(1)} mi this week vs ${chronicWeeklyMiles.toFixed(1)} avg).`,
       score_contribution: 1.5,
     });
   }
@@ -330,6 +336,8 @@ Deno.serve(async (req: Request) => {
 
     const rlBlocked = await enforceFeatureRateLimit(user_id, "injury_analysis", corsHeaders, { isServiceRole });
     if (rlBlocked) return rlBlocked;
+    const monthlyCapped = await enforceMonthlyCap(user_id, "injury_analysis", corsHeaders, { isServiceRole });
+    if (monthlyCapped) return monthlyCapped;
 
     console.log(`Injury early warning check for user ${user_id}`);
 
@@ -383,7 +391,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── Compute risk signals ──
-    const { signals, riskScore } = computeRiskSignals(logs, activeInjuries);
+    const { signals, riskScore } = computeRiskSignals(logs, activeInjuries, athleteState?.acwr ?? null);
 
     console.log(`Risk score: ${riskScore}, signals: ${signals.length}`);
 

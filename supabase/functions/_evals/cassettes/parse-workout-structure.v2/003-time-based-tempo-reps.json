@@ -1,0 +1,28 @@
+{
+  "id": "003-time-based-tempo-reps",
+  "prompt_name": "parse-workout-structure.v2",
+  "description": "Time-based reps: '3 x 10' w/ 2' jog'. The reps are prescribed by DURATION, not distance — the parser must use the by-time snap (10') and put a time label in rep_distance_label, not coerce the bouts into a distance like '2.5k'. Bouts show clean by-time ≈ 10' snaps; distance varies with pace and must NOT become the rep unit.",
+  "vars": {
+    "distanceMiles": "6.40",
+    "durationMinutes": "42.0",
+    "moodLabel": "positive",
+    "workoutNotesBlock": "\"3 x 10' tempo w/ 2' jog\"",
+    "voiceTranscriptBlock": "(none)",
+    "workBoutsBlock": "Bout 1: 2.52 km / 1.57 mi in 10:00 @ 3:58/km (6:23/mi) — by distance ≈ ragged, by time ≈ 10'\n  ↳ recovery: 2:00 jog\nBout 2: 2.49 km / 1.55 mi in 10:01 @ 4:01/km (6:28/mi) — by distance ≈ ragged, by time ≈ 10'\n  ↳ recovery: 2:00 jog\nBout 3: 2.55 km / 1.58 mi in 09:59 @ 3:55/km (6:18/mi) — by distance ≈ ragged, by time ≈ 10'",
+    "timelineStr": "0s d=0.0mi pace=6:23 hr=158\n600s d=1.57mi pace=6:23 hr=171\n720s d=1.62mi pace=8:30 hr=150\n1320s d=3.12mi pace=6:28 hr=172"
+  },
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": ["type", "intent_pattern", "blocks", "work", "subjective", "confidence"],
+    "required_patterns": [
+      "10'"
+    ],
+    "forbidden_patterns": [
+      "\"type\":\\s*\"easy\"",
+      "\"type\":\\s*\"long_run\""
+    ]
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-flash"
+}

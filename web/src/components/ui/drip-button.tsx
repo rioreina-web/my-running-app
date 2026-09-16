@@ -15,7 +15,7 @@ export function DripButton({
   className = "",
   ...props
 }: DripButtonProps) {
-  const base = "inline-flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-semibold text-[15px] transition-colors disabled:opacity-50";
+  const base = "inline-flex items-center justify-center gap-2 px-4 py-3 rounded-[10px] font-display font-semibold text-[15px] transition-all duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-coral focus-visible:ring-offset-2 focus-visible:ring-offset-bg-base disabled:opacity-50 disabled:active:scale-100";
 
   const variants = {
     primary: "bg-coral text-white hover:bg-coral-dark",

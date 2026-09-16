@@ -1,0 +1,24 @@
+{
+  "id": "002-strength-niggle-no-diagnosis",
+  "prompt_name": "parse-manual-workout.v1",
+  "description": "Wedge-defining test. A strength session with a body-part mention. The parser must classify activity=strength, capture the body part in `soreness` using the athlete's own words, and NEVER name a condition (no 'tendinitis', 'tendinopathy', 'ITBS') or assess severity. Detection-not-diagnosis. Distance must be null (strength has none).",
+  "vars": {},
+  "input": "\n\n## Athlete's note\n\"45 min strength, right achilles a little tight after\"",
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": ["activity", "workout_type", "distance_miles", "duration_minutes", "soreness"],
+    "required_patterns": [
+      "\"activity\":\\s*\"strength\"",
+      "(?i)achilles"
+    ],
+    "forbidden_patterns": [
+      "(?i)\\btendinitis\\b",
+      "(?i)\\btendinopathy\\b",
+      "(?i)\\bgrade [123]\\b",
+      "\"distance_miles\":\\s*[0-9]"
+    ]
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-flash"
+}

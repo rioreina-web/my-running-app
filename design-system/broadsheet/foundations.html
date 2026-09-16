@@ -1,0 +1,116 @@
+<!doctype html>
+<!-- @dsCard group="Broadsheet" name="Broadsheet · foundations" subtitle="The parallel direction — newsprint, one hot ink, display serif, condensed caps" viewport="760x2790" -->
+<html lang="en"><head><meta charset="utf-8"><title>Broadsheet · foundations</title>
+<link rel="stylesheet" href="broadsheet.css">
+<style>
+html,body{margin:0;padding:0}
+body{background:var(--bs-paper);color:var(--bs-ink);font-family:var(--bs-text);-webkit-font-smoothing:antialiased}
+.sheet{width:760px;box-sizing:border-box;padding:30px 34px 44px}
+a{color:var(--bs-cold)}a:hover{color:var(--bs-hot-text)}
+.sec{margin-top:var(--bs-s6)}
+.sechd{display:flex;align-items:baseline;justify-content:space-between;gap:16px;border-top:3px solid var(--bs-rule-ink);padding-top:7px;margin-bottom:var(--bs-s3)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:var(--bs-s4)}
+.three{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--bs-s3)}
+.sw{display:flex;flex-direction:column;gap:7px}
+.sw i{display:block;height:62px;border:1px solid rgba(0,0,0,.06)}
+.sw b{font-family:var(--bs-label);font-size:10px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:var(--bs-ink)}
+.sw span{font-family:var(--bs-data);font-size:10px;color:var(--bs-ink-2)}
+.role{display:grid;grid-template-columns:118px 1fr;gap:var(--bs-s3);padding:var(--bs-s3) 0;border-bottom:1px solid var(--bs-rule);align-items:baseline}
+.role:last-child{border-bottom:0}
+.role .m{display:flex;flex-direction:column;gap:4px}
+.role .m b{font-family:var(--bs-label);font-size:10px;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--bs-ink)}
+.role .m span{font-family:var(--bs-data);font-size:10px;color:var(--bs-ink-2);line-height:1.4}
+.note{font-family:var(--bs-text);font-style:italic;font-size:13px;line-height:1.5;color:var(--bs-ink-2);margin:var(--bs-s2) 0 0;max-width:56ch}
+.thesis{background:var(--bs-paper-3);padding:var(--bs-s3) var(--bs-s4);margin-top:var(--bs-s3)}
+.den{display:flex;flex-direction:column;gap:6px}
+.den i{display:block;height:9px;background:var(--bs-ink)}
+.den b{font-family:var(--bs-data);font-size:10px;color:var(--bs-ink-2)}
+.vs{display:grid;grid-template-columns:1fr 1fr;gap:var(--bs-s4);margin-top:var(--bs-s3)}
+.vs .c{background:var(--bs-card);padding:var(--bs-s3) var(--bs-s4) var(--bs-s4);border:1px solid var(--bs-rule)}
+.vs .c h4{font-family:var(--bs-label);font-size:10px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--bs-ink-3);margin:0 0 10px}
+.vs .c p{margin:0;font-size:15px;line-height:1.5}
+.vs .c.a p{font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;font-size:14px;color:var(--bs-ink-2)}
+.vs .c.b p{font-family:var(--bs-text)}
+</style></head>
+<body><div class="sheet">
+
+  <div class="bs-folio"><span><strong>Post Run Drip</strong> &mdash; Broadsheet</span><span>Direction II &middot; Aug 2026</span></div>
+  <h1 class="bs-banner" style="margin-top:18px">A running app that reads like a <em>sports weekly.</em></h1>
+  <p class="bs-stand" style="margin-top:14px;max-width:46ch">The first system was a clean product UI. This one is a printed page: newsprint stock, one hot ink, a display serif with real contrast, and the athlete's own words treated as the article rather than a caption.</p>
+  <div class="thesis"><p class="bs-article" style="font-size:15px;line-height:1.55">Scoped as <span style="font-family:var(--bs-data);font-size:13px">--bs-*</span> and <span style="font-family:var(--bs-data);font-size:13px">.bs-*</span> in <span style="font-family:var(--bs-data);font-size:13px">broadsheet/broadsheet.css</span>, so it sits beside the original without touching a single token of it.</p></div>
+
+  <div class="sec">
+    <div class="sechd"><span class="bs-kicker">01 &middot; Paper &amp; ink</span><span class="bs-label">Warm, never white</span></div>
+    <div class="three">
+      <div class="sw"><i style="background:var(--bs-paper)"></i><b>Paper</b><span>#F7F5EF</span></div>
+      <div class="sw"><i style="background:var(--bs-paper-2)"></i><b>Paper 2</b><span>#F1EEE5</span></div>
+      <div class="sw"><i style="background:var(--bs-paper-3)"></i><b>Paper 3</b><span>#E7E3D6</span></div>
+      <div class="sw"><i style="background:var(--bs-ink)"></i><b>Ink</b><span>#14120E</span></div>
+      <div class="sw"><i style="background:var(--bs-ink-2)"></i><b>Ink 2 &middot; 6.4:1</b><span>#5A5548</span></div>
+      <div class="sw"><i style="background:var(--bs-ink-3)"></i><b>Ink 3 &middot; 4.6:1</b><span>#8C8676</span></div>
+      <div class="sw"><i style="background:var(--bs-hot)"></i><b>Hot &middot; fills</b><span>#D8341F</span></div>
+      <div class="sw"><i style="background:var(--bs-hot-text)"></i><b>Hot text &middot; 5.2:1</b><span>#B82612</span></div>
+      <div class="sw"><i style="background:var(--bs-cold)"></i><b>Cold &middot; 9.1:1</b><span>#1B3A6B</span></div>
+    </div>
+    <p class="note">Two inks, as a press would run them: the hot one for the record button, section rules and drop caps; the desk blue for keyed sessions and links. <span style="font-family:var(--bs-data);font-style:normal;font-size:12px">--bs-ink-4</span> is hairlines only, never type.</p>
+  </div>
+
+  <div class="sec">
+    <div class="sechd"><span class="bs-kicker">02 &middot; Type</span><span class="bs-label">Four roles, all free webfonts</span></div>
+    <div class="role"><div class="m"><b>Display</b><span>Instrument Serif</span><span>--bs-display</span></div><div class="bs-head">Eighteen miles, headwind.</div></div>
+    <div class="role"><div class="m"><b>Text</b><span>Newsreader 400 / italic</span><span>--bs-text</span></div><p class="bs-article" style="font-size:16px">The article, the standfirst, every sentence a person actually reads.</p></div>
+    <div class="role"><div class="m"><b>Label</b><span>Archivo Narrow 600</span><span>--bs-label</span></div><div class="bs-label bs-label--ink">Voice log &middot; Linked to &middot; This week</div></div>
+    <div class="role"><div class="m"><b>Data</b><span>IBM Plex Mono 500</span><span>--bs-data</span></div><div class="bs-figure" style="font-size:26px">7.47 <span class="bs-figure__unit">mi</span> &nbsp; 53:51 &nbsp; 7:13 <span class="bs-figure__unit">/mi</span></div></div>
+    <p class="note">Deliberately no overlap with Direction I: a high-contrast serif instead of a grotesk headline, condensed caps instead of Akzidenz, and the numerals in mono rather than Inter.</p>
+  </div>
+
+  <div class="sec">
+    <div class="sechd"><span class="bs-kicker">03 &middot; Density</span><span class="bs-label">Air, where the first system was tight</span></div>
+    <div class="three">
+      <div class="den"><i style="width:6px"></i><b>s1 &middot; 6</b></div>
+      <div class="den"><i style="width:12px"></i><b>s2 &middot; 12</b></div>
+      <div class="den"><i style="width:18px"></i><b>s3 &middot; 18</b></div>
+      <div class="den"><i style="width:26px"></i><b>s4 &middot; 26 &middot; gutter</b></div>
+      <div class="den"><i style="width:38px"></i><b>s5 &middot; 38</b></div>
+      <div class="den"><i style="width:54px"></i><b>s6 &middot; 54 &middot; between articles</b></div>
+    </div>
+    <p class="note">A 26px gutter against the original's 22, and 54px between articles where the first system ran 32. Zero radii anywhere except the record button &mdash; print has no rounded corners.</p>
+  </div>
+
+  <div class="sec">
+    <div class="sechd"><span class="bs-kicker">04 &middot; The article</span><span class="bs-label">A memo, set as copy</span></div>
+    <p class="bs-article bs-article--lead" style="margin-top:14px">I&rsquo;m still feeling a bit sick, but managed an easy run. My left ankle felt a little stiff, but my knee, which had been a concern, felt good today.</p>
+    <p class="bs-byline" style="margin-top:14px">Transcribed &middot; 0:42 &middot; Friday, Aug 21</p>
+    <p class="bs-pull" style="margin-top:22px">&ldquo;Hold splits, don&rsquo;t chase them.&rdquo;</p>
+  </div>
+
+  <div class="sec">
+    <div class="sechd"><span class="bs-kicker">05 &middot; Results column</span><span class="bs-label">Not a card row</span></div>
+    <dl class="bs-results" style="margin:0">
+      <div class="bs-results__row"><dt class="bs-label bs-label--ink">Distance</dt><dd>7.47 mi</dd></div>
+      <div class="bs-results__row"><dt class="bs-label bs-label--ink">Time</dt><dd>53:51</dd></div>
+      <div class="bs-results__row"><dt class="bs-label bs-label--ink">Average pace</dt><dd>7:13 /mi</dd></div>
+      <div class="bs-results__row"><dt class="bs-label bs-label--ink">Heat cost</dt><dd>+16 s</dd></div>
+    </dl>
+  </div>
+
+  <div class="sec">
+    <div class="sechd"><span class="bs-kicker">06 &middot; Voice</span><span class="bs-label">How it talks</span></div>
+    <div class="vs">
+      <div class="c a"><h4>Direction I said</h4><p>Log your run.<br>Tap to record<br>Linked to &middot; Change</p></div>
+      <div class="c b"><h4>Broadsheet says</h4><p>Friday, filed at 8:40.<br>Say your piece.<br>Filed against &middot; Reassign</p></div>
+    </div>
+    <p class="note">Editorial verbs, dated like copy going to press. The app is a desk taking your dispatch, not a form collecting an entry.</p>
+  </div>
+
+  <div class="sec">
+    <div class="sechd"><span class="bs-kicker">07 &middot; Controls</span><span class="bs-label">Square, ruled, one round exception</span></div>
+    <div style="display:flex;align-items:center;gap:var(--bs-s3);flex-wrap:wrap;margin-top:4px">
+      <button class="bs-btn">File it</button>
+      <button class="bs-btn bs-btn--hot">Say your piece</button>
+      <button class="bs-btn bs-btn--quiet">Later</button>
+      <button class="bs-record" aria-label="Record"><span class="bs-record__mark"></span></button>
+    </div>
+  </div>
+
+</div></body></html>

@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pace × volume per workout — PaceSpectrum studies</title>
+<style>
+  :root{
+    --paper:#F5F3F0; --paper-elevated:#FAFAF8; --paper-deep:#E8E4DF;
+    --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+    --coral:#D4592A;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#DDD8D2;font-family:Georgia,'PT Serif',serif;color:var(--ink);
+       display:flex;justify-content:center;padding:32px 12px 56px;}
+  .phone{width:400px;background:var(--paper);border-radius:28px;padding:28px 20px 40px;
+         box-shadow:0 12px 40px rgba(26,24,21,.18);}
+  .eyebrow{font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:10.5px;
+           letter-spacing:1.6px;text-transform:uppercase;color:var(--ink-2);}
+  .eyebrow.coral{color:var(--coral)}
+  h1{font-size:25px;font-weight:700;letter-spacing:-.3px;margin:6px 0 2px;}
+  .narr{font-size:13.5px;line-height:1.5;color:var(--ink-2);margin-top:4px;}
+  .narr b{color:var(--ink)}
+  .cap{font-size:11.5px;line-height:1.5;color:var(--ink-3);font-style:italic;margin-top:6px;}
+  .cap b{color:var(--ink-2);font-weight:700;font-style:normal}
+  .study{margin-top:26px}
+  .edrule{display:flex;align-items:center;gap:10px;margin:26px 0 0;}
+  .edrule:before,.edrule:after{content:"";flex:1;border-top:1px solid var(--paper-deep);}
+  .edrule i{width:3px;height:3px;border-radius:50%;background:var(--ink-3);}
+  svg{display:block;margin-top:10px}
+  svg text{font-family:ui-monospace,Menlo,monospace;}
+  /* PaceSpectrum legend — the ramp from PaceSpectrum.swift, zone-anchored */
+  .ramp{height:8px;border-radius:4px;margin-top:12px;
+        background:linear-gradient(90deg,#57A05C,#8CBB4E,#C8C63F,#EDBB33,#F2952E,#EC6E27,#DE4B22,#C5321E,#A4211A,#7D1414);}
+  .ramp-labels{display:flex;justify-content:space-between;margin-top:5px;
+        font-family:ui-monospace,Menlo,monospace;font-size:9px;letter-spacing:1px;color:var(--ink-3);}
+  .rowdemo{background:var(--paper-elevated);border-radius:14px;padding:14px 16px;margin-top:10px;
+           box-shadow:0 1px 3px rgba(26,24,21,.05);}
+  .r-date{font-family:ui-monospace,Menlo,monospace;font-size:10.5px;letter-spacing:1.4px;
+          color:var(--coral);text-transform:uppercase;}
+  .r-mid{display:flex;justify-content:space-between;align-items:baseline;margin-top:3px;}
+  .r-title{font-size:16px}
+  .r-title small{font-size:12.5px;color:var(--ink-3)}
+  .r-pace{font-family:ui-monospace,Menlo,monospace;font-size:14px;}
+</style>
+</head>
+<body>
+<div class="phone">
+
+  <div class="eyebrow coral">Pace × volume · PaceSpectrum edition</div>
+  <h1>Color speaks pace.</h1>
+  <p class="narr">Same two sessions, now on the house ramp from
+     <b>PaceSpectrum.swift</b> — one stop per zone, anchored to the athlete's
+     own pace table so a given pace is the same color on every surface.
+     Width is always distance. Coral never touches data; it stays UI
+     punctuation. With <span class="eyebrow" style="font-size:10px">PACE COLOR</span> off,
+     everything falls back to ink + one coral accent.</p>
+
+  <div class="ramp"></div>
+  <div class="ramp-labels">
+    <span>EASY</span><span>STEADY</span><span>MP</span><span>LT</span><span>5K</span><span>MILE</span>
+  </div>
+
+  <div class="edrule"><i></i></div>
+
+  <!-- ════════════ SESSION 1 — 5K day ════════════ -->
+  <div class="study">
+    <div class="eyebrow coral">Entry one · The sharp day</div>
+    <h1 style="font-size:22px">5K 5×1K · 3×600.</h1>
+    <p class="narr"><b>Tue · Jun 23 — @ 5:07 (5K)</b>. The whole entry prints
+       in reds. The fade across the 1Ks reads as the red cooling toward 10K
+       orange — color and height tell the same story twice.</p>
+  </div>
+
+  <!-- A · skyline -->
+  <div class="study" style="margin-top:18px">
+    <div class="eyebrow">A · Skyline</div>
+    <svg viewBox="0 0 360 108" width="100%">
+      <line x1="16" y1="88" x2="344" y2="88" stroke="#E8E4DF"/>
+      <line x1="16" y1="49" x2="344" y2="49" stroke="#9B9590" stroke-width="1" stroke-dasharray="2 5"/>
+      <text x="344" y="44" font-size="9" fill="#9B9590" text-anchor="end">TARGET 5:07</text>
+      <!-- shelves: width = rep distance, height = pace, color = ramp(pace) -->
+      <rect x="16"  y="41" width="46" height="47" fill="#C5321E"/>
+      <rect x="64"  y="46" width="46" height="42" fill="#CC3A20"/>
+      <rect x="112" y="52" width="46" height="36" fill="#D34121"/>
+      <rect x="160" y="26" width="28" height="62" fill="#A4211A"/>
+      <rect x="190" y="59" width="46" height="29" fill="#DA4822"/>
+      <rect x="238" y="33" width="28" height="55" fill="#B02A1C"/>
+      <rect x="268" y="67" width="46" height="21" fill="#DE4B22"/>
+      <rect x="316" y="39" width="28" height="49" fill="#BC2F1E"/>
+      <text x="174" y="18" font-size="10" fill="#A4211A" text-anchor="middle">4:58</text>
+      <text x="16" y="102" font-size="9" fill="#9B9590" letter-spacing="1.2">0 MI</text>
+      <text x="344" y="102" font-size="9" fill="#9B9590" letter-spacing="1.2" text-anchor="end">4.2 MI OF WORK</text>
+    </svg>
+    <p class="cap">The fastest 600 burns deepest; the last 1K has cooled to
+       10K orange. <b>Fatigue is now a temperature.</b></p>
+  </div>
+
+  <!-- B · ink & air -->
+  <div class="study">
+    <div class="eyebrow">B · Ink &amp; air</div>
+    <svg viewBox="0 0 360 104" width="100%">
+      <line x1="16" y1="84" x2="344" y2="84" stroke="#E8E4DF"/>
+      <rect x="16"  y="37" width="32" height="47" fill="#C5321E"/>
+      <rect x="63"  y="42" width="32" height="42" fill="#CC3A20"/>
+      <rect x="110" y="48" width="32" height="36" fill="#D34121"/>
+      <rect x="157" y="22" width="20" height="62" fill="#A4211A"/>
+      <rect x="192" y="55" width="32" height="29" fill="#DA4822"/>
+      <rect x="239" y="29" width="20" height="55" fill="#B02A1C"/>
+      <rect x="274" y="63" width="32" height="21" fill="#DE4B22"/>
+      <rect x="321" y="35" width="20" height="49" fill="#BC2F1E"/>
+      <text x="16" y="98" font-size="9" fill="#9B9590" letter-spacing="1.2">0:00</text>
+      <text x="344" y="98" font-size="9" fill="#9B9590" letter-spacing="1.2" text-anchor="end">32:05 ELAPSED</text>
+    </svg>
+    <p class="cap">x = elapsed time; paper gaps are the recoveries. Red work,
+       white air — the interval day's true shape.</p>
+  </div>
+
+  <!-- C · the band -->
+  <div class="study">
+    <div class="eyebrow">C · The band</div>
+    <svg viewBox="0 0 360 92" width="100%">
+      <rect x="121" y="18" width="131" height="44" fill="#E8E4DF" rx="3"/>
+      <text x="186" y="76" font-size="9" fill="#9B9590" letter-spacing="1.2" text-anchor="middle">5K BAND · 5:02–5:12</text>
+      <g stroke-width="3">
+        <line x1="226" y1="27" x2="226" y2="53" stroke="#C5321E"/>
+        <line x1="200" y1="27" x2="200" y2="53" stroke="#CC3A20"/>
+        <line x1="173" y1="27" x2="173" y2="53" stroke="#D34121"/>
+        <line x1="305" y1="32" x2="305" y2="48" stroke="#A4211A"/>
+        <line x1="134" y1="27" x2="134" y2="53" stroke="#DA4822"/>
+        <line x1="265" y1="32" x2="265" y2="48" stroke="#B02A1C"/>
+        <line x1="95"  y1="27" x2="95"  y2="53" stroke="#DE4B22"/>
+        <line x1="239" y1="32" x2="239" y2="48" stroke="#BC2F1E"/>
+      </g>
+      <text x="16" y="44" font-size="10" fill="#9B9590">5:20</text>
+      <text x="344" y="44" font-size="10" fill="#9B9590" text-anchor="end">4:55</text>
+    </svg>
+    <p class="cap">Position marks the miss now, not color — the two outliers
+       sit visibly off the band, wearing their own pace. 6 of 8 inside.</p>
+  </div>
+
+  <!-- D · density strip -->
+  <div class="study">
+    <div class="eyebrow">D · Density strip</div>
+    <div class="rowdemo">
+      <div class="r-date">Tue · Jun 23</div>
+      <div class="r-mid">
+        <div class="r-title">5K 5×1K · 3×600 <small>· 6.0 mi</small></div>
+        <div class="r-pace">○ 5:07</div>
+      </div>
+      <svg viewBox="0 0 328 18" width="100%" style="margin-top:8px">
+        <rect x="0"   y="2" width="46" height="14" fill="#C5321E" rx="1"/>
+        <rect x="48"  y="2" width="46" height="14" fill="#CC3A20" rx="1"/>
+        <rect x="96"  y="2" width="46" height="14" fill="#D34121" rx="1"/>
+        <rect x="144" y="2" width="28" height="14" fill="#A4211A" rx="1"/>
+        <rect x="174" y="2" width="46" height="14" fill="#DA4822" rx="1"/>
+        <rect x="222" y="2" width="28" height="14" fill="#B02A1C" rx="1"/>
+        <rect x="252" y="2" width="46" height="14" fill="#DE4B22" rx="1"/>
+        <rect x="300" y="2" width="28" height="14" fill="#BC2F1E" rx="1"/>
+      </svg>
+    </div>
+    <p class="cap">Width = distance, color = ramp. Inside a list row, this
+       entry is unmistakably a red day.</p>
+  </div>
+
+  <div class="edrule"><i></i></div>
+
+  <!-- ════════════ SESSION 2 — MP 4×3:00 ════════════ -->
+  <div class="study">
+    <div class="eyebrow coral">Entry two · The controlled day</div>
+    <h1 style="font-size:22px">MP 4×3:00.</h1>
+    <p class="narr"><b>Thu · Jul 2 — @ 5:45 (MP)</b>, 90s float. An amber
+       entry, level and even — against the red day above, the two workouts
+       are different colors before they're different shapes.</p>
+  </div>
+
+  <!-- A · skyline -->
+  <div class="study" style="margin-top:18px">
+    <div class="eyebrow">A · Skyline</div>
+    <svg viewBox="0 0 360 108" width="100%">
+      <line x1="16" y1="88" x2="344" y2="88" stroke="#E8E4DF"/>
+      <line x1="16" y1="48" x2="344" y2="48" stroke="#9B9590" stroke-width="1" stroke-dasharray="2 5"/>
+      <text x="344" y="43" font-size="9" fill="#9B9590" text-anchor="end">TARGET 5:45</text>
+      <rect x="16"  y="46" width="80" height="42" fill="#EDBB33"/>
+      <rect x="98"  y="50" width="80" height="38" fill="#E9BE36"/>
+      <rect x="180" y="44" width="80" height="44" fill="#EFB532"/>
+      <rect x="262" y="52" width="80" height="36" fill="#E4C038"/>
+      <g font-size="9" fill="#9B9590" text-anchor="middle">
+        <text x="56"  y="38">5:44</text>
+        <text x="138" y="42">5:46</text>
+        <text x="220" y="36">5:43</text>
+        <text x="302" y="44">5:47</text>
+      </g>
+      <text x="16" y="102" font-size="9" fill="#9B9590" letter-spacing="1.2">0 MI</text>
+      <text x="344" y="102" font-size="9" fill="#9B9590" letter-spacing="1.2" text-anchor="end">2.1 MI OF WORK</text>
+    </svg>
+    <p class="cap">Level shelves, even amber. On the ramp, discipline looks
+       like a single unbroken hue.</p>
+  </div>
+
+  <!-- B · ink & air -->
+  <div class="study">
+    <div class="eyebrow">B · Ink &amp; air</div>
+    <svg viewBox="0 0 360 104" width="100%">
+      <line x1="16" y1="84" x2="344" y2="84" stroke="#E8E4DF"/>
+      <rect x="16"  y="42" width="59" height="42" fill="#EDBB33"/>
+      <rect x="105" y="46" width="59" height="38" fill="#E9BE36"/>
+      <rect x="194" y="40" width="59" height="44" fill="#EFB532"/>
+      <rect x="283" y="48" width="59" height="36" fill="#E4C038"/>
+      <text x="16" y="98" font-size="9" fill="#9B9590" letter-spacing="1.2">0:00</text>
+      <text x="344" y="98" font-size="9" fill="#9B9590" letter-spacing="1.2" text-anchor="end">16:30 ELAPSED</text>
+    </svg>
+    <p class="cap">Long amber, short air — 3:00 on, 0:90 float. The 5K day
+       above is mostly paper; this one is mostly work.</p>
+  </div>
+
+  <!-- C · the band -->
+  <div class="study">
+    <div class="eyebrow">C · The band</div>
+    <svg viewBox="0 0 360 92" width="100%">
+      <rect x="65" y="18" width="197" height="44" fill="#E8E4DF" rx="3"/>
+      <text x="163" y="76" font-size="9" fill="#9B9590" letter-spacing="1.2" text-anchor="middle">MP BAND · 5:40–5:52</text>
+      <g stroke-width="3">
+        <line x1="196" y1="27" x2="196" y2="53" stroke="#EDBB33"/>
+        <line x1="164" y1="27" x2="164" y2="53" stroke="#E9BE36"/>
+        <line x1="213" y1="27" x2="213" y2="53" stroke="#EFB532"/>
+        <line x1="148" y1="27" x2="148" y2="53" stroke="#E4C038"/>
+      </g>
+      <text x="16" y="44" font-size="10" fill="#9B9590">5:55</text>
+      <text x="344" y="44" font-size="10" fill="#9B9590" text-anchor="end">5:35</text>
+    </svg>
+    <p class="cap">4 of 4 inside, clustered mid-band, all wearing MP amber.
+       Zone color agreeing with zone band is the quiet confirmation.</p>
+  </div>
+
+  <!-- D · density strip -->
+  <div class="study">
+    <div class="eyebrow">D · Density strip</div>
+    <div class="rowdemo">
+      <div class="r-date">Thu · Jul 2</div>
+      <div class="r-mid">
+        <div class="r-title">MP 4×3:00 <small>· 4.6 mi</small></div>
+        <div class="r-pace">5:45</div>
+      </div>
+      <svg viewBox="0 0 328 18" width="100%" style="margin-top:8px">
+        <rect x="0"   y="2" width="79" height="14" fill="#EDBB33" rx="1"/>
+        <rect x="81"  y="2" width="79" height="14" fill="#E9BE36" rx="1"/>
+        <rect x="162" y="2" width="79" height="14" fill="#EFB532" rx="1"/>
+        <rect x="243" y="2" width="79" height="14" fill="#E4C038" rx="1"/>
+      </svg>
+    </div>
+    <p class="cap">In a column of receipts, the block scans by color alone:
+       red days, amber days, and the green wash of easy volume between them —
+       <b>the training week becomes a spectrum.</b></p>
+  </div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,361 @@
+<!doctype html>
+<!-- @dsCard group="Screens" name="Workout Detail · Interval" subtitle="Rep-by-rep LT interval session, rebuilt to Post Run Drip color discipline" viewport="430x920" -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Post Run Drip · Workout Detail · Interval Session</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  @font-face {
+    font-family: "Crimson Pro";
+    src: url("fonts/CrimsonPro-Variable.ttf") format("truetype-variations");
+    font-weight: 200 900; font-style: normal; font-display: swap;
+  }
+  @font-face {
+    font-family: "PT Serif";
+    src: url("fonts/PTSerif-Regular.ttf") format("truetype");
+    font-weight: 400; font-style: normal; font-display: swap;
+  }
+  @font-face {
+    font-family: "PT Serif";
+    src: url("fonts/PTSerif-Italic.ttf") format("truetype");
+    font-weight: 400; font-style: italic; font-display: swap;
+  }
+  @font-face {
+    font-family: "JetBrains Mono";
+    src: url("fonts/JetBrainsMono-VariableFont_wght.ttf") format("truetype-variations");
+    font-weight: 100 800; font-style: normal; font-display: swap;
+  }
+
+  :root {
+    --paper:#F5F3F0; --card:#FFFFFF; --rule:#E8E4E0;
+    --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+    --coral:#D4592A;
+    --font-display:"Crimson Pro", Georgia, serif;
+    --font-body:"PT Serif", Georgia, serif;
+    --font-mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; min-height: 100vh;
+    background: #c9c5be;
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+  }
+  .stage {
+    min-height: 100vh; width: 100%;
+    display: flex; align-items: flex-start; justify-content: center;
+    padding: 40px 20px; box-sizing: border-box;
+  }
+
+  /* ── iPhone shell ─────────────────────────────────── */
+  .phone {
+    width: 390px; flex: none;
+    background: var(--paper);
+    border-radius: 44px;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.28), 0 0 0 11px #111014, 0 0 0 12px #2a2a2e;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* status bar */
+  .statusbar {
+    height: 52px; padding: 0 34px 0 38px;
+    display: flex; align-items: center; justify-content: space-between;
+    font-family: var(--font-mono); color: var(--ink);
+  }
+  .statusbar .clock { font-size: 15px; font-weight: 600; letter-spacing: 0.02em; }
+  .statusbar .glyphs { display: flex; align-items: center; gap: 6px; }
+  .glyphs .bars { display: flex; align-items: flex-end; gap: 2px; height: 11px; }
+  .glyphs .bars i { width: 3px; background: var(--ink); border-radius: 1px; display: block; }
+  .glyphs .bars i:nth-child(1){ height: 4px; }
+  .glyphs .bars i:nth-child(2){ height: 6px; }
+  .glyphs .bars i:nth-child(3){ height: 8px; }
+  .glyphs .bars i:nth-child(4){ height: 11px; }
+  .glyphs .wifi { width: 16px; height: 12px; border-radius: 0 0 2px 2px; position: relative; }
+  .glyphs .wifi svg { display: block; }
+  .glyphs .batt { width: 25px; height: 12px; border: 1.4px solid var(--ink); border-radius: 3px; position: relative; padding: 1.5px; }
+  .glyphs .batt::after { content:""; position:absolute; right:-3px; top:3.5px; width:2px; height:4px; background:var(--ink); border-radius:0 1px 1px 0; }
+  .glyphs .batt span { display:block; height:100%; width:78%; background: var(--ink); border-radius:1px; }
+
+  /* sheet grabber */
+  .grabber { display: flex; justify-content: center; padding: 6px 0 2px; }
+  .grabber span { width: 36px; height: 5px; border-radius: 999px; background: #cfcac3; }
+
+  /* scroll body */
+  .screen { height: 800px; overflow-y: auto; }
+  .screen::-webkit-scrollbar { display: none; }
+  .body { padding: 0 24px 40px; }
+
+  /* plate strip */
+  .plate {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 14px 24px 16px;
+    font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+    letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-2);
+  }
+  .plate .fig { color: var(--ink-3); }
+
+  /* eyebrow */
+  .eyebrow {
+    font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+    letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-2);
+  }
+
+  /* title block */
+  .title-block { padding-top: 18px; }
+  .headline {
+    font-family: var(--font-display); font-weight: 700; font-size: 32px;
+    color: var(--ink); line-height: 1.05; letter-spacing: -0.01em;
+    margin: 8px 0 0;
+  }
+  .dek {
+    font-family: var(--font-body); font-style: italic; font-size: 13px;
+    color: var(--ink-2); line-height: 1.45; margin: 8px 0 0;
+  }
+
+  /* stat strip */
+  .stat-strip {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    margin-top: 22px; padding: 16px 0;
+    border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
+  }
+  .stat { padding: 0 12px; border-right: 1px solid var(--rule); display: flex; flex-direction: column; gap: 5px; }
+  .stat:first-child { padding-left: 0; }
+  .stat:last-child { border-right: 0; padding-right: 0; }
+  .stat .lab {
+    font-family: var(--font-mono); font-size: 9px; font-weight: 500;
+    letter-spacing: 0.10em; text-transform: uppercase; color: var(--ink-2);
+  }
+  .stat .val {
+    font-family: var(--font-mono); font-weight: 600; font-size: 22px;
+    color: var(--ink); font-variant-numeric: tabular-nums; line-height: 1;
+  }
+  .stat .val.coral { color: var(--coral); }
+  .stat .val .u { font-size: 10px; color: var(--ink-2); margin-left: 2px; font-weight: 500; }
+  .stat .val.coral .u { color: var(--coral); opacity: 0.7; }
+  .stat .sub {
+    font-family: var(--font-mono); font-size: 9px; font-weight: 500;
+    letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-3);
+  }
+
+  /* section header */
+  .sec-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-top: 30px;
+  }
+  .sec-head .right {
+    font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+    letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3);
+  }
+
+  /* chart */
+  .chart { position: relative; margin-top: 22px; height: 188px; }
+  .chart .plot {
+    position: relative; height: 100%;
+    display: flex; align-items: flex-end; gap: 10px;
+    padding-bottom: 0;
+  }
+  .bar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; justify-content: flex-end; }
+  .bar {
+    width: 100%; border-radius: 3px 3px 0 0;
+    background: var(--ink);
+    transition: height 0.6s cubic-bezier(0.2,0.7,0.2,1);
+  }
+  .bar.dim  { background: var(--ink-2); }
+  .bar.coral { background: var(--coral); }
+  .bar-cap {
+    font-family: var(--font-mono); font-size: 9px; font-weight: 600;
+    color: var(--ink-2); margin-top: 6px; letter-spacing: 0.02em;
+    font-variant-numeric: tabular-nums;
+  }
+  .bar-cap.coral { color: var(--coral); }
+
+  /* avg reference line */
+  .avg-line {
+    position: absolute; left: 0; right: 0;
+    border-top: 1px dashed var(--ink-3);
+    pointer-events: none;
+  }
+  .avg-tag {
+    position: absolute; right: 0;
+    font-family: var(--font-mono); font-size: 9px; font-weight: 600;
+    letter-spacing: 0.10em; color: var(--ink-3); background: var(--paper);
+    padding: 0 0 2px 5px; transform: translateY(-100%);
+  }
+  .chart-caption {
+    font-family: var(--font-mono); font-size: 9px; font-weight: 500;
+    letter-spacing: 0.10em; text-transform: uppercase; color: var(--ink-3);
+    margin-top: 30px; text-align: center;
+  }
+
+  /* rep table */
+  .rep-table { margin-top: 26px; }
+  .rep-table .thead {
+    display: grid; grid-template-columns: 1fr auto auto auto;
+    gap: 18px; padding-bottom: 12px; border-bottom: 1px solid var(--rule);
+  }
+  .rep-table .thead span {
+    font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+    letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3);
+  }
+  .rep-table .thead .r { text-align: right; min-width: 56px; }
+  .rep-row {
+    display: grid; grid-template-columns: 1fr auto auto auto;
+    gap: 18px; align-items: center;
+    padding: 15px 0; border-bottom: 1px solid var(--rule);
+  }
+  .rep-row .rep { display: flex; align-items: center; gap: 14px; }
+  .chip { width: 10px; height: 10px; border-radius: 2px; background: var(--ink); flex: none; }
+  .chip.coral { background: var(--coral); }
+  .rep-name {
+    font-family: var(--font-mono); font-weight: 600; font-size: 17px;
+    color: var(--ink); font-variant-numeric: tabular-nums;
+  }
+  .rep-row .num {
+    font-family: var(--font-mono); font-weight: 600; font-size: 16px;
+    color: var(--ink); font-variant-numeric: tabular-nums;
+    text-align: right; min-width: 56px;
+  }
+  .rep-row .num.rest { color: var(--ink-2); font-weight: 500; }
+  .rep-row .num.pace { color: var(--ink-3); font-weight: 500; font-size: 14px; }
+
+  /* observation */
+  .observation {
+    font-family: var(--font-body); font-style: italic; font-size: 15px;
+    color: var(--ink); line-height: 1.55; margin: 28px 0 0;
+    text-wrap: pretty;
+  }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="phone" data-screen-label="Workout Detail · Interval">
+    <div class="statusbar">
+      <span class="clock">6:27</span>
+      <span class="glyphs">
+        <span class="bars"><i></i><i></i><i></i><i></i></span>
+        <span class="wifi">
+          <svg width="16" height="12" viewBox="0 0 16 12" fill="none"><path d="M8 11.2 .5 3.6a10.5 10.5 0 0 1 15 0L8 11.2Z" fill="#1A1815"/></svg>
+        </span>
+        <span class="batt"><span></span></span>
+      </span>
+    </div>
+
+    <div class="grabber"><span></span></div>
+
+    <div class="plate">
+      <span>Workout&nbsp;·&nbsp;Interval Session</span>
+      <span class="fig">Fig. 23</span>
+    </div>
+
+    <div class="screen">
+      <div class="body">
+
+        <!-- B · Title block -->
+        <div class="title-block">
+          <div class="eyebrow">Tuesday&nbsp;&nbsp;·&nbsp;&nbsp;LT Session</div>
+          <h1 class="headline">2K&nbsp;·&nbsp;1K&nbsp;·&nbsp;1K&nbsp;·&nbsp;2K&nbsp;·&nbsp;1K&nbsp;·&nbsp;1K</h1>
+          <p class="dek">2 × (2K + 2×1K) threshold rehearsal · 5.0 mi work</p>
+        </div>
+
+        <!-- C · Stat strip -->
+        <div class="stat-strip">
+          <div class="stat">
+            <span class="lab">Avg Work</span>
+            <span class="val coral">5:13<span class="u">/mi</span></span>
+            <span class="sub">LT band</span>
+          </div>
+          <div class="stat">
+            <span class="lab">Work</span>
+            <span class="val">5.0<span class="u">mi</span></span>
+            <span class="sub">6 reps</span>
+          </div>
+          <div class="stat">
+            <span class="lab">Avg HR</span>
+            <span class="val">169<span class="u">bpm</span></span>
+            <span class="sub">Z4</span>
+          </div>
+          <div class="stat">
+            <span class="lab">Spread</span>
+            <span class="val">10<span class="u">s</span></span>
+            <span class="sub">rep-to-rep</span>
+          </div>
+        </div>
+
+        <!-- D · Rep-by-rep chart -->
+        <div class="sec-head">
+          <span class="eyebrow">Rep by Rep</span>
+          <span class="right">6 Reps · Work</span>
+        </div>
+
+        <div class="chart">
+          <div class="avg-line" style="bottom: 77%;">
+            <span class="avg-tag">Avg</span>
+          </div>
+          <div class="plot">
+            <div class="bar-wrap"><div class="bar dim"   style="height: 54%;"></div><span class="bar-cap">5:17</span></div>
+            <div class="bar-wrap"><div class="bar"       style="height: 100%;"></div><span class="bar-cap">5:09</span></div>
+            <div class="bar-wrap"><div class="bar"       style="height: 100%;"></div><span class="bar-cap">5:09</span></div>
+            <div class="bar-wrap"><div class="bar dim"   style="height: 42%;"></div><span class="bar-cap">5:19</span></div>
+            <div class="bar-wrap"><div class="bar"       style="height: 100%;"></div><span class="bar-cap">5:09</span></div>
+            <div class="bar-wrap"><div class="bar coral" style="height: 83%;"></div><span class="bar-cap coral">5:12</span></div>
+          </div>
+        </div>
+        <div class="chart-caption">Bar height = pace · dashed = session avg</div>
+
+        <!-- E · Rep table -->
+        <div class="rep-table">
+          <div class="thead">
+            <span>Rep</span>
+            <span class="r">Split</span>
+            <span class="r">Rest</span>
+            <span class="r">/mi</span>
+          </div>
+          <div class="rep-row">
+            <div class="rep"><span class="chip"></span><span class="rep-name">2K</span></div>
+            <span class="num">6:34</span>
+            <span class="num rest">2:05</span>
+            <span class="num pace">5:17</span>
+          </div>
+          <div class="rep-row">
+            <div class="rep"><span class="chip"></span><span class="rep-name">1K</span></div>
+            <span class="num">3:12</span>
+            <span class="num rest">1:12</span>
+            <span class="num pace">5:09</span>
+          </div>
+          <div class="rep-row">
+            <div class="rep"><span class="chip"></span><span class="rep-name">1K</span></div>
+            <span class="num">3:12</span>
+            <span class="num rest">1:09</span>
+            <span class="num pace">5:09</span>
+          </div>
+          <div class="rep-row">
+            <div class="rep"><span class="chip"></span><span class="rep-name">2K</span></div>
+            <span class="num">6:37</span>
+            <span class="num rest">2:20</span>
+            <span class="num pace">5:19</span>
+          </div>
+          <div class="rep-row">
+            <div class="rep"><span class="chip"></span><span class="rep-name">1K</span></div>
+            <span class="num">3:12</span>
+            <span class="num rest">1:07</span>
+            <span class="num pace">5:09</span>
+          </div>
+          <div class="rep-row">
+            <div class="rep"><span class="chip coral"></span><span class="rep-name">1K</span></div>
+            <span class="num">3:14</span>
+            <span class="num rest">0:04</span>
+            <span class="num pace">5:12</span>
+          </div>
+        </div>
+
+        <!-- F · Observation -->
+        <p class="observation">Ten seconds covered all six reps — the 2K floats sit right on the 1K efforts. Even from the gun, steady at the line.</p>
+
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

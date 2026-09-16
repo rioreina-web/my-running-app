@@ -33,27 +33,111 @@ import UIKit
 
 // MARK: - DripTab
 
-/// The five canonical tabs. Raw values match the integer tags the
-/// existing `MainTabView` already uses for `selectedTab` — the bar binds
-/// to `Binding<Int>` so no host refactor is required.
+/// The canonical tabs — **Log · Train · Trends · Ask** — input → what it
+/// did → overview → why. (Ask took the fourth slot from Charts on
+/// 2026-08-19; the settled IA before either was the three-tab
+/// Log · Train · Trends.)
+///
+/// Raw values match the integer tags `MainTabView` uses for `selectedTab`
+/// (the bar binds to `Binding<Int>`, so tags stay stable across IA
+/// changes — `CoachReadView` jumps to tag 1 (Train) and still works).
+/// ORDER COMES FROM DECLARATION ORDER, NOT FROM THE RAW VALUES: `allCases`
+/// walks the cases as written, which is why Trends keeps its historical
+/// non-contiguous tag 4 while sitting third. Reordering the bar means
+/// moving a `case` line, never renumbering one.
+///
+/// Retired in Phase A: `training2` (6, evaluation calendar — its
+/// treatments were absorbed into Train's CALENDAR mode), `signal`
+/// (5, pace-spectrum prototype — now pushed from Trends' GO DEEPER),
+/// and `plan` (3 — Plan folded into Train's CALENDAR mode; the plan is
+/// a subset of training, not its own destination).
+///
+/// Retired 2026-07-28: `coach` (2, The Read). `CoachReadView` stays in
+/// the repo, unlinked, so the surface can come back as its own tab or as
+/// a pushed screen without rebuilding it.
+///
+/// Retired 2026-08-19: `instruments` (8, Charts) — replaced in its own
+/// slot by `ask`, per the IA-cost note on `sheet` below. It was the
+/// stated candidate: mock data only, no fetch, no service.
+/// `InstrumentsTabView` stays in the repo, unlinked.
+///
+/// Retired 2026-08-19: `read` (7, The Read) — the DEBUG-only comparison
+/// tab. It existed to run `TrendsReadTabView` beside Trends until one of
+/// them won; Trends did. DEBUG and release are now the same four tabs,
+/// which is the first time they have matched since Phase A.
+/// `TrendsReadTabView` stays in the repo, unlinked.
 enum DripTab: Int, CaseIterable, Identifiable {
     case log = 0
-    case train = 1
-    case trends = 2
-    case coach = 3
-    case plan = 4
+    /// Declared second as of 2026-08-11, so `allCases` renders Train in the
+    /// slot beside Log. Log is where a run goes in and Train is where it
+    /// lands — putting Trends and Read between them meant the two halves of
+    /// one action sat at opposite ends of the bar. Tag 1 is unchanged, so
+    /// every existing jump-to-tab call site (e.g. `CoachReadView` → tag 1)
+    /// still arrives here.
+    case training = 1
+    case trends = 4
+    /// Week (`WeekTabView`) — the weekly decision surface. Added
+    /// 2026-08-19. Three questions (faster / absorbing / the marathon), each
+    /// answered by its own signal cluster, ending in glass-box proposals that
+    /// change the week only when tapped.
+    ///
+    /// Declared here so the bar reads Log · Train · Trends · Week · Ask ·
+    /// Sheet: Week sits between the surface that observes (Trends) and the
+    /// surface that holds the plan (Train's calendar), because it reads the
+    /// first and writes the second.
+    ///
+    /// Tag 11 is fresh. 2, 3, 5, 6, 7 and 8 are retired tags, 9 is the Sheet
+    /// and 10 is Ask — reusing any of them would land old jump-to-tab call
+    /// sites here.
+    case week = 11
+    /// Ask (`AskTabView`) — the analysis surface: pick a question, get it
+    /// answered from your own runs. Added 2026-08-19 in the slot Charts
+    /// held, so the bar stays five wide.
+    ///
+    /// The `AskBar` at the foot of Trends is unchanged and still works —
+    /// this tab is a second door to the same surface, not a move. Both
+    /// share `AskService.shared`, whose `loadCatalog` guards on
+    /// `catalogLoaded`, so two mounted bars never double-fetch.
+    ///
+    /// Tag 10 is fresh — 2, 3, 5, 6, 7 and 8 are all retired tags (see
+    /// above) and 9 is the Sheet. Reusing 7 or 8 would land old
+    /// jump-to-tab call sites here.
+    case ask = 10
+    /// The Sheet (`SheetTabView`) — the dense session table, added 2026-08-11.
+    /// One row per SESSION (not per day and not per upload — see
+    /// `SessionRollup.swift`), week-grouped, with tag chips and search.
+    ///
+    /// Declared last so the four established tabs keep their slots and their
+    /// muscle memory. Moving it beside Log is a one-line change: move this
+    /// `case` up, never renumber it.
+    ///
+    /// Tag 9 is fresh — 2, 3, 5, 6, 7 (Read) and 8 (Charts) are all retired
+    /// tags; see above.
+    ///
+    /// IA COST: the bar is five tabs as of 2026-08-19 — Log · Train ·
+    /// Trends · Ask — plus this one, in DEBUG and release alike. At 393pt
+    /// five items is ~78pt each against a 44pt minimum touch target, which
+    /// fits with room to spare now that Charts and the DEBUG Read are gone.
+    /// Adding a sixth is possible but should still be argued for: the last
+    /// two additions were both eventually spent replacing something.
+    case sheet = 9
 
     var id: Int { rawValue }
 
     /// Display label. Rendered uppercase by the view; stored sentence-
     /// case here so future copy tweaks read naturally in source.
+    ///
+    /// Trends 2 (tag 5, `TrendsInsightsTabView`) was removed 2026-07-27 when
+    /// Trends was restructured into a single tab. The view file remains in the
+    /// repo, unlinked.
     var label: String {
         switch self {
         case .log: "Log"
-        case .train: "Train"
         case .trends: "Trends"
-        case .coach: "Coach"
-        case .plan: "Plan"
+        case .training: "Train"
+        case .ask: "Ask"
+        case .week: "Week"
+        case .sheet: "Sheet"
         }
     }
 
@@ -69,9 +153,9 @@ enum DripTab: Int, CaseIterable, Identifiable {
 /// Optional props:
 /// - `badged`: tabs that should display a 6pt coral notification dot.
 ///   Wire from your host based on whatever signal you want to surface
-///   (e.g. `coachViewModel.unreadCount > 0 ? [.coach] : []`).
+///   (e.g. `planViewModel.hasUnseenChanges ? [.training] : []`).
 /// - `disabled`: tabs that should render dimmed and reject taps. Useful
-///   for gating `.plan` until a plan exists, etc.
+///   for gating a tab until its data exists, etc.
 struct DripTabBar: View {
     @Binding var selected: Int
     var badged: Set<DripTab> = []
@@ -215,15 +299,15 @@ private struct DripTabPressStyle: ButtonStyle {
     PreviewHost(initial: 0)
 }
 
-#Preview("Coach selected") {
-    PreviewHost(initial: 3)
+#Preview("Train selected") {
+    PreviewHost(initial: 1)
 }
 
-#Preview("Coach badged, Plan disabled") {
+#Preview("Train badged, Trends disabled") {
     PreviewHost(
-        initial: 1,
-        badged: [.coach],
-        disabled: [.plan]
+        initial: 0,
+        badged: [.training],
+        disabled: [.trends]
     )
 }
 
@@ -232,7 +316,7 @@ private struct DripTabPressStyle: ButtonStyle {
     // verify the 0pt home-indicator clearance case. `.previewDevice` is
     // deprecated under the #Preview macro, so the device choice lives
     // with the simulator selection instead of the source.
-    PreviewHost(initial: 2, badged: [.coach])
+    PreviewHost(initial: 1, badged: [.training])
 }
 
 /// Lightweight wrapper so each preview can own its own `selected` state.

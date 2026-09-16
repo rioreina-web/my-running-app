@@ -39,10 +39,12 @@ private let menuGroups: [MenuGroup] = [
     MenuGroup(head: "Review", entries: [
         MenuEntry(number: "04", label: "Training Analysis", hint: "Trends across your block.", destination: .analysis),
         MenuEntry(number: "05", label: "Injuries", hint: "Track, analyze, recover.", destination: .injuries),
+        MenuEntry(number: "06", label: "Check In", hint: "How you're feeling. No run attached.", destination: .checkIn),
+        MenuEntry(number: "07", label: "Niggles", hint: "Every ache you've mentioned, over time.", destination: .niggles),
     ]),
     MenuGroup(head: "Library & Account", entries: [
-        MenuEntry(number: "06", label: "Content Library", hint: "Films, drills & reading.", destination: .contentLibrary),
-        MenuEntry(number: "07", label: "Settings", hint: "Account, data & app preferences.", destination: .settings),
+        MenuEntry(number: "08", label: "Content Library", hint: "Films, drills & reading.", destination: .contentLibrary),
+        MenuEntry(number: "09", label: "Settings", hint: "Account, data & app preferences.", destination: .settings),
     ]),
 ]
 
@@ -51,6 +53,9 @@ private let menuGroups: [MenuGroup] = [
 struct ContentLibrarySidebar: View {
     @Binding var isPresented: Bool
     @Binding var activeDestination: AppDestination?
+    /// Held rather than read through `.shared` at the callsite so the footer
+    /// label re-renders the moment the skin flips.
+    @State private var skinStore = DripSkinStore.shared
 
     var body: some View {
         GeometryReader { geo in
@@ -58,7 +63,7 @@ struct ContentLibrarySidebar: View {
 
             ZStack(alignment: .leading) {
                 // Scrim — design spec rgba(26,24,21,0.46)
-                Color(hex: "1A1815")
+                Color.drip.textPrimary
                     .opacity(isPresented ? 0.46 : 0)
                     .ignoresSafeArea()
                     .onTapGesture { close() }
@@ -164,10 +169,7 @@ struct ContentLibrarySidebar: View {
             }
             .buttonStyle(.plain)
             Spacer()
-            Text(buildString)
-                .font(.dripEyebrow(9))
-                .tracking(0.9)  // 0.10em at 9pt
-                .foregroundStyle(Color.drip.textTertiary)
+            skinToggle
         }
         .padding(.horizontal, 24)
         .padding(.top, 14)
@@ -175,6 +177,33 @@ struct ContentLibrarySidebar: View {
         .overlay(alignment: .top) {
             Rectangle().fill(Color.drip.divider).frame(height: 1)
         }
+    }
+
+    /// The redesign switch (REDESIGN-SAFELY.md §5). Today it only changes
+    /// the Log tab; every other surface renders the editorial skin either
+    /// way. Lives in the footer rather than Settings because the whole
+    /// point is flipping it repeatedly while looking at the thing.
+    private var skinToggle: some View {
+        Button {
+            skinStore.toggle()
+            // Close, like every other menu action. The panel sits over the Log
+            // tab — the one surface the skin changes — so leaving it open makes
+            // a working flip look like a dead button. This was the bug.
+            close()
+        } label: {
+            VStack(alignment: .trailing, spacing: 3) {
+                Text("SKIN · \(skinStore.skin.label.uppercased())")
+                    .font(.dripEyebrow(9))
+                    .tracking(0.9)
+                    .foregroundStyle(Color.drip.coral)
+                Text(buildString)
+                    .font(.dripEyebrow(9))
+                    .tracking(0.9)  // 0.10em at 9pt
+                    .foregroundStyle(Color.drip.textTertiary)
+            }
+            .frame(minHeight: 44, alignment: .trailing)
+        }
+        .buttonStyle(.plain)
     }
 
     private var buildString: String {

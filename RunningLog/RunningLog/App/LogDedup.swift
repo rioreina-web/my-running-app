@@ -96,11 +96,12 @@ extension Array where Element == TodayLogRow {
 enum LogDedupHelpers {
     static func isGpsSource(_ s: String?) -> Bool {
         let v = (s ?? "").lowercased()
-        return v == "strava" || v == "auto_sync"
+        return v == "garmin" || v == "vital" || v == "strava" || v == "auto_sync"
     }
 
     static func sourcePriority(_ source: String?) -> Int {
         switch (source ?? "").lowercased() {
+        case "garmin", "vital": return 4   // native device data (power/cadence/streams)
         case "strava":    return 3   // most reliable distance + segments
         case "auto_sync": return 2   // HealthKit/Vital fallback
         case "voice_log": return 1   // annotation only

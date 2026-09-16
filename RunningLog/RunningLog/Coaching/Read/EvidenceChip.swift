@@ -32,6 +32,13 @@ struct EvidenceChip: View {
     let workout: TrainingLog
     @Binding var selectedWorkoutId: UUID?
 
+    /// Canonical label/title/meta for this run. Classifies against the
+    /// athlete's engine-computed zones (the single source of truth) —
+    /// see `WorkoutPresentation`.
+    private var presentation: WorkoutPresentation {
+        WorkoutPresentation(log: workout, zones: PaceZonesService.shared.zones)
+    }
+
     // MARK: - Convenience initializers
 
     /// Kerned inline chip — sits on the paragraph's text baseline.
@@ -73,7 +80,7 @@ struct EvidenceChip: View {
         Button {
             selectedWorkoutId = workout.id
         } label: {
-            Text("◆ \(workout.coachReadTypeLabel) \(workout.coachReadShortDay)")
+            Text("◆ \(presentation.label) \(workout.coachReadShortDay)")
                 .font(.dripCaption(11))
                 .foregroundStyle(Color.drip.coral)
                 .tracking(1.1) // 0.10em × 11pt
@@ -97,23 +104,24 @@ struct EvidenceChip: View {
         } label: {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    // Mono day + type eyebrow.
+                    // Mono day + zone eyebrow.
                     Text(
-                        "\(workout.coachReadShortDay) · \(workout.coachReadTypeLabel)"
+                        "\(workout.coachReadShortDay) · \(presentation.label)"
                     )
                     .font(.dripStat(10))
                     .foregroundStyle(Color.drip.coral)
                     .tracking(1.0) // 0.10em × 10pt — stat-tile label tracking
 
-                    // Display title (e.g., "6 × 1mi tempo").
-                    Text(workout.coachReadDisplayTitle)
+                    // Display title (e.g., "6.6 mi · MP"). Never sourced
+                    // from workout_notes — see WorkoutPresentation.
+                    Text(presentation.title)
                         .font(.dripDisplay(18))
                         .foregroundStyle(Color.drip.textPrimary)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
 
                     // Mono meta line (distance · pace · duration).
-                    if let meta = workout.coachReadMetaLine {
+                    if let meta = presentation.metaLine {
                         Text(meta)
                             .font(.dripStat(11))
                             .foregroundStyle(Color.drip.textSecondary)
@@ -150,72 +158,20 @@ struct EvidenceChip: View {
 /// shared model to view concerns.
 private extension TrainingLog {
 
-    /// Short uppercase label for the chip eyebrow.
-    /// "long_run" → "LONG", "intervals" → "INTERVAL", fallback: uppercased
-    /// raw type. Returns "RUN" if no type is set.
-    var coachReadTypeLabel: String {
-        guard let raw = workoutType?.lowercased(), !raw.isEmpty else {
-            return "RUN"
-        }
-        switch raw {
-        case "long_run", "long": return "LONG"
-        case "tempo": return "TEMPO"
-        case "threshold": return "THRESHOLD"
-        case "interval", "intervals": return "INTERVAL"
-        case "progression": return "PROGRESSION"
-        case "race": return "RACE"
-        case "easy": return "EASY"
-        case "recovery": return "RECOVERY"
-        case "moderate": return "MODERATE"
-        case "steady": return "STEADY"
-        case "rest": return "REST"
-        default: return raw.uppercased()
-        }
-    }
-
     /// 3-letter weekday abbreviation in the device's current locale,
     /// uppercased. Pulls from `workoutDate` (the date the run happened);
     /// falls back to `createdAt` so chips never show "—".
+    ///
+    /// The label / title / meta helpers that used to live here were
+    /// removed in the 2026-06-12 effectiveness pass — they asserted the
+    /// retired tempo/threshold vocabulary and sourced titles from
+    /// `workout_notes`. All three now come from `WorkoutPresentation`.
     var coachReadShortDay: String {
         let date = workoutDate ?? createdAt
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "EEE"
         return f.string(from: date).uppercased()
-    }
-
-    /// Display-cased title for the expanded card. Prefers any
-    /// athlete-authored workout title; falls back to a synthesized
-    /// "6.0mi tempo"-style string.
-    var coachReadDisplayTitle: String {
-        if let notes = workoutNotes, !notes.isEmpty {
-            return notes.split(separator: "\n").first.map(String.init) ?? notes
-        }
-        let dist = workoutDistanceMiles.map { String(format: "%.1f mi", $0) }
-        let type = coachReadTypeLabel.capitalized
-        switch (dist, type) {
-        case (let d?, _): return "\(d) \(type)"
-        case (nil, _):    return type
-        }
-    }
-
-    /// Mono meta line — distance · pace · duration. Each piece omitted
-    /// if missing. Returns nil when none of the three are available.
-    var coachReadMetaLine: String? {
-        var parts: [String] = []
-        if let mi = workoutDistanceMiles {
-            parts.append(String(format: "%.1fmi", mi))
-        }
-        if let pace = workoutPacePerMile, !pace.isEmpty {
-            parts.append("\(pace)/mi")
-        }
-        if let min = workoutDurationMinutes {
-            let total = Int(min.rounded())
-            let h = total / 60
-            let m = total % 60
-            parts.append(h > 0 ? "\(h)h\(m)m" : "\(m) min")
-        }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 }
 

@@ -1,0 +1,26 @@
+{
+  "id": "005-load-led-windowed-real-workouts",
+  "prompt_name": "daily-read.v4",
+  "description": "The signature v4 behavior. The Read must LEAD with the load story (the state's 'Load trend' line, with a percentage and window), name real sessions specifically (the 9×1K at 5K pace, not 'your intervals'), tie at least one claim to a change over a stated window, quote fitness as a RANGE with confidence (never a single time), and never quote ACWR or invent seconds-precision finish times. Redesign §3.1/§3.6. The recorded_response is an authored target exemplar — re-record against the live model via _evals/record.ts before trusting it as a regression baseline.",
+  "vars": {},
+  "input": "## Coaching mode\nPLAN_MODE — active plan, goal marathon. You may evaluate execution, predict race times as RANGES with confidence, and make a call on today.\n\n=== ATHLETE STATE ===\nLevel: advanced\n\nTraining Load (7d): 41 mi, 6 runs (2 hard, 4 easy)\n28d avg: 44 mpw\nLoad trend: building (+18% vs the prior 8-week norm) — intensity-weighted, last 2 weeks vs the 8-week baseline.\nVolume × Intensity load (7d): 712 weighted-min · 28d: 2480 (a hard mile ≈ 5× an easy mile)\nHard/easy split (7d): easy 82% · moderate 6% · threshold 7% · hard 5% (pyramidal) — ~80% easy is the guide.\nRecovery: hard days ~4d apart.\n\nRecent runs (trust user notes + work pace over avg pace):\n  2026-05-20 Intervals 9×1K @ 5:08 (5K) — even splits\n  2026-05-15 Threshold 4×1K @ 5:32 (HMP)\n  2026-05-18 Easy 6.4mi @ 7:24/mi\n\nRecent quality sessions (did they land?):\n  2026-05-20 Intervals — 9 reps @ 5:06–5:09, even, HR drift 3.1%\n\nTrends I've noticed:\n  Easy pace 7:35 → 7:24/mi over 3 weeks while readiness held 6→6.\n\nPredicted race times (quote the RANGE, never a single time):\n  10K: 32:10–32:48\n  Marathon: 2:28–2:31\n  Confidence: High (58 workouts + recent 10K)\n\n## Citable workouts (cite by the bracketed id ONLY)\n- [a1a1a1a1-0000-0000-0000-000000000001] 2026-05-20 · 6.2mi (52m) ★quality\n- [b2b2b2b2-0000-0000-0000-000000000002] 2026-05-15 · 5.0mi (41m) ★quality\n\nGenerate today's Read for this athlete.",
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": ["headline", "paragraph", "sources", "confidence"],
+    "forbidden_patterns": [
+      "(?i)\\bACWR\\b",
+      "(?i)\\b(grind|crush|beast mode|warrior|unleash|champion|go hard)\\b",
+      "(?i)\\bas an AI\\b",
+      "(?i)\\b\\d{1,2}:\\d{2}:\\d{2}\\b",
+      "(?i)\\b(monitor|keep an eye on|keep tabs on)\\b"
+    ],
+    "required_patterns": [
+      "(?i)(over the (last |past )?\\w+ weeks?|over the (last |past )?month|vs (the )?(prior|last)|→|up ~?\\d+%|\\+\\d+%)",
+      "(?i)(9\\s?[×x]\\s?1K|5K)",
+      "(?i)32:\\d{2}\\s?[–-]\\s?32:\\d{2}"
+    ]
+  },
+  "recorded_response": "```json\n{\n  \"headline\": \"Three weeks of building, body's taking it.\",\n  \"paragraph\": [\n    \"Three weeks of building and the body's absorbing it — load's up about 18% over that stretch, but it's the quality carrying it, not mileage, and 82% of the week still ran genuinely easy. Tuesday's 9×1K came in at 5:08, 5K pace, even splits with HR drift just over 3% \",\n    { \"workout_id\": \"a1a1a1a1-0000-0000-0000-000000000001\" },\n    \" — that one landed. Your easy pace has drifted 7:35 → 7:24 over the three weeks with readiness holding at 6, which is the aerobic base doing its job rather than fatigue creeping. Fitness is sitting around 32:10–32:48 for the 10K, HIGH off 58 sessions and a recent race. One more build week looks supportable; the down week after it is the one that matters.\"\n  ],\n  \"confidence\": { \"level\": \"HIGH\", \"sub\": \"6 recent runs, a landed quality session, and a race anchor.\" },\n  \"sources\": {\n    \"workouts\": [\"a1a1a1a1-0000-0000-0000-000000000001\"],\n    \"docs\": [],\n    \"memos\": []\n  }\n}\n```",
+  "recorded_at": "2026-06-13T22:00:00.000Z",
+  "model": "gemini-2.5-flash"
+}

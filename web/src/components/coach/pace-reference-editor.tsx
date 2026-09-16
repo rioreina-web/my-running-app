@@ -32,6 +32,25 @@ const MILES_FOR_DISTANCE: Record<string, number> = {
   mile:           1.000,
 };
 
+// Display unit for the pace columns. Paces are always STORED as seconds per
+// mile; km is a presentation conversion only (1 mi = 1.609344 km, so
+// sec/km = sec/mi ÷ 1.609344). Nothing in the anchor/data model changes.
+type PaceUnit = "mi" | "km";
+const KM_PER_MILE = 1.609344;
+
+// Format a canonical sec/mile pace in the chosen display unit.
+function formatPaceUnit(secPerMile: number, unit: PaceUnit): string {
+  return formatPaceSecPerMile(unit === "km" ? secPerMile / KM_PER_MILE : secPerMile);
+}
+
+// Parse a pace the coach typed (in the chosen display unit) back to the
+// canonical sec/mile the anchor stores.
+function parsePaceUnit(raw: string, unit: PaceUnit): number | null {
+  const typed = parsePaceSecPerMile(raw);
+  if (typed == null) return null;
+  return unit === "km" ? Math.round(typed * KM_PER_MILE) : typed;
+}
+
 // Race-distance zones — these get a Time column the coach can edit directly.
 // Editing a time back-computes the pace and stores it as the override.
 const RACE_ZONE_MILES: Partial<Record<PaceZone, number>> = {
@@ -106,6 +125,7 @@ interface Props {
 
 export function PaceReferenceEditor({ anchor, onChange, planDistance }: Props) {
   const [expanded, setExpanded] = useState(false);
+  const [unit, setUnit] = useState<PaceUnit>("mi");
   const distance = anchor.goalRaceDistance ?? planDistance;
   const effective = useMemo(() => resolvePaceTable(anchor, planDistance), [anchor, planDistance]);
 
@@ -115,7 +135,7 @@ export function PaceReferenceEditor({ anchor, onChange, planDistance }: Props) {
   }
 
   function setOverride(zone: PaceZone, raw: string) {
-    const sec = parsePaceSecPerMile(raw);
+    const sec = parsePaceUnit(raw, unit);
     const next: PaceAnchor["overrides"] = { ...(anchor.overrides ?? {}) };
     if (sec == null) delete next[zone]; else next[zone] = sec;
     onChange({ ...anchor, overrides: next });
@@ -155,10 +175,10 @@ export function PaceReferenceEditor({ anchor, onChange, planDistance }: Props) {
         className="w-full flex items-center gap-4 px-4 py-2.5 text-left hover:bg-[var(--color-bg-elevated)] transition-colors"
       >
         <div className="flex flex-col flex-shrink-0">
-          <span className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
+          <span className="font-mono text-[10px] font-medium uppercase tracking-[0.18em] text-[var(--color-text-secondary)]">
             Pace ref
           </span>
-          <span className={`text-xs italic ${hasGoal ? "text-[var(--color-coral)]" : "text-[var(--color-text-tertiary)]"}`}>
+          <span className={`text-xs italic ${hasGoal ? "text-[var(--color-coral-dark)]" : "text-[var(--color-text-secondary)]"}`}>
             {sourceLabel}
           </span>
         </div>
@@ -174,18 +194,18 @@ export function PaceReferenceEditor({ anchor, onChange, planDistance }: Props) {
               const range = !isOverridden ? trainingZoneRange(z, effective.mp) : null;
               return (
                 <span key={z} className="flex items-baseline gap-1.5">
-                  <span className="text-xs text-[var(--color-text-tertiary)]">{zMeta.shortName}</span>
-                  <span className={`tabular-nums ${isOverridden ? "text-[var(--color-coral)] font-semibold" : "text-[var(--color-text-primary)]"}`}>
+                  <span className="text-xs text-[var(--color-text-secondary)]">{zMeta.shortName}</span>
+                  <span className={`tabular-nums ${isOverridden ? "text-[var(--color-coral-dark)] font-semibold" : "text-[var(--color-text-primary)]"}`}>
                     {range
-                      ? `${formatPaceSecPerMile(range.fastSec)}–${formatPaceSecPerMile(range.slowSec)}`
-                      : formatPaceSecPerMile(effective[z])}
+                      ? `${formatPaceUnit(range.fastSec, unit)}–${formatPaceUnit(range.slowSec, unit)}`
+                      : formatPaceUnit(effective[z], unit)}
                   </span>
                 </span>
               );
             })}
           </div>
         )}
-        <span className={`text-xs ml-auto ${expanded ? "text-[var(--color-coral)] font-semibold" : "text-[var(--color-text-tertiary)]"}`}>
+        <span className={`text-xs ml-auto ${expanded ? "text-[var(--color-coral-dark)] font-semibold" : "text-[var(--color-text-secondary)] underline underline-offset-4 decoration-[var(--color-divider)]"}`}>
           {expanded ? "hide" : "edit"}
         </span>
       </button>
@@ -195,7 +215,7 @@ export function PaceReferenceEditor({ anchor, onChange, planDistance }: Props) {
         <div className="border-t border-[var(--color-divider)] px-4 py-4 space-y-4">
           {/* Goal time row */}
           <div className="flex items-center gap-3 flex-wrap">
-            <label className="text-xs uppercase tracking-wider text-[var(--color-text-tertiary)] font-semibold">
+            <label className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-secondary)] font-medium">
               Goal race time
             </label>
             <input
@@ -207,17 +227,46 @@ export function PaceReferenceEditor({ anchor, onChange, planDistance }: Props) {
               onBlur={(e) => setGoalTime(e.target.value)}
               className="w-28 text-center text-sm font-mono border border-[var(--color-divider)] rounded px-2 py-1.5 focus:outline-none focus:border-[var(--color-coral)]"
             />
-            <span className="text-xs text-[var(--color-text-tertiary)]">
+            <span className="text-xs text-[var(--color-text-secondary)]">
               for {distance.replace("_", " ")}
             </span>
-            <span className="text-xs text-[var(--color-text-tertiary)] italic ml-auto">
+            <span className="text-xs text-[var(--color-text-secondary)] italic">
               Leave blank to use reference runner. Override any zone below.
             </span>
+            <div className="ml-auto flex items-center gap-2">
+              <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-secondary)] font-medium">
+                Units
+              </span>
+              <div className="flex rounded-full border border-[var(--color-divider)] overflow-hidden bg-[var(--color-bg-elevated)]">
+                <button
+                  type="button"
+                  onClick={() => setUnit("mi")}
+                  className={`px-3 py-1 text-xs font-medium transition-colors ${
+                    unit === "mi"
+                      ? "bg-[var(--color-text-primary)] text-white"
+                      : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+                  }`}
+                >
+                  mi
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUnit("km")}
+                  className={`px-3 py-1 text-xs font-medium transition-colors ${
+                    unit === "km"
+                      ? "bg-[var(--color-text-primary)] text-white"
+                      : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+                  }`}
+                >
+                  km
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* Zone table — race paces on top (with race-time column), training zones below. */}
           <div className="border border-[var(--color-divider)] rounded-md overflow-hidden">
-            <ZoneTableHeader />
+            <ZoneTableHeader unit={unit} />
             <ZoneSectionLabel label="Race paces" />
             {RACE_ZONES_ORDERED.map((zv) => {
               const z = PACE_ZONES.find((p) => p.value === zv)!;
@@ -230,9 +279,9 @@ export function PaceReferenceEditor({ anchor, onChange, planDistance }: Props) {
                   key={zv}
                   shortName={z.shortName}
                   description={z.description}
-                  derivedPace={formatPaceSecPerMile(derived)}
-                  paceInputKey={`ov-pace-${zv}-${override ?? "none"}`}
-                  paceDefault={override ? formatPaceSecPerMile(override) : ""}
+                  derivedPace={formatPaceUnit(derived, unit)}
+                  paceInputKey={`ov-pace-${zv}-${override ?? "none"}-${unit}`}
+                  paceDefault={override ? formatPaceUnit(override, unit) : ""}
                   onPaceBlur={(v) => setOverride(zv, v)}
                   timeInputKey={`ov-time-${zv}-${override ?? "none"}`}
                   timeDefault={override ? formatHms(Math.round(override * miles)) : ""}
@@ -260,12 +309,12 @@ export function PaceReferenceEditor({ anchor, onChange, planDistance }: Props) {
                   description={z.description}
                   derivedPace={
                     range
-                      ? `${formatPaceSecPerMile(range.fastSec)}–${formatPaceSecPerMile(range.slowSec)}`
-                      : formatPaceSecPerMile(derived)
+                      ? `${formatPaceUnit(range.fastSec, unit)}–${formatPaceUnit(range.slowSec, unit)}`
+                      : formatPaceUnit(derived, unit)
                   }
                   derivedSecondary={range?.bandLabel}
-                  paceInputKey={`ov-pace-${zv}-${override ?? "none"}`}
-                  paceDefault={override ? formatPaceSecPerMile(override) : ""}
+                  paceInputKey={`ov-pace-${zv}-${override ?? "none"}-${unit}`}
+                  paceDefault={override ? formatPaceUnit(override, unit) : ""}
                   onPaceBlur={(v) => setOverride(zv, v)}
                 />
               );
@@ -280,12 +329,12 @@ export function PaceReferenceEditor({ anchor, onChange, planDistance }: Props) {
 // 4-column grid: Zone | Derived pace | Override pace | Race time
 const ZONE_GRID = "grid grid-cols-[1fr_5rem_5.5rem_6rem] gap-x-4 items-center px-3";
 
-function ZoneTableHeader() {
+function ZoneTableHeader({ unit }: { unit: PaceUnit }) {
   return (
-    <div className={`${ZONE_GRID} py-2 text-xs uppercase tracking-wider text-[var(--color-text-tertiary)] font-semibold bg-[var(--color-bg-elevated)] border-b border-[var(--color-divider)]`}>
+    <div className={`${ZONE_GRID} py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--color-text-secondary)] font-medium bg-[var(--color-bg-elevated)] border-b border-[var(--color-divider)]`}>
       <span>Zone</span>
       <span className="text-right">Derived</span>
-      <span className="text-right">Pace /mi</span>
+      <span className="text-right">Pace /{unit}</span>
       <span className="text-right">Race time</span>
     </div>
   );
@@ -293,7 +342,7 @@ function ZoneTableHeader() {
 
 function ZoneSectionLabel({ label }: { label: string }) {
   return (
-    <div className="px-3 py-1 text-[10px] uppercase tracking-wider text-[var(--color-text-tertiary)] font-semibold bg-[var(--color-bg-elevated)]/40 border-t border-[var(--color-divider)] first:border-t-0">
+    <div className="px-3 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--color-text-secondary)] font-medium bg-[var(--color-bg-elevated)]/40 border-t border-[var(--color-divider)] first:border-t-0">
       {label}
     </div>
   );
@@ -328,7 +377,7 @@ function ZoneRow({
         <span className="text-sm font-semibold text-[var(--color-text-primary)] flex-shrink-0">
           {shortName}
         </span>
-        <span className="text-xs text-[var(--color-text-tertiary)] truncate">
+        <span className="text-xs text-[var(--color-text-secondary)] truncate">
           {description}
         </span>
       </span>
@@ -337,7 +386,7 @@ function ZoneRow({
           {derivedPace}
         </span>
         {derivedSecondary && (
-          <span className="text-[10px] text-[var(--color-text-tertiary)] tabular-nums">
+          <span className="text-[10px] text-[var(--color-text-secondary)] tabular-nums">
             {derivedSecondary}
           </span>
         )}
@@ -349,7 +398,7 @@ function ZoneRow({
         defaultValue={paceDefault}
         key={paceInputKey}
         onBlur={(e) => onPaceBlur(e.target.value)}
-        className="w-full text-center text-sm font-mono tabular-nums border border-[var(--color-divider)] rounded px-2 py-1 focus:outline-none focus:border-[var(--color-coral)] placeholder:italic placeholder:text-[var(--color-text-tertiary)]/60"
+        className="w-full text-center text-sm font-mono tabular-nums border border-[var(--color-divider)] rounded px-2 py-1 focus:outline-none focus:border-[var(--color-coral)] placeholder:italic placeholder:text-[var(--color-text-tertiary)]"
       />
       {onTimeBlur ? (
         <input
@@ -359,10 +408,10 @@ function ZoneRow({
           defaultValue={timeDefault}
           key={timeInputKey}
           onBlur={(e) => onTimeBlur(e.target.value)}
-          className="w-full text-center text-sm font-mono tabular-nums border border-[var(--color-divider)] rounded px-2 py-1 focus:outline-none focus:border-[var(--color-coral)] placeholder:text-[var(--color-text-tertiary)]/60"
+          className="w-full text-center text-sm font-mono tabular-nums border border-[var(--color-divider)] rounded px-2 py-1 focus:outline-none focus:border-[var(--color-coral)] placeholder:text-[var(--color-text-tertiary)]"
         />
       ) : (
-        <span className="text-right text-[10px] italic text-[var(--color-text-tertiary)]/70">
+        <span className="text-right text-[10px] italic text-[var(--color-text-tertiary)]">
           n/a
         </span>
       )}

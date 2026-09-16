@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Trends · TLS + Miles on the Pace Spectrum</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@300;400;500;600;700&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F5F3F0; --card:#FFFFFF; --paper-deep:#E8E4DF; --rule:#E8E4E0;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A;
+  --font-display:"Crimson Pro",Georgia,serif;
+  --font-body:"PT Serif",Georgia,serif;
+  --font-mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+
+  /* mood palette — warm, never blue */
+  --m-energized:#1F7A43; --m-positive:#4E9A6A; --m-neutral:#8E8880;
+  --m-tired:#C9962E; --m-struggling:#C0492E; --m-injured:#8E2F1C;
+
+  /* THE PACE SPECTRUM · Easy (pale sky) → Mile (navy). PaceSpectrum.swift stops. */
+  --z-easy:#93B9D6; --z-mod:#74A8CC; --z-steady:#578FC0; --z-mp:#3F7CB5;
+  --z-hmp:#2F66A8; --z-lt:#27549B; --z-10k:#20448B; --z-5k:#1A3679;
+  --z-3k:#142964; --z-mile:#0E1D4E;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{background:#DAD6D0}
+body{background:var(--paper);max-width:430px;margin:0 auto;min-height:100vh;
+  font-family:var(--font-body);color:var(--ink);-webkit-font-smoothing:antialiased;
+  padding:26px 18px 90px;box-shadow:0 0 40px rgba(0,0,0,.14)}
+
+.eyebrow{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.13em;
+  color:var(--ink-2);text-transform:uppercase}
+.micro{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.1em;
+  color:var(--ink-3);text-transform:uppercase}
+
+/* ---- fortnight stepper strip ---- */
+.stepper{display:flex;justify-content:space-between;align-items:center;
+  border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);padding:10px 0}
+.stepper .range{font-family:var(--font-mono);font-size:11px;color:var(--ink-2)}
+.stepper .span{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.12em;
+  color:var(--ink-3);margin-top:3px;text-transform:uppercase}
+.stepper .btns span{display:inline-block;width:34px;text-align:center;
+  color:var(--ink-3);font-size:14px}
+
+/* ---- headline ---- */
+.headline{padding-top:16px}
+.headline .big{font-family:var(--font-display);font-weight:600}
+.headline .num{font-size:44px;color:var(--coral)}
+.headline .rest{font-size:20px;margin-left:6px}
+.headline .sub{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.12em;
+  color:var(--coral);text-transform:uppercase;margin-top:8px}
+.headline .sub2{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.12em;
+  color:var(--ink-3);text-transform:uppercase;margin-top:6px}
+
+/* ---- facts card ---- */
+.facts{display:flex;background:var(--card);border:1px solid var(--rule);
+  border-radius:10px;margin-top:16px;padding:11px 0}
+.facts .fact{flex:1;text-align:center;border-right:1px solid var(--rule)}
+.facts .fact:last-child{border-right:none}
+.facts .v{font-family:var(--font-display);font-size:19px;font-weight:600}
+.facts .k{font-family:var(--font-mono);font-size:8.5px;letter-spacing:.1em;
+  color:var(--ink-3);text-transform:uppercase;margin-top:4px}
+
+.said{border-left:2px solid var(--coral);padding-left:12px;margin-top:14px;
+  font-size:13.5px;color:var(--ink-2);line-height:1.5}
+
+/* ---- the new bit: spectrum strip ---- */
+.spectrum{margin-top:20px}
+.spectrum .lhead{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px}
+.spectrum .bar{display:flex;height:12px;border-radius:3px;overflow:hidden}
+.spectrum .bar span{flex:1;cursor:pointer;transition:opacity .15s}
+.spectrum .ticks{display:flex;margin-top:5px}
+.spectrum .ticks span{flex:1;text-align:center;font-family:var(--font-mono);
+  font-size:8px;letter-spacing:.04em;color:var(--ink-3);cursor:pointer;
+  padding:3px 0;text-transform:uppercase}
+.spectrum .ticks span.on{color:var(--ink);font-weight:700}
+.spectrum .hint{font-family:var(--font-body);font-style:italic;font-size:12px;
+  color:var(--ink-3);margin-top:6px}
+
+/* ---- chart card ---- */
+.chartcard{background:var(--card);border:1px solid var(--rule);border-radius:12px;
+  padding:12px;margin-top:12px}
+.readout{font-family:var(--font-mono);font-size:10px;letter-spacing:.04em;
+  color:var(--ink-2);min-height:28px;line-height:1.5;margin-bottom:6px}
+svg{display:block;width:100%;touch-action:pan-y}
+svg text{font-family:var(--font-mono)}
+
+/* ---- selected day panel ---- */
+.daypanel{background:var(--card);border:1px solid var(--rule);border-radius:10px;
+  padding:13px 13px 15px;margin-top:10px;display:none}
+.daypanel.on{display:block}
+.daypanel .dhead{display:flex;justify-content:space-between;align-items:baseline}
+.daypanel .dtitle{font-family:var(--font-mono);font-size:10px;letter-spacing:.12em;
+  color:var(--ink-3);text-transform:uppercase}
+.daypanel .dopen{font-family:var(--font-mono);font-size:10px;letter-spacing:.12em;
+  color:var(--coral);text-transform:uppercase}
+.daypanel .dline{font-size:13.5px;color:var(--ink);margin-top:5px;line-height:1.45}
+.daypanel .zrows{margin-top:12px}
+.zrow{display:flex;align-items:center;gap:8px;padding:4px 0}
+.zrow .zn{font-family:var(--font-mono);font-size:9px;letter-spacing:.08em;
+  width:52px;text-transform:uppercase;color:var(--ink-2)}
+.zrow .ztrack{flex:1;height:12px;background:var(--paper-deep);border-radius:2px;overflow:hidden}
+.zrow .zfill{height:100%;border-radius:2px}
+.zrow .zv{font-family:var(--font-mono);font-size:9.5px;color:var(--ink);width:78px;text-align:right}
+.daypanel .dnote{font-size:12.5px;font-style:italic;color:var(--ink-2);
+  margin-top:10px;line-height:1.5}
+
+/* ---- proto controls ---- */
+.protoctl{display:flex;justify-content:center;margin-top:18px}
+.protoctl button{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.1em;
+  text-transform:uppercase;padding:9px 18px;border-radius:20px;cursor:pointer;
+  border:1px solid var(--ink);background:var(--ink);color:var(--paper)}
+.protoctl button.off{background:transparent;color:var(--ink-2);border-color:var(--rule)}
+.protoctl .lbl{font-family:var(--font-body);font-style:italic;font-size:12px;
+  color:var(--ink-3);align-self:center;margin-left:12px}
+
+/* ---- notes ---- */
+.notes{margin-top:30px;border-top:1px solid var(--rule);padding-top:18px}
+.notes h3{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.13em;
+  color:var(--ink-2);text-transform:uppercase;font-weight:400;margin-bottom:10px}
+.notes p{font-size:13px;line-height:1.6;color:var(--ink-2);margin-bottom:12px}
+.notes b{color:var(--ink);font-weight:700}
+.notes code{font-family:var(--font-mono);font-size:11px;background:var(--paper-deep);
+  padding:1px 5px;border-radius:3px;color:var(--ink)}
+.footer{text-align:center;font-family:var(--font-mono);font-size:10px;
+  letter-spacing:.12em;color:var(--ink-3);margin-top:40px;text-transform:uppercase}
+</style>
+</head>
+<body>
+
+<div class="eyebrow" style="text-align:center;margin-bottom:16px">Trends · Prototype · TLS + Miles by Pace</div>
+
+<div class="stepper">
+  <div>
+    <div class="range" id="rangeLabel">Aug 4 – Aug 17</div>
+    <div class="span">Last 14 days</div>
+  </div>
+  <div class="btns"><span>‹</span><span>›</span></div>
+</div>
+
+<div class="headline">
+  <span class="big"><span class="num">1</span><span class="rest">of 14 days</span></span>
+  <div class="sub">Struggling or worse · only 6 of 14 logged</div>
+  <div class="sub2">Against 1 in the fortnight before</div>
+</div>
+
+<div class="facts" id="facts"></div>
+
+<div class="said">No low days back to back. Niggles on 1 day — mostly knee.</div>
+
+<!-- THE SPECTRUM STRIP · the legend is the control -->
+<div class="spectrum">
+  <div class="lhead">
+    <span class="eyebrow">The pace spectrum</span>
+    <span class="micro">slow → fast</span>
+  </div>
+  <div class="bar" id="specBar"></div>
+  <div class="ticks" id="specTicks"></div>
+  <div class="hint">Tap a zone to pick out where that pace lived in the fortnight. Tap again to clear.</div>
+</div>
+
+<!-- THE CHART -->
+<div class="chartcard">
+  <div class="readout" id="readout">Tap or drag a day to read it. The miles and TLS bars are stacked by pace zone — pale easy at the base, the sharp end on top.</div>
+  <svg id="chart" preserveAspectRatio="xMidYMid meet"></svg>
+</div>
+
+<div class="daypanel" id="daypanel"></div>
+
+<div class="protoctl">
+  <button id="specToggle">Spectrum · On</button>
+  <span class="lbl">prototype-only: compare with today's graphite</span>
+</div>
+
+<div class="notes">
+  <h3>What changed, and why it reads</h3>
+  <p><b>The MILES and TLS lanes are now stacked by pace zone</b>, colored on the
+  one blue ramp from <code>PaceSpectrum.swift</code>. The two lanes tell the story
+  together: miles are mostly pale — easy running is the foundation — while TLS
+  weights the fast end, so the same interval Wednesday that is a short bar in
+  MILES is a tall, navy-tipped bar in TLS. Where the deep blue lives is where the
+  training stress came from.</p>
+  <p><b>The palette rule holds.</b> Blue = pace, warm = mood, coral = alert. The
+  old graphite bars existed because a blue bar "would read as a pace signal" —
+  these bars now <i>are</i> pace signals, so the color is finally earning the rule
+  rather than dodging it. Mood stays warm, the niggle dot stays coral, and no
+  hue is shared.</p>
+  <p><b>Days without lap data stay graphite.</b> A manual entry or an import with
+  no splits (Fri Aug 14 here) draws the flat neutral bar and says so when tapped
+  — we cannot say how it was distributed, and must not guess. Rest days stay
+  empty. Three states, three looks.</p>
+  <h3>Implementation notes</h3>
+  <p>Data already exists per day on <code>TrendsDay</code>: <code>zoneMiles</code>
+  for the MILES lane, <code>zoneLoad</code> (weighted minutes off the backend's
+  continuous curve) for TLS. In <code>TrendsMoodLanes.swift</code>,
+  <code>drawBars</code> grows a stacked variant that walks the day's zones
+  slow→fast, bottom→top; the lane keeps one scale across the window
+  (peak day = full height), exactly as today. Fallback: <code>hasZoneBreakdown
+  == false</code> → today's flat bar. The zone→color map is the one already in
+  <code>TrendsReadView.zoneColor</code>; recovery folds to the easy stop and the
+  backend folds LT into hmp, so no new vocabulary. This prototype's TLS uses the
+  discrete <code>TrendsZoneWeight</code> table — the app should keep preferring
+  <code>zoneLoad</code> when present.</p>
+</div>
+
+<div class="footer">Post Run Drip · trends prototype · for review</div>
+
+<script>
+// ---------------- zones ----------------
+const ZONES = [
+  {t:'recovery', label:'REC',   color:'#93B9D6', w:1.0,  pace:10.2},
+  {t:'easy',     label:'EASY',  color:'#93B9D6', w:1.0,  pace:9.5},
+  {t:'moderate', label:'MOD',   color:'#74A8CC', w:1.4,  pace:8.8},
+  {t:'steady',   label:'STEADY',color:'#578FC0', w:2.15, pace:8.2},
+  {t:'mp',       label:'MP',    color:'#3F7CB5', w:2.5,  pace:7.4},
+  {t:'hmp',      label:'HMP',   color:'#2F66A8', w:3.25, pace:7.05},
+  {t:'10k',      label:'10K',   color:'#20448B', w:4.0,  pace:6.75},
+  {t:'5k',       label:'5K',    color:'#1A3679', w:5.5,  pace:6.4},
+  {t:'3k',       label:'3K',    color:'#142964', w:6.75, pace:6.1},
+  {t:'mile',     label:'MILE',  color:'#0E1D4E', w:8.0,  pace:5.6},
+];
+const Z = Object.fromEntries(ZONES.map(z=>[z.t,z]));
+// legend shows the ten canonical stops (recovery folds into easy)
+const LEGEND = ZONES.filter(z=>z.t!=='recovery');
+
+const MOOD = {
+  energized:'var(--m-energized)', positive:'var(--m-positive)', neutral:'var(--m-neutral)',
+  tired:'var(--m-tired)', struggling:'var(--m-struggling)', injured:'var(--m-injured)'
+};
+
+// ---------------- the fortnight ----------------
+// zm = miles per zone. null zm with miles>0 = ran, no laps (manual entry).
+const DAYS = [
+  {d:'Aug 4',  mood:'tired',      key:true,  zm:{easy:5.5, moderate:2.0, hmp:4.5}},
+  {d:'Aug 5',  mood:null,                    zm:{recovery:4.5, easy:1.5}},
+  {d:'Aug 6',  mood:'positive',   long:true, zm:{easy:8.0, steady:2.0}},
+  {d:'Aug 7',  mood:null,                    zm:{easy:6.5}},
+  {d:'Aug 8',  mood:'positive',   key:true,  zm:{easy:10.0, steady:3.5, mp:5.5}},
+  {d:'Aug 9',  mood:null,                    zm:{recovery:3.5, easy:2.5}},
+  {d:'Aug 10', mood:null,         wk:true,   zm:{easy:11.0, moderate:2.5}},
+  {d:'Aug 11', mood:'positive',              zm:{easy:10.5}},
+  {d:'Aug 12', mood:null,         key:true,  zm:{easy:5.0, '5k':2.5, '3k':1.0}},
+  {d:'Aug 13', mood:'neutral',               zm:{easy:12.5, steady:2.0},
+     niggle:{area:'knee', sev:'tight', said:'left knee a little tight on the downhills'}},
+  {d:'Aug 14', mood:null,                    miles:5.0, zm:null},   // manual entry, no laps
+  {d:'Aug 15', mood:null,                    zm:{recovery:5.0}},
+  {d:'Aug 16', mood:'struggling', long:true, zm:{easy:12.0, steady:4.5, mp:1.5}},
+  {d:'Aug 17', mood:null,         wk:true,   zm:{easy:6.5}},
+];
+
+// derived: miles, tls per zone (minutes × weight), tls total
+for (const day of DAYS) {
+  if (day.zm) {
+    day.miles = Object.values(day.zm).reduce((a,b)=>a+b,0);
+    day.zl = {};
+    for (const [t,mi] of Object.entries(day.zm)) day.zl[t] = mi * Z[t].pace * Z[t].w;
+    day.tls = Object.values(day.zl).reduce((a,b)=>a+b,0);
+  } else {
+    day.miles = day.miles || 0;
+    // fallback ladder: minutes at an assumed easy pace, weight 1 (stressLoad stand-in)
+    day.tls = day.miles > 0 ? day.miles * 9.5 : 0;
+    day.zl = null;
+  }
+}
+const totalMiles = DAYS.reduce((a,d)=>a+d.miles,0);
+const keyCount = DAYS.filter(d=>d.key).length;
+const logCount = DAYS.filter(d=>d.mood).length;
+const niggleDays = DAYS.filter(d=>d.niggle).length;
+
+document.getElementById('facts').innerHTML = [
+  [logCount,'Logs'],[Math.round(totalMiles),'Miles'],[keyCount,'Key'],[niggleDays,'Niggle days']
+].map(([v,k])=>`<div class="fact"><div class="v">${v}</div><div class="k">${k}</div></div>`).join('');
+
+// ---------------- chart geometry ----------------
+const W = 372, GUT = 40;
+const LANES = [
+  {id:'mood',   label:'MOOD',   h:30},
+  {id:'miles',  label:'MILES',  h:56},
+  {id:'niggle', label:'NIGGLE', h:20},
+  {id:'key',    label:'KEY',    h:20},
+  {id:'tls',    label:'TLS',    h:52},
+];
+const GAP = 16, AXIS = 18;
+let y = 0; for (const l of LANES){ l.top = y; y += l.h + GAP; }
+const H = y - GAP + AXIS;
+const slot = (W - GUT) / DAYS.length;
+const barW = Math.max(2, slot * 0.62);
+const cx = i => GUT + i*slot + slot/2;
+
+let spectrumOn = true;
+let scrub = null;        // selected day index
+let pickZone = null;     // highlighted zone token (legend tap)
+
+const svg = document.getElementById('chart');
+svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+
+const GRAPHITE = '#9B9590', GRAPHITE_2 = '#6B6560';
+
+function zoneAlpha(t){
+  if (!pickZone) return 1;
+  if (t === pickZone) return 1;
+  if (pickZone === 'easy' && t === 'recovery') return 1;  // recovery folds to easy
+  return 0.15;
+}
+
+function draw(){
+  let s = '';
+  const lastLane = LANES[LANES.length-1];
+  const chartBottom = lastLane.top + lastLane.h;
+
+  // week rules on the Mondays
+  DAYS.forEach((d,i)=>{ if (d.wk && i>0){
+    const x = GUT + i*slot;
+    s += `<line x1="${x}" y1="0" x2="${x}" y2="${chartBottom}" stroke="var(--rule)" stroke-width="1" opacity=".8"/>`;
+  }});
+
+  for (const lane of LANES){
+    // gutter label
+    s += `<text x="${GUT-7}" y="${lane.top + lane.h/2 + 3}" text-anchor="end"
+           font-size="8" letter-spacing="1" fill="var(--ink-3)">${lane.label}</text>`;
+    if (lane.id==='mood') s += drawMood(lane);
+    if (lane.id==='miles') s += drawStacked(lane, d=>d.zm, d=>d.miles, 'mi');
+    if (lane.id==='niggle') s += drawNiggle(lane);
+    if (lane.id==='key') s += drawKey(lane);
+    if (lane.id==='tls') s += drawStacked(lane, d=>d.zl, d=>d.tls, 'tls');
+  }
+
+  // axis: every third column
+  DAYS.forEach((d,i)=>{ if (i%3===0)
+    s += `<text x="${cx(i)}" y="${H-4}" text-anchor="middle" font-size="8" fill="var(--ink-3)">${d.d}</text>`;
+  });
+
+  // scrub spine
+  if (scrub !== null)
+    s += `<line x1="${cx(scrub)}" y1="0" x2="${cx(scrub)}" y2="${chartBottom}"
+          stroke="var(--coral)" stroke-width="1" opacity=".5"/>`;
+
+  svg.innerHTML = s;
+}
+
+function drawMood(lane){
+  let s = '';
+  const side = Math.min(slot-4, lane.h-4, 24);
+  DAYS.forEach((d,i)=>{
+    const fill = d.mood ? MOOD[d.mood] : 'var(--paper-deep)';
+    const x = cx(i)-side/2, yy = lane.top + (lane.h-side)/2;
+    s += `<rect x="${x}" y="${yy}" width="${side}" height="${side}" rx="3" fill="${fill}"/>`;
+    if (scrub===i)
+      s += `<rect x="${x-2.5}" y="${yy-2.5}" width="${side+5}" height="${side+5}" rx="5"
+            fill="none" stroke="var(--ink)" stroke-width="1.4"/>`;
+  });
+  return s;
+}
+
+// the new lanes — one scale across the window; stacked slow→fast, bottom→top
+function drawStacked(lane, zonesOf, totalOf, kind){
+  let s = '';
+  const base = lane.top + lane.h;
+  s += `<line x1="${GUT}" y1="${base}" x2="${W}" y2="${base}" stroke="var(--rule)" stroke-width="1"/>`;
+  const peak = Math.max(...DAYS.map(totalOf));
+  if (peak <= 0) return s;
+
+  DAYS.forEach((d,i)=>{
+    const total = totalOf(d);
+    if (total <= 0) return;
+    const x = cx(i) - barW/2;
+    const fullH = Math.max(1.5, total/peak * lane.h);
+    const zones = zonesOf(d);
+
+    if (!spectrumOn || !zones){
+      // graphite: today's bar, and the no-laps fallback
+      const fill = zones && spectrumOn===false
+        ? (kind==='mi' ? GRAPHITE : GRAPHITE_2)
+        : (kind==='mi' ? GRAPHITE : GRAPHITE_2);
+      const op = (spectrumOn && !zones) ? .55 : 1;   // fallback day reads quieter
+      s += `<rect x="${x}" y="${base-fullH}" width="${barW}" height="${fullH}" rx="1.5"
+             fill="${fill}" opacity="${pickZone? .15 : op}"/>`;
+      if (spectrumOn && !zones)
+        s += `<line x1="${x}" y1="${base-fullH-2.5}" x2="${x+barW}" y2="${base-fullH-2.5}"
+              stroke="${GRAPHITE}" stroke-width="1.2" stroke-dasharray="2 2" opacity="${pickZone? .15 : .9}"/>`;
+      return;
+    }
+
+    // stack in taxonomy order, slow at the base
+    let yy = base;
+    for (const z of ZONES){
+      const v = zones[z.t];
+      if (!v) continue;
+      const h = v/total * fullH;
+      yy -= h;
+      s += `<rect x="${x}" y="${yy}" width="${barW}" height="${Math.max(h,0.75)}"
+             fill="${z.color}" opacity="${zoneAlpha(z.t)}"/>`;
+    }
+    // crisp cap so pale tops don't dissolve into the card
+    s += `<rect x="${x}" y="${base-fullH}" width="${barW}" height="${fullH}" rx="1.5"
+           fill="none" stroke="rgba(26,24,21,.10)" stroke-width=".5"/>`;
+  });
+  return s;
+}
+
+function drawNiggle(lane){
+  let s = '';
+  const mid = lane.top + lane.h/2;
+  DAYS.forEach((d,i)=>{
+    if (d.niggle)
+      s += `<circle cx="${cx(i)}" cy="${mid}" r="4" fill="var(--coral)" opacity=".55"/>`;
+    else
+      s += `<circle cx="${cx(i)}" cy="${mid}" r="1.1" fill="var(--rule)"/>`;
+  });
+  return s;
+}
+
+function drawKey(lane){
+  let s = '';
+  const mid = lane.top + lane.h/2;
+  s += `<line x1="${GUT}" y1="${mid}" x2="${W}" y2="${mid}" stroke="var(--rule)" stroke-width="1"/>`;
+  DAYS.forEach((d,i)=>{
+    if (!d.key && !d.long) return;
+    const r = d.long && !d.key ? 5 : 4.2;
+    const x = cx(i);
+    const fill = d.key ? 'var(--ink)' : 'var(--ink-2)';
+    s += `<path d="M ${x} ${mid-r} L ${x+r} ${mid} L ${x} ${mid+r} L ${x-r} ${mid} Z" fill="${fill}"/>`;
+  });
+  return s;
+}
+
+// ---------------- legend ----------------
+const specBar = document.getElementById('specBar');
+const specTicks = document.getElementById('specTicks');
+specBar.innerHTML = LEGEND.map(z=>`<span data-z="${z.t}" style="background:${z.color}"></span>`).join('');
+specTicks.innerHTML = LEGEND.map(z=>`<span data-z="${z.t}">${z.label}</span>`).join('');
+
+function setPick(t){
+  pickZone = (pickZone===t) ? null : t;
+  scrub = null;
+  document.querySelectorAll('#specBar span').forEach(el=>{
+    el.style.opacity = (!pickZone || el.dataset.z===pickZone) ? 1 : .25;
+  });
+  document.querySelectorAll('#specTicks span').forEach(el=>{
+    el.classList.toggle('on', el.dataset.z===pickZone);
+  });
+  updateReadout(); renderDayPanel(); draw();
+}
+[specBar, specTicks].forEach(el=>el.addEventListener('click', e=>{
+  const t = e.target.dataset && e.target.dataset.z; if (t) setPick(t);
+}));
+
+// ---------------- interactions ----------------
+function indexAt(clientX){
+  const r = svg.getBoundingClientRect();
+  const px = (clientX - r.left) / r.width * W;
+  return Math.min(DAYS.length-1, Math.max(0, Math.floor((px-GUT)/slot)));
+}
+let dragging = false;
+svg.addEventListener('pointerdown', e=>{ dragging=true; select(indexAt(e.clientX)); });
+svg.addEventListener('pointermove', e=>{ if (dragging) select(indexAt(e.clientX), true); });
+window.addEventListener('pointerup', ()=> dragging=false);
+
+function select(i, fromDrag){
+  if (!fromDrag && scrub===i){ scrub=null; }
+  else scrub = i;
+  pickZone = null;
+  document.querySelectorAll('#specBar span').forEach(el=>el.style.opacity=1);
+  document.querySelectorAll('#specTicks span').forEach(el=>el.classList.remove('on'));
+  updateReadout(); renderDayPanel(); draw();
+}
+
+function fmt1(v){ return (Math.round(v*10)/10).toFixed(1); }
+
+function updateReadout(){
+  const el = document.getElementById('readout');
+  if (scrub !== null){
+    const d = DAYS[scrub];
+    let line = `${d.d} — `;
+    line += d.mood ? `felt ${d.mood}` : 'no log';
+    line += d.miles>0 ? ` · ${fmt1(d.miles)} mi · TLS ${Math.round(d.tls)}` : ' · rest day';
+    if (d.key) line += ' · key session';
+    if (d.niggle) line += ` · niggle: ${d.niggle.area}`;
+    el.textContent = line;
+    return;
+  }
+  if (pickZone){
+    const label = Z[pickZone].label;
+    let mi=0, tls=0;
+    for (const d of DAYS){ if (d.zm){
+      mi += (d.zm[pickZone]||0) + (pickZone==='easy' ? (d.zm.recovery||0) : 0);
+      tls += (d.zl[pickZone]||0) + (pickZone==='easy' ? (d.zl.recovery||0) : 0);
+    }}
+    const miPct = totalMiles>0 ? Math.round(mi/totalMiles*100) : 0;
+    const tlsTotal = DAYS.reduce((a,d)=>a+d.tls,0);
+    const tlsPct = tlsTotal>0 ? Math.round(tls/tlsTotal*100) : 0;
+    el.textContent = `${label} — ${fmt1(mi)} of ${Math.round(totalMiles)} mi (${miPct}%), but ${tlsPct}% of the fortnight's TLS. Tap again to clear.`;
+    return;
+  }
+  el.textContent = 'Tap or drag a day to read it. The miles and TLS bars are stacked by pace zone — pale easy at the base, the sharp end on top.';
+}
+
+function renderDayPanel(){
+  const panel = document.getElementById('daypanel');
+  if (scrub === null){ panel.classList.remove('on'); return; }
+  const d = DAYS[scrub];
+  panel.classList.add('on');
+
+  let html = `<div class="dhead"><span class="dtitle">${d.d} · the day, unrolled</span>`;
+  if (d.miles>0) html += `<span class="dopen">Open ↗</span>`;
+  html += `</div>`;
+
+  if (d.miles<=0){
+    html += `<div class="dline">Rest day. Nothing to unroll.</div>`;
+  } else if (!d.zm){
+    html += `<div class="dline">${fmt1(d.miles)} mi, logged by hand.</div>
+      <div class="dnote">This run arrived with no laps, so we can't say where it sat
+      on the spectrum — it draws graphite with a dashed cap rather than guessing.</div>`;
+  } else {
+    html += `<div class="dline">${fmt1(d.miles)} mi · TLS ${Math.round(d.tls)}${d.mood ? ' · felt '+d.mood : ''}</div>`;
+    html += `<div class="zrows">`;
+    const maxMi = Math.max(...ZONES.map(z=>d.zm[z.t]||0));
+    for (const z of ZONES){
+      const mi = d.zm[z.t]; if (!mi) continue;
+      const tls = d.zl[z.t];
+      html += `<div class="zrow">
+        <span class="zn">${z.label}</span>
+        <span class="ztrack"><span class="zfill" style="width:${mi/maxMi*100}%;background:${z.color}"></span></span>
+        <span class="zv">${fmt1(mi)} mi · ${Math.round(tls)}</span>
+      </div>`;
+    }
+    html += `</div>`;
+    if (d.niggle)
+      html += `<div class="dnote" style="color:var(--coral)">Niggle · ${d.niggle.area} — “${d.niggle.said}”</div>`;
+  }
+  panel.innerHTML = html;
+}
+
+// ---------------- spectrum toggle (prototype only) ----------------
+const tog = document.getElementById('specToggle');
+tog.addEventListener('click', ()=>{
+  spectrumOn = !spectrumOn;
+  tog.textContent = spectrumOn ? 'Spectrum · On' : 'Graphite · On';
+  tog.classList.toggle('off', !spectrumOn);
+  draw();
+});
+
+draw();
+</script>
+</body>
+</html>

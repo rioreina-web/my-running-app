@@ -5,7 +5,9 @@
  * logs but does not flag to the coach.
  *
  * Contract: POST with JWT
- *   body  { scheduled_workout_id: uuid, new_date: "YYYY-MM-DD" }
+ *   body  { scheduled_workout_id: uuid, new_date: "YYYY-MM-DD",
+ *           reason_code?: work|fatigue|schedule_conflict|weather|travel|feeling_good|other,
+ *           reason_text?: string (≤280 chars) }
  *   200   { ok: true, swapped_with: uuid | null, new_date }
  *   400   { error } — same-week / past-date / invalid-input violations
  *   401   { error } — missing/invalid JWT
@@ -18,20 +20,40 @@
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
+import { withSentry } from "../_shared/sentry.ts";
 import { getAuthenticatedUser, unauthorizedResponse } from "../_shared/auth.ts";
 
 interface ShiftDayBody {
   scheduled_workout_id?: string;
   new_date?: string;
+  reason_code?: string;
+  reason_text?: string;
 }
+
+// Closed vocabulary for the move-day reason picker. Optional — a move with
+// no reason is valid. See
+// outputs/adaptive-coach-plan-builder-spec-2026-07-03.md §R4.
+const MOVE_REASON_CODES = new Set([
+  "work",
+  "fatigue",
+  "schedule_conflict",
+  "weather",
+  "travel",
+  "feeling_good",
+  "other",
+]);
 
 interface ScheduledWorkoutRow {
   id: string;
   user_id: string | null;
   plan_id: string | null;
-  scheduled_date: string;
+  // Column is literally `date` in the DB (base schema 20260204110000). The
+  // earlier `scheduled_date` name was a bug — no such column exists in prod.
+  date: string;
   day_of_week: number | null;
   week_number: number | null;
+  // 1 = AM (main), 2 = PM (double). A day can hold both. Null defaults to 1.
+  session: number | null;
   workout_type: string | null;
   workout_data: unknown;
 }
@@ -102,6 +124,25 @@ export async function handleShiftDay(
   if (!/^\d{4}-\d{2}-\d{2}$/.test(newDate)) {
     return json({ error: "new_date must be YYYY-MM-DD" }, 400);
   }
+
+  // Optional reason. Unknown codes are rejected (closed vocabulary);
+  // free text is capped and only stored alongside a code — bare text
+  // gets bucketed as "other".
+  let reasonCode: string | null = null;
+  let reasonText: string | null = null;
+  if (body.reason_code !== undefined && body.reason_code !== null) {
+    if (typeof body.reason_code !== "string" || !MOVE_REASON_CODES.has(body.reason_code)) {
+      return json(
+        { error: `reason_code must be one of: ${[...MOVE_REASON_CODES].join(", ")}` },
+        400,
+      );
+    }
+    reasonCode = body.reason_code;
+  }
+  if (typeof body.reason_text === "string" && body.reason_text.trim().length > 0) {
+    reasonText = body.reason_text.trim().slice(0, 280);
+    if (!reasonCode) reasonCode = "other";
+  }
   const newDateObj = parseLocalDate(newDate);
   if (isNaN(newDateObj.getTime())) {
     return json({ error: "new_date is not a valid date" }, 400);
@@ -120,7 +161,7 @@ export async function handleShiftDay(
   // 1. Load the source workout and verify ownership.
   const { data: source, error: sourceErr } = await supabase
     .from("scheduled_workouts")
-    .select("id, user_id, plan_id, scheduled_date, day_of_week, week_number, workout_type, workout_data")
+    .select("id, user_id, plan_id, date, day_of_week, week_number, session, workout_type, workout_data")
     .eq("id", scheduledWorkoutId)
     .maybeSingle<ScheduledWorkoutRow>();
 
@@ -148,7 +189,7 @@ export async function handleShiftDay(
   }
 
   // 2. Same-week validation.
-  const sourceWeekStart = weekStartMonday(parseLocalDate(source.scheduled_date));
+  const sourceWeekStart = weekStartMonday(parseLocalDate(source.date));
   const newWeekStart = weekStartMonday(newDateObj);
   if (sourceWeekStart !== newWeekStart) {
     return json(
@@ -165,29 +206,39 @@ export async function handleShiftDay(
     const d = (deps.now ?? (() => new Date()))();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   })();
-  if (source.scheduled_date < todayStr) {
+  if (source.date < todayStr) {
     return json({ error: "Cannot move a past-dated workout" }, 403);
   }
   if (newDate < todayStr) {
     return json({ error: "Cannot move to a past date" }, 403);
   }
-  if (source.scheduled_date === newDate) {
+  if (source.date === newDate) {
     return json({ error: "new_date equals current date — nothing to do" }, 400);
   }
 
-  // 4. Destination lookup — is there a workout already on new_date for this
-  //    plan? If so we swap; if not we just move.
-  const { data: destExisting, error: destErr } = await supabase
+  // 4. Destination lookup — what's already on new_date for this plan? A day
+  //    can hold two sessions (AM + PM double), so we fetch ALL rows there
+  //    (never .maybeSingle(), which errors on a doubled day) and swap only
+  //    with the row in the SAME session slot. Moving an AM run onto a day
+  //    that already has an AM run swaps them; moving it onto a day that only
+  //    has a PM run is a simple move that makes the destination a double.
+  const sourceSession = source.session ?? 1;
+  // Await the builder directly — a plain select returns ALL matching rows
+  // (a doubled day has two), unlike .maybeSingle() which errors on >1 row.
+  const { data: destRowsRaw, error: destErr } = await supabase
     .from("scheduled_workouts")
-    .select("id, user_id, plan_id, scheduled_date, day_of_week, week_number, workout_type, workout_data")
+    .select("id, user_id, plan_id, date, day_of_week, week_number, session, workout_type, workout_data")
     .eq("plan_id", source.plan_id)
-    .eq("scheduled_date", newDate)
-    .maybeSingle<ScheduledWorkoutRow>();
+    .eq("date", newDate);
 
   if (destErr) {
     console.error("shift-day: destination lookup failed", destErr);
     return json({ error: "Database error" }, 500);
   }
+
+  const destRows = (destRowsRaw ?? []) as ScheduledWorkoutRow[];
+  const destExisting =
+    destRows.find((r) => (r.session ?? 1) === sourceSession) ?? null;
 
   // Compute new day_of_week for the moved row. dayOfWeek stored as 1=Mon..7=Sun.
   const newDowJS = newDateObj.getDay(); // 0=Sun..6=Sat
@@ -201,13 +252,13 @@ export async function handleShiftDay(
   if (destExisting) {
     // Swap: dest takes source's old date, source takes new_date.
     swappedWith = destExisting.id;
-    const sourceOldDate = source.scheduled_date;
+    const sourceOldDate = source.date;
     const sourceOldDow = source.day_of_week;
 
     // Move source to new_date first.
     const { error: e1 } = await supabase
       .from("scheduled_workouts")
-      .update({ scheduled_date: newDate, day_of_week: newDow })
+      .update({ date: newDate, day_of_week: newDow })
       .eq("id", source.id);
     if (e1) {
       console.error("shift-day: source move failed", e1);
@@ -217,13 +268,13 @@ export async function handleShiftDay(
     // Move dest to source's old date.
     const { error: e2 } = await supabase
       .from("scheduled_workouts")
-      .update({ scheduled_date: sourceOldDate, day_of_week: sourceOldDow })
+      .update({ date: sourceOldDate, day_of_week: sourceOldDow })
       .eq("id", destExisting.id);
     if (e2) {
       // Roll back source.
       await supabase
         .from("scheduled_workouts")
-        .update({ scheduled_date: sourceOldDate, day_of_week: sourceOldDow })
+        .update({ date: sourceOldDate, day_of_week: sourceOldDow })
         .eq("id", source.id);
       console.error("shift-day: dest move failed, rolled back", e2);
       return json({ error: "Failed to complete swap" }, 500);
@@ -232,7 +283,7 @@ export async function handleShiftDay(
     // Simple move — no swap target.
     const { error: e1 } = await supabase
       .from("scheduled_workouts")
-      .update({ scheduled_date: newDate, day_of_week: newDow })
+      .update({ date: newDate, day_of_week: newDow })
       .eq("id", source.id);
     if (e1) {
       console.error("shift-day: move failed", e1);
@@ -246,14 +297,14 @@ export async function handleShiftDay(
     before: {
       source: {
         id: source.id,
-        scheduled_date: source.scheduled_date,
+        date: source.date,
         day_of_week: source.day_of_week,
         workout_type: source.workout_type,
       },
       dest: destExisting
         ? {
             id: destExisting.id,
-            scheduled_date: destExisting.scheduled_date,
+            date: destExisting.date,
             day_of_week: destExisting.day_of_week,
             workout_type: destExisting.workout_type,
           }
@@ -262,23 +313,23 @@ export async function handleShiftDay(
     after: {
       source: {
         id: source.id,
-        scheduled_date: newDate,
+        date: newDate,
         day_of_week: newDow,
       },
       dest: destExisting
         ? {
             id: destExisting.id,
-            scheduled_date: source.scheduled_date,
+            date: source.date,
             day_of_week: source.day_of_week,
           }
         : null,
     },
     diff: destExisting
       ? [
-          { id: source.id, from: source.scheduled_date, to: newDate },
-          { id: destExisting.id, from: newDate, to: source.scheduled_date },
+          { id: source.id, from: source.date, to: newDate },
+          { id: destExisting.id, from: newDate, to: source.date },
         ]
-      : [{ id: source.id, from: source.scheduled_date, to: newDate }],
+      : [{ id: source.id, from: source.date, to: newDate }],
   };
 
   const { error: adjErr } = await supabase.from("plan_adjustments").insert({
@@ -291,7 +342,8 @@ export async function handleShiftDay(
     auto_applied: true,
     applied_at: new Date().toISOString(),
     tier: "green",
-    reason_code: "shift_day",
+    reason_code: reasonCode ?? "shift_day",
+    reason_text: reasonText,
     week_number: source.week_number,
   });
   if (adjErr) {
@@ -306,4 +358,7 @@ export async function handleShiftDay(
   );
 }
 
-Deno.serve((req) => handleShiftDay(req));
+// handleShiftDay has no top-level catch — withSentry captures escaped
+// throws (beta-audit item #16) and returns a JSON 500 instead of an
+// opaque runtime error.
+Deno.serve(withSentry("shift-day", (req) => handleShiftDay(req)));

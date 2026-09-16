@@ -17,11 +17,13 @@
 //
 //  Lifecycle:
 //    - `refresh()` is called once at app launch from `RunningLogApp`
-//      and again on every foreground transition.
-//    - `refresh()` first SELECTs the completed `daily_coaching_reads`
-//      row for today (cheap, RLS-scoped to the user via the Supabase
-//      Swift client). On a miss it POSTs to `coaching-daily-read` with
-//      `triggered_by = "manual"` to generate one.
+//      and again on every foreground transition. Those calls are
+//      SELECT-only (cheap): they hydrate an existing completed row and
+//      NEVER trigger a paid LLM generation.
+//    - `refresh(generateIfMissing: true)` additionally POSTs to
+//      `coaching-daily-read` with `triggered_by = "manual"` when no
+//      completed row exists. Only a mounted, user-visible Read surface
+//      should pass this flag — generation is a real Gemini call.
 //    - After the Read lands, the service issues two parallel
 //      `IN (…)` queries to hydrate every cited workout and doc into
 //      `workoutsById` / `docsById`, so the SwiftUI chip components
@@ -71,14 +73,19 @@ final class DailyReadService {
 
     // MARK: - Public API
 
-    /// Fetch today's Read from the database; generate one via the edge
-    /// function if no completed row exists for today. Then hydrate the
-    /// referenced workouts and docs into the in-memory caches.
+    /// Fetch today's Read from the database. By default this is a cheap
+    /// SELECT-only refresh; pass `generateIfMissing: true` to POST to the
+    /// edge function (a paid LLM call) when no completed row exists.
     ///
-    /// Safe to call repeatedly — re-runs are cheap when a completed
-    /// row exists for today (one SELECT, two `IN` queries).
+    /// COST (2026-08-13): the default flipped from generate-always to
+    /// SELECT-only. This method runs on every app launch and every
+    /// foreground transition, and the Read surface (CoachReadView) is
+    /// currently unmounted — so the old behavior generated a paid
+    /// frontier-model Read on a dark surface, dozens of times a day
+    /// during development ($7/day Gemini bills). Only a surface the user
+    /// is actually looking at should pass `generateIfMissing: true`.
     @MainActor
-    func refresh() async throws {
+    func refresh(generateIfMissing: Bool = false) async throws {
         guard let userId = AuthManager.shared.currentUserId else {
             Log.coachRead.info("refresh() skipped — no signed-in user")
             return
@@ -87,7 +94,15 @@ final class DailyReadService {
         defer { isLoading = false }
 
         do {
-            let read = try await fetchOrGenerateTodayRead(userId: userId)
+            guard let read = try await fetchOrGenerateTodayRead(
+                userId: userId,
+                generateIfMissing: generateIfMissing
+            ) else {
+                // No completed Read for today and generation not requested.
+                // Keep whatever we had; this is the normal launch path.
+                lastError = nil
+                return
+            }
             todayRead = read
             try await hydrate(read: read)
             lastError = nil
@@ -136,6 +151,16 @@ final class DailyReadService {
                         CoachRead.self,
                         forKey: AnyCodingKey("read")
                     )
+                } else if container.contains(AnyCodingKey("response")) {
+                    // Chat-shaped fallback. coaching-agent returns its plain
+                    // chat envelope ({ response, model, provider, ... }) instead
+                    // of the editorial { read } when the request didn't reach
+                    // the editorial branch (older deploy, or a build that didn't
+                    // send format:"editorial"). Synthesize a CoachRead from the
+                    // answer text so the ask surface renders instead of showing
+                    // "Couldn't reach the coach" on a perfectly good 200.
+                    let text = (try? container.decode(String.self, forKey: AnyCodingKey("response"))) ?? ""
+                    self.read = CoachRead.fromPlainText(text)
                 } else {
                     self.read = try CoachRead(from: decoder)
                 }
@@ -151,17 +176,27 @@ final class DailyReadService {
     // MARK: - Fetch / generate
 
     @MainActor
-    private func fetchOrGenerateTodayRead(userId: String) async throws -> CoachRead {
+    private func fetchOrGenerateTodayRead(
+        userId: String,
+        generateIfMissing: Bool
+    ) async throws -> CoachRead? {
         let today = Self.deviceLocalDateString()
 
         // 1. Cheap path: SELECT the completed row for today via the
         //    typed Supabase Swift client. RLS scopes this to the
-        //    signed-in user via the client's bearer token. The SDK's
-        //    default decoder handles both the date-only `read_date`
-        //    and the ISO-8601 `generated_at` (the same path TrainingLog
-        //    relies on for its DATE-column `workout_date` field).
+        //    signed-in user via the client's bearer token.
+        //
+        //    Decode the raw response with `JSONDecoder.coachRead()`, NOT
+        //    the SDK's default `.value` decoder. `read_date` is a DATE
+        //    column ("2026-05-19"), and the SDK decoder
+        //    (`JSONDecoder.supabase()`) only parses ISO-8601 *timestamps*
+        //    — it throws `dataCorrupted` on a date-only string, so the
+        //    typed `.value` path failed on every load and silently fell
+        //    through to the expensive generate path below. (TrainingLog's
+        //    `workout_date` decodes fine via `.value` only because it's
+        //    TIMESTAMPTZ, not DATE — they are not the same path.)
         do {
-            let rows: [CoachRead] = try await supabase
+            let response = try await supabase
                 .from("daily_coaching_reads")
                 .select("*")
                 .eq("user_id", value: userId)
@@ -169,18 +204,24 @@ final class DailyReadService {
                 .eq("status", value: "completed")
                 .limit(1)
                 .execute()
-                .value
+            let rows = try JSONDecoder.coachRead().decode(
+                [CoachRead].self,
+                from: response.data
+            )
             if let read = rows.first {
                 return read
             }
         } catch {
-            // Don't bail on a SELECT failure — fall through to the
-            // generate path. The edge function call is the canonical
-            // recovery: it'll write the row server-side and return it.
+            // SELECT failure: only fall through to the generate path when the
+            // caller explicitly asked for generation. The old behavior
+            // ("SELECT failed → generate") turned transient network/decoding
+            // errors into paid LLM calls on every foreground.
             Log.coachRead.warning(
-                "SELECT failed (\(error.localizedDescription)) — falling back to generate"
+                "SELECT failed (\(error.localizedDescription))"
             )
         }
+
+        guard generateIfMissing else { return nil }
 
         // 2. Generate path: POST to the edge function. It short-
         //    circuits on completed rows internally — so even if our

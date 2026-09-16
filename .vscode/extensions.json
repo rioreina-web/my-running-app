@@ -1,0 +1,22 @@
+{
+  // Suggested when the repo is opened. Nothing installs automatically.
+  "recommendations": [
+    // The one that fixes a real error: supabase/functions is Deno (URL
+    // imports, Deno.serve) while web/ is Node. Scoped in settings.json.
+    "denoland.vscode-deno",
+
+    // Per stack
+    "swiftlang.swift-vscode",        // RunningLog/ — reading/editing; Xcode still owns builds
+    "dbaeumer.vscode-eslint",        // web/ — ESLint 9 flat config
+    "bradlc.vscode-tailwindcss",     // web/ — Tailwind 4
+    "ms-python.python",              // ml-service/
+    "ms-python.vscode-pylance",
+    "charliermarsh.ruff",
+
+    // Reading this repo specifically
+    "usernamehw.errorlens",          // stale deploys + schema drift show up as inline errors
+    "eamodio.gitlens",               // the reasoning lives in commit messages here
+    "mtxr.sqltools",                 // migrations + ad-hoc queries
+    "mtxr.sqltools-driver-pg"
+  ]
+}

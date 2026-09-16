@@ -1,0 +1,24 @@
+{
+  "id": "003-mundane-no-memory",
+  "prompt_name": "process-training-memo.v3",
+  "description": "A routine training memo with nothing durable worth remembering. v3 must return memory_candidates: [] — the common, correct answer. Guards against the extractor manufacturing a 'memory' from every ordinary run, which would flood user_memories and make the coach sound like it's reciting a diary.",
+  "vars": {
+    "coachAnchorContext": "",
+    "recentContext": ""
+  },
+  "input": "\n\n## Audio Transcript (from groq)\n\"Easy 5 miles this morning around the usual loop. Legs felt fine, nothing special, just ticking over. Comfortable pace the whole way.\"",
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": ["transcription", "cleaned_notes", "mood", "extracted_data", "memory_candidates"],
+    "forbidden_pattern_groups": ["diagnosis_terms", "action_bans", "stop_training_bans", "medical_claim_bans"],
+    "forbidden_patterns": [
+      "\"mood\":\\s*\"(?!(energized|positive|neutral|tired|struggling|injured)\")[^\"]*\""
+    ],
+    "required_patterns": [
+      "\"memory_candidates\"\\s*:\\s*\\[\\s*\\]"
+    ]
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-flash"
+}

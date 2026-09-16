@@ -1,0 +1,820 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voice onboarding — prototype · Post Run Drip</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,200..900;1,200..900&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF; --paper-deep:#E8E4DF; --rule:#E8E4E0;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-light:#E8764A; --coral-deep:#B84420; --coral-wash:rgba(212,89,42,.12);
+  --mood-energized:#2D8A4E; --mood-tired:#C4873A; --mood-struggling:#C45A3A; --mood-injured:#B83A4A;
+  --font-display:"Crimson Pro",Georgia,serif; --font-body:"PT Serif",Georgia,serif;
+  --font-mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --t-display-xl:40px; --t-display-l:32px; --t-display-m:24px; --t-display-s:20px;
+  --t-body:15px; --t-body-sm:13px; --t-meta:11px; --t-meta-sm:10px;
+  --tracking-label:.12em; --tracking-caption:.10em; --tracking-meta:.14em;
+  --space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-5:20px;--space-6:24px;--space-7:32px;--space-8:40px;--space-9:56px;
+  --r-pill:999px; --r-card:12px; --r-button:10px; --r-input:8px; --r-tight:4px;
+  --shadow-card:0 2px 8px rgba(0,0,0,.06); --shadow-coral:0 4px 12px rgba(212,89,42,.30);
+  --ease-out:cubic-bezier(.2,.7,.2,1); --dur-fast:150ms; --dur-base:300ms;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:#2A2724;font-family:var(--font-body);color:var(--ink);
+  -webkit-font-smoothing:antialiased;padding:28px 16px 64px}
+
+/* ---------- shell ---------- */
+.stage{max-width:1180px;margin:0 auto}
+.stage-head{text-align:center;color:#B8B2AC;margin-bottom:26px}
+.stage-head h1{font-family:var(--font-display);font-weight:700;font-size:26px;color:#F5F3F0;margin:0 0 6px;letter-spacing:-.01em}
+.stage-head p{font-family:var(--font-mono);font-size:var(--t-meta);letter-spacing:var(--tracking-label);
+  text-transform:uppercase;margin:0;color:#8C8681}
+
+.rail{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin:0 auto 26px;max-width:820px}
+.rail button{font-family:var(--font-mono);font-size:var(--t-meta-sm);letter-spacing:var(--tracking-caption);
+  text-transform:uppercase;padding:7px 11px;border-radius:var(--r-pill);border:1px solid #4A4642;
+  background:#332F2C;color:#B8B2AC;cursor:pointer;transition:all var(--dur-fast) var(--ease-out)}
+.rail button:hover{border-color:#6B6560;color:#F5F3F0}
+.rail button.on{background:var(--coral);border-color:var(--coral);color:#fff}
+
+.phone-wrap{display:flex;justify-content:center}
+.phone{width:390px;height:844px;background:var(--paper);border-radius:44px;
+  box-shadow:0 0 0 11px #14120F,0 0 0 13px #3A3632,0 24px 60px rgba(0,0,0,.5);
+  overflow:hidden;position:relative;display:flex;flex-direction:column}
+.notch{position:absolute;top:9px;left:50%;transform:translateX(-50%);width:118px;height:30px;
+  background:#14120F;border-radius:var(--r-pill);z-index:60}
+.statusbar{height:50px;flex:0 0 50px;display:flex;align-items:flex-end;justify-content:space-between;
+  padding:0 26px 5px;font-family:var(--font-mono);font-size:var(--t-meta);color:var(--ink);font-weight:600}
+.screen{flex:1;overflow-y:auto;overflow-x:hidden;display:none;flex-direction:column}
+.screen.on{display:flex}
+.screen::-webkit-scrollbar{width:0}
+.pad{padding:0 var(--space-6) 92px}
+
+/* ---------- type ---------- */
+.eyebrow{font-family:var(--font-mono);font-size:var(--t-meta);font-weight:500;
+  letter-spacing:var(--tracking-label);color:var(--ink-2);text-transform:uppercase}
+.eyebrow.coral{color:var(--coral)}
+.display{font-family:var(--font-display);font-weight:700;color:var(--ink);letter-spacing:-.015em;line-height:1.05;margin:0}
+.d-xl{font-size:var(--t-display-xl)} .d-l{font-size:var(--t-display-l)}
+.d-m{font-size:var(--t-display-m)} .d-s{font-size:var(--t-display-s)}
+.body{font-family:var(--font-body);font-size:var(--t-body);line-height:1.55;color:var(--ink);margin:0}
+.body-sm{font-family:var(--font-body);font-size:var(--t-body-sm);line-height:1.5;color:var(--ink-2);margin:0}
+.quote{font-family:var(--font-body);font-style:italic;font-size:var(--t-body);line-height:1.5;color:var(--ink);margin:0}
+.caption{font-family:var(--font-mono);font-size:var(--t-meta-sm);font-weight:500;color:var(--ink-2);
+  letter-spacing:var(--tracking-caption);text-transform:uppercase}
+.stat{font-family:var(--font-mono);font-weight:600;font-variant-numeric:tabular-nums;line-height:1;color:var(--ink)}
+.rule{display:flex;align-items:center;gap:var(--space-2);margin:var(--space-5) 0}
+.rule::before,.rule::after{content:"";flex:1;height:1px;background:var(--rule)}
+.rule i{width:3px;height:3px;border-radius:999px;background:var(--rule);display:block}
+
+/* ---------- plate strip ---------- */
+.plate{display:flex;justify-content:space-between;align-items:center;padding:var(--space-3) var(--space-6) var(--space-2);
+  font-family:var(--font-mono);font-size:var(--t-meta);letter-spacing:var(--tracking-meta);
+  color:var(--ink-2);text-transform:uppercase}
+.plate .skip{color:var(--ink-3);cursor:pointer}
+
+/* ---------- buttons ---------- */
+.btn{display:block;width:100%;padding:15px 18px;border-radius:var(--r-button);border:none;
+  font-family:var(--font-display);font-weight:600;font-size:16px;cursor:pointer;
+  transition:all var(--dur-fast) var(--ease-out);text-align:center}
+.btn-primary{background:var(--coral);color:#fff;box-shadow:var(--shadow-coral)}
+.btn-primary:hover{background:var(--coral-light)}
+.btn-primary:disabled{background:var(--paper-deep);color:var(--ink-3);box-shadow:none;cursor:not-allowed}
+.btn-ghost{background:transparent;color:var(--ink-2);border:1px solid var(--rule)}
+.btn-ghost:hover{border-color:var(--ink-3);color:var(--ink)}
+.btn-text{background:none;border:none;font-family:var(--font-mono);font-size:var(--t-meta);
+  letter-spacing:var(--tracking-label);text-transform:uppercase;color:var(--ink-3);cursor:pointer;padding:10px}
+.btn-text:hover{color:var(--coral)}
+.footer{padding:var(--space-4) var(--space-6) var(--space-7);background:var(--paper);
+  position:sticky;bottom:0;border-top:1px solid var(--rule)}
+
+/* ---------- cards ---------- */
+.card{background:var(--card);border-radius:var(--r-card);padding:var(--space-5);
+  box-shadow:var(--shadow-card);margin-bottom:var(--space-3)}
+.card.flat{box-shadow:none;border:1px solid var(--rule);background:var(--paper-elevated)}
+
+/* ---------- connect rows ---------- */
+.conn{display:flex;align-items:center;gap:var(--space-4);padding:var(--space-4) 0;border-bottom:1px solid var(--rule)}
+.conn:last-child{border-bottom:none}
+.conn .ico{width:38px;height:38px;border-radius:var(--r-input);background:var(--paper-deep);
+  display:flex;align-items:center;justify-content:center;font-size:17px;flex:0 0 38px}
+.conn .txt{flex:1;min-width:0}
+.conn .name{font-family:var(--font-display);font-weight:600;font-size:16px;color:var(--ink)}
+.conn .sub{font-family:var(--font-body);font-size:var(--t-body-sm);color:var(--ink-2);margin-top:2px}
+.pill{font-family:var(--font-mono);font-size:var(--t-meta-sm);letter-spacing:var(--tracking-caption);
+  text-transform:uppercase;padding:6px 12px;border-radius:var(--r-pill);border:1px solid var(--rule);
+  background:transparent;color:var(--ink-2);cursor:pointer;white-space:nowrap;
+  transition:all var(--dur-fast) var(--ease-out)}
+.pill:hover{border-color:var(--coral);color:var(--coral)}
+.pill.done{background:var(--mood-energized);border-color:var(--mood-energized);color:#fff;cursor:default}
+.pill.done:hover{border-color:var(--mood-energized);color:#fff}
+
+/* ---------- read-back rows ---------- */
+.race{display:flex;align-items:flex-start;gap:var(--space-3);padding:var(--space-4) 0;border-bottom:1px solid var(--rule)}
+.race:last-of-type{border-bottom:none}
+.check{width:22px;height:22px;flex:0 0 22px;border-radius:var(--r-tight);border:1.5px solid var(--ink-3);
+  cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;color:#fff;
+  transition:all var(--dur-fast) var(--ease-out);margin-top:2px}
+.check.on{background:var(--coral);border-color:var(--coral)}
+.race .meta{font-family:var(--font-mono);font-size:var(--t-meta);letter-spacing:.08em;color:var(--ink-2);text-transform:uppercase}
+.race .val{font-family:var(--font-display);font-weight:700;font-size:19px;margin-top:3px;color:var(--ink)}
+.race .name{font-family:var(--font-body);font-style:italic;font-size:var(--t-body-sm);color:var(--ink-2);margin-top:2px}
+.conf{font-family:var(--font-mono);font-size:var(--t-meta-sm);letter-spacing:var(--tracking-caption);
+  color:var(--ink-3);text-transform:uppercase;margin-top:4px}
+
+/* ---------- ledger ---------- */
+.ledger{display:flex;gap:var(--space-1);margin-top:var(--space-3)}
+.ledger span{flex:1;height:3px;border-radius:2px;background:var(--paper-deep);transition:background var(--dur-base) var(--ease-out)}
+.ledger span.done{background:var(--coral)}
+.ledger span.part{background:var(--coral-wash)}
+
+/* ---------- prompt card ---------- */
+.pcard{background:var(--card);border-radius:var(--r-card);padding:var(--space-5);margin-bottom:var(--space-3);
+  box-shadow:var(--shadow-card);border-left:2px solid transparent;transition:all var(--dur-base) var(--ease-out)}
+.pcard.active{border-left-color:var(--coral)}
+.pcard.done{background:var(--paper-elevated);box-shadow:none;border:1px solid var(--rule);border-left:2px solid var(--mood-energized)}
+.pcard.busy{border-left-color:var(--coral-light)}
+.pcard h3{font-family:var(--font-mono);font-size:var(--t-meta);letter-spacing:var(--tracking-label);
+  text-transform:uppercase;color:var(--ink);margin:0 0 var(--space-3);font-weight:500}
+.pcard.done h3{color:var(--ink-2)}
+.pcard .ask{font-family:var(--font-body);font-size:var(--t-body);line-height:1.55;color:var(--ink);margin:0 0 var(--space-4)}
+.pcard .len{font-family:var(--font-mono);font-size:var(--t-meta-sm);letter-spacing:var(--tracking-caption);
+  color:var(--ink-3);text-transform:uppercase}
+
+.reccontrols{display:flex;align-items:center;gap:var(--space-4);margin-top:var(--space-4)}
+.recbtn{width:52px;height:52px;flex:0 0 52px;border-radius:999px;border:none;background:var(--coral);
+  cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow-coral);
+  transition:all var(--dur-fast) var(--ease-out)}
+.recbtn:hover{background:var(--coral-light)}
+.recbtn i{display:block;width:16px;height:16px;border-radius:4px;background:#fff}
+.recbtn.idle i{border-radius:999px;width:18px;height:18px}
+.recbtn.rec{animation:pulse 1.8s var(--ease-out) infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(212,89,42,.45)}50%{box-shadow:0 0 0 12px rgba(212,89,42,0)}}
+
+.wave{flex:1;height:34px;display:flex;align-items:center;gap:2.5px;overflow:hidden}
+.wave b{flex:1;background:var(--coral-wash);border-radius:2px;height:3px;transition:height 110ms linear}
+.wave.live b{background:var(--coral)}
+.timer{font-family:var(--font-mono);font-size:var(--t-body-sm);font-weight:600;color:var(--ink-2);
+  font-variant-numeric:tabular-nums;min-width:38px;text-align:right}
+
+.receipt{display:flex;gap:var(--space-3);align-items:flex-start;margin-top:var(--space-2)}
+.receipt .dot{width:5px;height:5px;border-radius:999px;background:var(--mood-energized);margin-top:7px;flex:0 0 5px}
+.receipt p{margin:0;font-family:var(--font-body);font-size:var(--t-body-sm);color:var(--ink-2);line-height:1.5}
+.receipt p b{color:var(--ink);font-weight:400;font-style:italic}
+.status{font-family:var(--font-mono);font-size:var(--t-meta-sm);letter-spacing:var(--tracking-caption);
+  text-transform:uppercase;color:var(--coral);margin-top:var(--space-3);display:flex;align-items:center;gap:var(--space-2)}
+.status .spin{width:9px;height:9px;border:1.5px solid var(--coral-wash);border-top-color:var(--coral);
+  border-radius:999px;animation:sp .7s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.transcript{background:var(--paper-deep);border-radius:var(--r-input);padding:var(--space-3);margin-top:var(--space-3)}
+.transcript p{margin:0;font-family:var(--font-body);font-style:italic;font-size:var(--t-body-sm);
+  color:var(--ink);line-height:1.5}
+
+/* ---------- day picker ---------- */
+.days{display:flex;gap:5px;margin-top:var(--space-3)}
+.day{flex:1;aspect-ratio:1/1.15;border-radius:var(--r-input);border:1px solid var(--rule);background:var(--card);
+  display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:var(--t-meta);
+  letter-spacing:.04em;color:var(--ink-2);cursor:pointer;transition:all var(--dur-fast) var(--ease-out);text-transform:uppercase}
+.day:hover{border-color:var(--ink-3)}
+.day.on{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+.day.q{background:var(--coral);border-color:var(--coral);color:#fff}
+.day.lr{background:var(--mood-speed,#6B4A8A);border-color:#6B4A8A;color:#fff}
+.ghostdays{display:flex;gap:5px;margin-top:7px}
+.ghostdays span{flex:1;height:4px;border-radius:2px;background:#EFECE8}
+.ghostdays span.on{background:var(--ink-2)}
+.legend{display:flex;gap:var(--space-4);margin-top:var(--space-3);flex-wrap:wrap}
+.legend span{display:flex;align-items:center;gap:5px;font-family:var(--font-mono);font-size:var(--t-meta-sm);
+  letter-spacing:var(--tracking-caption);text-transform:uppercase;color:var(--ink-2)}
+.legend i{width:9px;height:9px;border-radius:3px;display:block}
+
+/* ---------- chips ---------- */
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:var(--space-3)}
+.chip{font-family:var(--font-mono);font-size:var(--t-meta);letter-spacing:.06em;text-transform:uppercase;
+  padding:8px 13px;border-radius:var(--r-pill);border:1px solid var(--rule);background:var(--card);
+  color:var(--ink-2);cursor:pointer;transition:all var(--dur-fast) var(--ease-out)}
+.chip:hover{border-color:var(--ink-3)}
+.chip.on{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+
+/* ---------- niggle rows ---------- */
+.nig{display:flex;gap:var(--space-3);align-items:flex-start;padding:var(--space-3) 0;border-bottom:1px solid var(--rule)}
+.nig:last-child{border-bottom:none}
+.sev{width:3px;border-radius:2px;align-self:stretch;flex:0 0 3px;min-height:34px}
+.sev.tight{background:var(--mood-tired)} .sev.sore{background:var(--mood-struggling)}
+.sev.pain{background:var(--mood-injured)} .sev.sharp{background:var(--mood-injured)}
+.nig .who{font-family:var(--font-display);font-weight:600;font-size:16px;color:var(--ink)}
+.nig .sev-l{font-family:var(--font-mono);font-size:var(--t-meta-sm);letter-spacing:var(--tracking-caption);
+  text-transform:uppercase;color:var(--ink-3);margin-left:7px}
+.nig .said{font-family:var(--font-body);font-style:italic;font-size:var(--t-body-sm);color:var(--ink-2);margin-top:3px;line-height:1.45}
+.x{width:22px;height:22px;flex:0 0 22px;border-radius:999px;border:1px solid var(--rule);background:transparent;
+  color:var(--ink-3);cursor:pointer;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center}
+.x:hover{border-color:var(--mood-injured);color:var(--mood-injured)}
+
+/* ---------- conflict ---------- */
+.conflict{background:var(--coral-wash);border-radius:var(--r-input);padding:var(--space-4);margin-top:var(--space-3)}
+.conflict p{margin:0 0 var(--space-3);font-family:var(--font-body);font-size:var(--t-body-sm);color:var(--ink);line-height:1.5}
+.conflict .opts{display:flex;gap:6px}
+.conflict .opts button{flex:1;padding:10px 6px;border-radius:var(--r-input);border:1px solid rgba(212,89,42,.3);
+  background:var(--card);font-family:var(--font-mono);font-size:var(--t-meta);color:var(--ink-2);cursor:pointer;
+  letter-spacing:.04em;transition:all var(--dur-fast) var(--ease-out)}
+.conflict .opts button:hover{border-color:var(--coral);color:var(--coral)}
+.conflict .opts button.on{background:var(--coral);border-color:var(--coral);color:#fff}
+
+/* ---------- goal wheels ---------- */
+.wheels{display:flex;gap:var(--space-2);align-items:center;justify-content:center;margin-top:var(--space-4)}
+.wheel{background:var(--paper-deep);border-radius:var(--r-input);padding:var(--space-3) var(--space-4);text-align:center;min-width:62px}
+.wheel .n{font-family:var(--font-mono);font-weight:600;font-size:26px;color:var(--ink);font-variant-numeric:tabular-nums}
+.wheel .u{font-family:var(--font-mono);font-size:var(--t-meta-sm);letter-spacing:var(--tracking-caption);
+  color:var(--ink-3);text-transform:uppercase;margin-top:3px}
+.colon{font-family:var(--font-mono);font-size:22px;color:var(--ink-3)}
+
+/* ---------- provenance ---------- */
+.prov{display:inline-flex;align-items:center;gap:4px;font-family:var(--font-mono);font-size:var(--t-meta-sm);
+  letter-spacing:var(--tracking-caption);text-transform:uppercase;padding:3px 7px;border-radius:var(--r-tight);
+  background:var(--paper-deep);color:var(--ink-3)}
+.prov.voice{background:var(--coral-wash);color:var(--coral-deep)}
+.prov.data{background:rgba(45,138,78,.13);color:var(--mood-energized)}
+.prov.you{background:var(--ink);color:var(--paper)}
+
+.prow{display:flex;justify-content:space-between;align-items:flex-start;gap:var(--space-3);
+  padding:var(--space-3) 0;border-bottom:1px solid var(--rule)}
+.prow:last-child{border-bottom:none}
+.prow .k{font-family:var(--font-mono);font-size:var(--t-meta);letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-3);flex:0 0 108px;padding-top:3px}
+.prow .v{flex:1;text-align:right}
+.prow .v .main{font-family:var(--font-display);font-weight:600;font-size:16px;color:var(--ink);line-height:1.35}
+.prow .v .sub{font-family:var(--font-body);font-size:var(--t-body-sm);color:var(--ink-2);margin-top:5px;line-height:1.45;
+  display:flex;flex-wrap:wrap;gap:5px;justify-content:flex-end;align-items:center}
+
+.gap{background:var(--paper-elevated);border:1px dashed var(--rule);border-radius:var(--r-card);
+  padding:var(--space-4);margin-top:var(--space-3)}
+.gap p{margin:0;font-family:var(--font-body);font-size:var(--t-body-sm);color:var(--ink-2);line-height:1.5}
+
+.note{max-width:560px;margin:22px auto 0;padding:16px 18px;background:#332F2C;border:1px solid #4A4642;
+  border-radius:var(--r-card);color:#B8B2AC;font-family:var(--font-body);font-size:13px;line-height:1.6}
+.note b{color:#F5F3F0;font-weight:400;font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;
+  text-transform:uppercase;display:block;margin-bottom:6px}
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <div class="stage-head">
+    <h1>Voice-first onboarding</h1>
+    <p>Post Run Drip · prototype · 2026-08-11</p>
+  </div>
+
+  <div class="rail" id="rail"></div>
+
+  <div class="phone-wrap">
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="statusbar"><span>9:41</span><span>▮▮▮ ▲ 100%</span></div>
+
+      <!-- ══════════ 1 · CONNECT ══════════ -->
+      <div class="screen on" data-s="connect">
+        <div class="plate"><span>NEW ATHLETE · STEP 1</span><span class="skip" onclick="go('voice')">SKIP ↗</span></div>
+        <div class="pad" style="padding-top:var(--space-6)">
+          <div class="eyebrow">FIRST</div>
+          <h2 class="display d-l" style="margin-top:var(--space-2)">Let us read<br>what you've<br>already run.</h2>
+          <p class="body" style="margin-top:var(--space-4);color:var(--ink-2)">
+            Connect once and we'll pull the last twelve months. Everything we can
+            find, we won't ask you about.
+          </p>
+
+          <div class="card" style="margin-top:var(--space-6)">
+            <div class="conn">
+              <div class="ico">❤︎</div>
+              <div class="txt"><div class="name">Apple Health</div><div class="sub">Runs, sleep, heart rate</div></div>
+              <button class="pill done">Connected</button>
+            </div>
+            <div class="conn">
+              <div class="ico">◎</div>
+              <div class="txt"><div class="name">Strava</div><div class="sub">12 months of history, races, routes</div></div>
+              <button class="pill" id="stravaPill" onclick="connectStrava()">Connect</button>
+            </div>
+            <div class="conn">
+              <div class="ico">✎</div>
+              <div class="txt"><div class="name">Nothing to connect</div><div class="sub">Start from scratch — we'll ask instead</div></div>
+              <button class="pill" onclick="go('voice')">Skip</button>
+            </div>
+          </div>
+
+          <div class="rule"><i></i></div>
+          <p class="body-sm" style="text-align:center">
+            No connection is fine. The next four minutes carry the whole thing on their own.
+          </p>
+        </div>
+        <div style="flex:1"></div>
+        <div class="footer">
+          <button class="btn btn-primary" id="connectNext" onclick="go('readback')" disabled>Connect Strava to continue</button>
+        </div>
+      </div>
+
+      <!-- ══════════ 2 · READ-BACK ══════════ -->
+      <div class="screen" data-s="readback">
+        <div class="plate"><span>NEW ATHLETE · STEP 2</span><span class="skip" onclick="go('voice')">SKIP ↗</span></div>
+        <div class="pad" style="padding-top:var(--space-6)">
+          <div class="eyebrow coral">LOOKS LIKE YOU'VE RACED</div>
+          <h2 class="display d-l" style="margin-top:var(--space-2)">Here's what<br>we found.</h2>
+          <p class="body" style="margin-top:var(--space-4);color:var(--ink-2)">
+            Confirm these and your paces calibrate to real fitness — today.
+          </p>
+
+          <div class="card" style="margin-top:var(--space-5)">
+            <div class="race">
+              <div class="check on" onclick="tick(this)">✓</div>
+              <div style="flex:1">
+                <div class="meta">APR 12 · HALF MARATHON</div>
+                <div class="val">1:32:04</div>
+                <div class="name">Eugene Half Marathon</div>
+                <div class="conf">Strava race flag · high confidence</div>
+              </div>
+            </div>
+            <div class="race">
+              <div class="check on" onclick="tick(this)">✓</div>
+              <div style="flex:1">
+                <div class="meta">NOV 03 · 10K</div>
+                <div class="val">41:18</div>
+                <div class="name">Turkey Trot 10K</div>
+                <div class="conf">Distance + pace outlier · medium</div>
+              </div>
+            </div>
+            <div class="race">
+              <div class="check" onclick="tick(this)">✓</div>
+              <div style="flex:1">
+                <div class="meta">JUN 21 · 5K</div>
+                <div class="val">19:47</div>
+                <div class="name">Saturday parkrun</div>
+                <div class="conf">Parkrun · unchecked by default</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="rule"><i></i></div>
+
+          <div class="card flat">
+            <div class="eyebrow">THE LAST 12 WEEKS</div>
+            <div style="display:flex;gap:var(--space-6);margin-top:var(--space-4)">
+              <div><div class="stat" style="font-size:28px">31.4</div><div class="caption" style="margin-top:5px">MI / WEEK AVG</div></div>
+              <div><div class="stat" style="font-size:28px">4.6</div><div class="caption" style="margin-top:5px">RUNS / WEEK</div></div>
+              <div><div class="stat" style="font-size:28px">13.1</div><div class="caption" style="margin-top:5px">LONGEST</div></div>
+            </div>
+            <div class="ghostdays" style="margin-top:var(--space-5)">
+              <span class="on"></span><span class="on"></span><span></span><span class="on"></span><span></span><span class="on"></span><span class="on"></span>
+            </div>
+            <div class="caption" style="margin-top:7px">MON TUE WED THU FRI SAT SUN — THE DAYS YOU ACTUALLY RAN</div>
+          </div>
+        </div>
+        <div style="flex:1;min-height:var(--space-5)"></div>
+        <div class="footer">
+          <button class="btn btn-primary" onclick="go('voice')">Looks right →</button>
+          <button class="btn-text" style="width:100%" onclick="go('voice')">Anything we missed? Add a race</button>
+        </div>
+      </div>
+
+      <!-- ══════════ 3 · VOICE ══════════ -->
+      <div class="screen" data-s="voice">
+        <div class="plate"><span>NEW ATHLETE · STEP 3</span><span class="skip" onclick="go('goal')">SKIP ↗</span></div>
+        <div class="pad" style="padding-top:var(--space-5)">
+          <div class="eyebrow">NOW THE PART DATA CAN'T SEE</div>
+          <h2 class="display d-l" style="margin-top:var(--space-2)">Talk for four<br>minutes.</h2>
+          <p class="body" style="margin-top:var(--space-4);color:var(--ink-2)">
+            Five short questions. Answer them in any order, skip any of them,
+            type instead of talking. Nothing here is required.
+          </p>
+          <div class="ledger" id="ledger">
+            <span></span><span></span><span></span><span></span><span></span>
+          </div>
+          <div class="caption" id="ledgerLabel" style="margin-top:7px">NOTHING RECORDED YET</div>
+
+          <div class="rule"><i></i></div>
+
+          <div id="cards"></div>
+
+          <div style="height:var(--space-5)"></div>
+        </div>
+        <div class="footer">
+          <button class="btn btn-primary" id="voiceNext" onclick="go('goal')">Skip the rest →</button>
+        </div>
+      </div>
+
+      <!-- ══════════ 4 · CONFIRM GOAL ══════════ -->
+      <div class="screen" data-s="goal">
+        <div class="plate"><span>CONFIRM · 1 OF 3</span><span class="skip" onclick="go('week')">SKIP ↗</span></div>
+        <div class="pad" style="padding-top:var(--space-6)">
+          <div class="eyebrow coral">WHAT YOU'RE CHASING</div>
+          <h2 class="display d-l" style="margin-top:var(--space-2)">Your goal.</h2>
+
+          <div class="card" style="margin-top:var(--space-5);border-left:2px solid var(--coral)">
+            <div class="eyebrow">YOU SAID</div>
+            <p class="quote" style="margin-top:var(--space-3)">
+              "I want to break three hours at Chicago in October. I've been
+              chasing it for two cycles now and I got close in Eugene."
+            </p>
+          </div>
+
+          <div class="card" style="margin-top:var(--space-3)">
+            <div class="eyebrow">RACE</div>
+            <div class="chips">
+              <button class="chip" onclick="pick(this)">5K</button>
+              <button class="chip" onclick="pick(this)">10K</button>
+              <button class="chip" onclick="pick(this)">HALF</button>
+              <button class="chip on" onclick="pick(this)">MARATHON</button>
+              <button class="chip" onclick="pick(this)">ULTRA</button>
+            </div>
+            <div style="margin-top:var(--space-5)" class="eyebrow">TARGET TIME</div>
+            <div class="wheels">
+              <div class="wheel"><div class="n">2</div><div class="u">HR</div></div>
+              <span class="colon">:</span>
+              <div class="wheel"><div class="n">59</div><div class="u">MIN</div></div>
+              <span class="colon">:</span>
+              <div class="wheel"><div class="n">30</div><div class="u">SEC</div></div>
+            </div>
+            <div style="display:flex;justify-content:center;margin-top:var(--space-4)">
+              <span class="prov voice">◉ FROM YOUR VOICE · HIGH</span>
+            </div>
+          </div>
+
+          <div class="card flat">
+            <div class="prow" style="border-bottom:none">
+              <div class="k">RACE FOUND</div>
+              <div class="v">
+                <div class="main">Chicago Marathon</div>
+                <div class="sub">Sun, Oct 11 2026 · 8 weeks 3 days out</div>
+              </div>
+            </div>
+          </div>
+
+          <button class="btn btn-ghost" style="margin-top:var(--space-2)">Not sure yet — skip the goal</button>
+        </div>
+        <div style="flex:1;min-height:var(--space-5)"></div>
+        <div class="footer">
+          <button class="btn btn-primary" onclick="go('week')">That's the goal →</button>
+        </div>
+      </div>
+
+      <!-- ══════════ 5 · CONFIRM WEEK ══════════ -->
+      <div class="screen" data-s="week">
+        <div class="plate"><span>CONFIRM · 2 OF 3</span><span class="skip" onclick="go('body')">SKIP ↗</span></div>
+        <div class="pad" style="padding-top:var(--space-6)">
+          <div class="eyebrow coral">THE WEEK YOU ACTUALLY RUN</div>
+          <h2 class="display d-l" style="margin-top:var(--space-2)">Your week.</h2>
+
+          <div class="card" style="margin-top:var(--space-5);border-left:2px solid var(--coral)">
+            <div class="eyebrow">YOU SAID</div>
+            <p class="quote" style="margin-top:var(--space-3)">
+              "Five, sometimes six days. Track group meets Tuesday nights so
+              that's locked. Long run Saturday. Sunday's family day."
+            </p>
+          </div>
+
+          <div class="card">
+            <div class="eyebrow">TAP TO SET EACH DAY</div>
+            <div class="days" id="dayrow"></div>
+            <div class="ghostdays">
+              <span class="on"></span><span class="on"></span><span></span><span class="on"></span><span></span><span class="on"></span><span class="on"></span>
+            </div>
+            <div class="caption" style="margin-top:6px">THE DAYS YOU ACTUALLY RAN, LAST 8 WEEKS</div>
+            <div class="legend">
+              <span><i style="background:var(--ink)"></i>RUN</span>
+              <span><i style="background:var(--coral)"></i>QUALITY</span>
+              <span><i style="background:#6B4A8A"></i>LONG</span>
+              <span><i style="background:var(--card);border:1px solid var(--rule)"></i>OFF</span>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="eyebrow">WEEKLY VOLUME</div>
+            <div class="conflict">
+              <p>You said about <b>40 a week</b>. Your last 12 weeks average <b>31</b>.</p>
+              <div class="opts">
+                <button onclick="pickOne(this)">40 IS RIGHT</button>
+                <button class="on" onclick="pickOne(this)">31 IS RIGHT</button>
+                <button onclick="pickOne(this)">NEITHER</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card flat">
+            <div class="eyebrow">WHAT YOU LIKE</div>
+            <div class="chips">
+              <button class="chip on" onclick="pick(this,1)">TRACK</button>
+              <button class="chip on" onclick="pick(this,1)">LONG RUN</button>
+              <button class="chip on" onclick="pick(this,1)">GROUP</button>
+              <button class="chip" onclick="pick(this,1)">HILLS</button>
+              <button class="chip" onclick="pick(this,1)">TRAIL</button>
+              <button class="chip" onclick="pick(this,1)">SOLO</button>
+            </div>
+            <p class="body-sm" style="margin-top:var(--space-3)">
+              Heard in your own words — tap to correct.
+            </p>
+          </div>
+        </div>
+        <div style="flex:1;min-height:var(--space-5)"></div>
+        <div class="footer">
+          <button class="btn btn-primary" onclick="go('body')">That's my week →</button>
+        </div>
+      </div>
+
+      <!-- ══════════ 6 · CONFIRM BODY ══════════ -->
+      <div class="screen" data-s="body">
+        <div class="plate"><span>CONFIRM · 3 OF 3</span><span class="skip" onclick="go('profile')">SKIP ↗</span></div>
+        <div class="pad" style="padding-top:var(--space-6)">
+          <div class="eyebrow coral">WHAT'S GONE WRONG BEFORE</div>
+          <h2 class="display d-l" style="margin-top:var(--space-2)">Your body.</h2>
+          <p class="body" style="margin-top:var(--space-4);color:var(--ink-2)">
+            We ask because load is the one thing we won't guess at.
+          </p>
+
+          <div class="card" style="margin-top:var(--space-5);border-left:2px solid var(--coral)">
+            <div class="eyebrow">YOU SAID</div>
+            <p class="quote" style="margin-top:var(--space-3)">
+              "Left Achilles has been grumbly for about three weeks. And I had
+              a bad IT band year in 2023 — right side, took six weeks off."
+            </p>
+          </div>
+
+          <div class="card">
+            <div class="eyebrow">RIGHT NOW</div>
+            <div style="margin-top:var(--space-2)">
+              <div class="nig">
+                <div class="sev tight"></div>
+                <div style="flex:1">
+                  <div><span class="who">Achilles</span><span class="sev-l">LEFT · TIGHT</span></div>
+                  <div class="said">"has been grumbly for about three weeks"</div>
+                </div>
+                <button class="x" onclick="drop(this)">×</button>
+              </div>
+            </div>
+            <button class="btn btn-ghost" style="margin-top:var(--space-3);font-size:14px;padding:11px">+ Add something we missed</button>
+          </div>
+
+          <div class="card">
+            <div class="eyebrow">HISTORY</div>
+            <div style="margin-top:var(--space-2)">
+              <div class="nig">
+                <div class="sev pain"></div>
+                <div style="flex:1">
+                  <div><span class="who">IT band</span><span class="sev-l">RIGHT · 2023 · RECURRING</span></div>
+                  <div class="said">"a bad IT band year — took six weeks off"</div>
+                </div>
+                <button class="x" onclick="drop(this)">×</button>
+              </div>
+            </div>
+          </div>
+
+          <button class="btn btn-ghost" onclick="clearBody()">Nothing right now</button>
+          <p class="body-sm" style="margin-top:var(--space-3);text-align:center">
+            Silence isn't an all-clear. If nothing's wrong, say so on purpose.
+          </p>
+        </div>
+        <div style="flex:1;min-height:var(--space-5)"></div>
+        <div class="footer">
+          <button class="btn btn-primary" onclick="go('profile')">That's my body →</button>
+        </div>
+      </div>
+
+      <!-- ══════════ 7 · PROFILE ══════════ -->
+      <div class="screen" data-s="profile">
+        <div class="plate"><span>YOUR PROFILE</span><span class="skip">EDIT ↗</span></div>
+        <div class="pad" style="padding-top:var(--space-6)">
+          <div class="eyebrow">THAT'S ENOUGH TO START</div>
+          <h2 class="display d-l" style="margin-top:var(--space-2)">This is what<br>we know<br>about you.</h2>
+          <p class="body" style="margin-top:var(--space-4);color:var(--ink-2)">
+            Every line says where it came from. Anything wrong, tap it.
+          </p>
+
+          <div class="card" style="margin-top:var(--space-5)">
+            <div class="prow">
+              <div class="k">HISTORY</div>
+              <div class="v"><div class="main">11 years · XC background</div>
+                <div class="sub">Two years off after 2023 <span class="prov voice">VOICE</span></div></div>
+            </div>
+            <div class="prow">
+              <div class="k">BESTS</div>
+              <div class="v"><div class="main">1:32:04 half · 41:18 10K</div>
+                <div class="sub">Marathon 3:04, "soft" <span class="prov data">STRAVA</span> <span class="prov voice">VOICE</span></div></div>
+            </div>
+            <div class="prow">
+              <div class="k">VOLUME</div>
+              <div class="v"><div class="main">31 mi / week</div>
+                <div class="sub">12-week average <span class="prov you">YOU CONFIRMED</span></div></div>
+            </div>
+            <div class="prow">
+              <div class="k">WEEK</div>
+              <div class="v"><div class="main">Mon Tue Thu Sat Sun</div>
+                <div class="sub">Track Tue · long Sat <span class="prov you">YOU CONFIRMED</span></div></div>
+            </div>
+            <div class="prow">
+              <div class="k">BODY</div>
+              <div class="v"><div class="main">Left Achilles · tight</div>
+                <div class="sub">IT band right, 2023, recurring <span class="prov you">YOU CONFIRMED</span></div></div>
+            </div>
+            <div class="prow">
+              <div class="k">GOAL</div>
+              <div class="v"><div class="main">Sub-3 · Chicago</div>
+                <div class="sub">Oct 11 · third attempt <span class="prov you">YOU CONFIRMED</span></div></div>
+            </div>
+            <div class="prow">
+              <div class="k">WHY</div>
+              <div class="v"><div class="main">Comeback · proving</div>
+                <div class="sub">"chasing it for two cycles" <span class="prov voice">VOICE</span></div></div>
+            </div>
+          </div>
+
+          <div class="gap">
+            <p><b style="font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);display:block;margin-bottom:6px">STILL BLANK</b>
+            We don't know what kind of sessions you'd rather skip. Not urgent —
+            we'll ask after a few weeks of running.</p>
+          </div>
+
+          <div class="rule"><i></i></div>
+          <p class="body-sm" style="text-align:center">
+            Your five recordings are kept. When the coach gets smarter,
+            it re-reads them — you won't be asked again.
+          </p>
+        </div>
+        <div style="flex:1;min-height:var(--space-5)"></div>
+        <div class="footer">
+          <button class="btn btn-primary" onclick="go('connect')">Start running →</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="note">
+    <b>Prototype notes</b>
+    Recording is simulated — tap the coral button on any card, watch the waveform,
+    tap again to stop. Transcription and extraction are faked on a timer to show
+    the two-stage reveal: the runner's own words land first, the structured
+    receipt lands second. Every screen is reachable from the row of chips above.
+  </div>
+</div>
+
+<script>
+/* ───────── navigation ───────── */
+const SCREENS = [
+  ['connect','1 · Connect'], ['readback','2 · Read-back'], ['voice','3 · Talk'],
+  ['goal','4 · Confirm goal'], ['week','5 · Confirm week'], ['body','6 · Confirm body'],
+  ['profile','7 · Profile']
+];
+const rail = document.getElementById('rail');
+SCREENS.forEach(([k,label])=>{
+  const b=document.createElement('button');
+  b.textContent=label; b.dataset.k=k; b.onclick=()=>go(k); rail.appendChild(b);
+});
+function go(k){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.toggle('on',s.dataset.s===k));
+  document.querySelectorAll('#rail button').forEach(b=>b.classList.toggle('on',b.dataset.k===k));
+  const sc=document.querySelector('.screen.on'); if(sc) sc.scrollTop=0;
+}
+go('connect');
+
+/* ───────── connect ───────── */
+function connectStrava(){
+  const p=document.getElementById('stravaPill');
+  p.textContent='Connecting…';
+  setTimeout(()=>{
+    p.textContent='Connected'; p.classList.add('done');
+    const n=document.getElementById('connectNext');
+    n.disabled=false; n.textContent='See what we found →';
+  },900);
+}
+
+/* ───────── voice cards ───────── */
+const CARDS = [
+  { key:'history', title:'HOW LONG YOU’VE BEEN AT THIS', len:'~30 SECONDS',
+    ask:'How long, and what shape it’s taken. Cross country, road, came to it late, took five years off — whatever’s true.',
+    transcript:'So I’ve been running since high school, so call it eleven years. Ran cross country and track through college, then basically stopped for two years after 2023 — work got insane. Came back last spring.',
+    receipt:'<b>11 years</b> · XC and track background · two years off after 2023 · returning' },
+  { key:'bests', title:'THE NUMBERS YOU’D TELL A COACH', len:'~45 SECONDS',
+    ask:'Your personal bests. The ones you’re proud of, and the ones you think are soft. Distance and time — approximate is fine, we’ll ask before we use them.',
+    transcript:'Half is 1:32:04, that’s Eugene this April. 10K somewhere around forty-one flat. Marathon is 3:04 but honestly that one’s soft, I blew up at twenty.',
+    receipt:'Half <b>1:32:04</b> · 10K <b>≈41:xx</b> (hedged, will confirm) · marathon <b>3:04</b>, flagged soft' },
+  { key:'body', title:'WHAT’S GONE WRONG BEFORE', len:'~45 SECONDS',
+    ask:'Injuries, the niggle that always comes back, anything you’re managing right now. We ask because load is the one thing we won’t guess at.',
+    transcript:'Left Achilles has been grumbly for about three weeks now, nothing sharp. And I had a bad IT band year in 2023, right side, took six weeks off. That one comes back if I ramp too fast.',
+    receipt:'Now: <b>left Achilles, tight</b> · History: <b>right IT band, 2023, recurring</b>' },
+  { key:'week', title:'THE WEEK YOU ACTUALLY RUN', len:'~60 SECONDS',
+    ask:'How many days, which days, and what a normal week looks like. Then: what kind of running do you actually like doing?',
+    transcript:'Five days, sometimes six. Track group meets Tuesday nights so that’s locked in. Long run Saturday morning. Sunday is family day, I don’t run. Probably forty a week? I love the track stuff and the long run, hate treadmills.',
+    receipt:'<b>Mon Tue Thu Sat Sun</b> · quality Tue · long Sat · ≈40 mpw <span style="color:var(--coral)">(data says 31 — flagged)</span>' },
+  { key:'chasing', title:'WHAT YOU’RE CHASING', len:'~45 SECONDS',
+    ask:'The goal, and why that one. A date if you have one. “I don’t know yet” is a real answer.',
+    transcript:'I want to break three hours at Chicago in October. I’ve been chasing it for two cycles now and I got close in Eugene. Mostly I just want to prove the two years off didn’t cost me it.',
+    receipt:'<b>Sub-3 marathon · Chicago · October</b> · motivation: comeback, proving' }
+];
+
+const state = CARDS.map(()=>({status:'idle', t:0, timer:null}));
+const cardsEl = document.getElementById('cards');
+
+function render(){
+  cardsEl.innerHTML = CARDS.map((c,i)=>{
+    const s = state[i];
+    let inner = '';
+    if(s.status==='idle'){
+      inner = `<p class="ask">${c.ask}</p>
+        <div class="reccontrols">
+          <button class="recbtn idle" onclick="startRec(${i})"><i></i></button>
+          <div style="flex:1"><div class="len">${c.len}</div>
+            <div style="margin-top:5px"><button class="btn-text" style="padding:0" onclick="typeIt(${i})">Type it instead</button></div>
+          </div>
+          <button class="btn-text" style="padding:0" onclick="skipCard(${i})">Skip</button>
+        </div>`;
+    } else if(s.status==='rec'){
+      inner = `<p class="ask">${c.ask}</p>
+        <div class="reccontrols">
+          <button class="recbtn rec" onclick="stopRec(${i})"><i></i></button>
+          <div class="wave live" id="w${i}">${'<b></b>'.repeat(26)}</div>
+          <div class="timer" id="t${i}">0:00</div>
+        </div>`;
+    } else if(s.status==='transcribing'){
+      inner = `<p class="ask" style="color:var(--ink-3)">${c.ask}</p>
+        <div class="status"><span class="spin"></span> LISTENING BACK</div>`;
+    } else if(s.status==='transcribed'){
+      inner = `<div class="transcript"><p>"${c.transcript}"</p></div>
+        <div class="status"><span class="spin"></span> READING IT</div>`;
+    } else if(s.status==='done'){
+      inner = `<div class="receipt"><span class="dot"></span><p>Heard: ${c.receipt}</p></div>
+        <div style="margin-top:var(--space-3)">
+          <button class="btn-text" style="padding:0" onclick="expand(${i})">See what I said</button>
+          <button class="btn-text" style="padding:0 0 0 14px" onclick="redo(${i})">Re-record</button>
+        </div>
+        <div id="x${i}" style="display:none"><div class="transcript" style="margin-top:var(--space-3)"><p>"${c.transcript}"</p></div></div>`;
+    } else if(s.status==='skipped'){
+      inner = `<p class="ask" style="color:var(--ink-3)">Skipped — you can add this any time.</p>
+        <button class="btn-text" style="padding:0" onclick="redo(${i})">Record it now</button>`;
+    }
+    const cls = s.status==='done'?'pcard done' : s.status==='skipped'?'pcard' :
+                (s.status==='rec'||s.status==='transcribing'||s.status==='transcribed')?'pcard busy active':'pcard active';
+    return `<div class="${cls}"><h3>${i+1} · ${c.title}</h3>${inner}</div>`;
+  }).join('');
+  updateLedger();
+}
+
+function updateLedger(){
+  const l = document.getElementById('ledger').children;
+  let done=0;
+  state.forEach((s,i)=>{
+    l[i].className = s.status==='done'?'done' : (s.status==='idle'||s.status==='skipped')?'':'part';
+    if(s.status==='done') done++;
+  });
+  const lbl = document.getElementById('ledgerLabel');
+  const nb = document.getElementById('voiceNext');
+  if(done===0){ lbl.textContent='NOTHING RECORDED YET'; nb.textContent='Skip the rest →'; }
+  else if(done<5){ lbl.textContent=`${done} OF 5 ANSWERED · ENOUGH TO START AFTER 3`; nb.textContent = done>=3?'Review what we heard →':'Skip the rest →'; }
+  else { lbl.textContent='ALL FIVE ANSWERED'; nb.textContent='Review what we heard →'; }
+}
+
+function startRec(i){
+  state[i].status='rec'; state[i].t=0; render();
+  const wave=document.getElementById('w'+i), tm=document.getElementById('t'+i);
+  state[i].timer=setInterval(()=>{
+    state[i].t+=0.1;
+    if(tm) tm.textContent='0:'+String(Math.floor(state[i].t)).padStart(2,'0');
+    if(wave) [...wave.children].forEach(b=>{ b.style.height=(3+Math.random()*26)+'px'; });
+  },100);
+}
+function stopRec(i){
+  clearInterval(state[i].timer);
+  state[i].status='transcribing'; render();
+  setTimeout(()=>{ state[i].status='transcribed'; render();
+    setTimeout(()=>{ state[i].status='done'; render(); }, 2200);
+  }, 1600);
+}
+function typeIt(i){ state[i].status='transcribing'; render();
+  setTimeout(()=>{ state[i].status='done'; render(); }, 1400); }
+function skipCard(i){ state[i].status='skipped'; render(); }
+function redo(i){ state[i].status='idle'; render(); }
+function expand(i){ const e=document.getElementById('x'+i); e.style.display = e.style.display==='none'?'block':'none'; }
+render();
+
+/* ───────── confirm screens ───────── */
+function tick(el){ el.classList.toggle('on'); }
+function pick(el, multi){
+  if(!multi) [...el.parentElement.children].forEach(c=>c.classList.remove('on'));
+  el.classList.toggle('on', multi ? !el.classList.contains('on') : true);
+}
+function pickOne(el){ [...el.parentElement.children].forEach(c=>c.classList.remove('on')); el.classList.add('on'); }
+function drop(el){ const r=el.closest('.nig'); r.style.opacity='.25'; r.style.textDecoration='line-through'; }
+function clearBody(){ document.querySelectorAll('[data-s="body"] .nig').forEach(r=>{ r.style.opacity='.25'; r.style.textDecoration='line-through'; }); }
+
+/* day picker: off → run → quality → long → off */
+const DAYS=['M','T','W','T','F','S','S'];
+const CYCLE=['','on','q','lr'];
+const dayState=[1,2,0,1,0,3,1]; // Mon run, Tue quality, Wed off, Thu run, Fri off, Sat long, Sun run
+const dayrow=document.getElementById('dayrow');
+DAYS.forEach((d,i)=>{
+  const b=document.createElement('div');
+  b.className='day '+CYCLE[dayState[i]]; b.textContent=d;
+  b.onclick=()=>{ dayState[i]=(dayState[i]+1)%4; b.className='day '+CYCLE[dayState[i]]; };
+  dayrow.appendChild(b);
+});
+</script>
+</body>
+</html>

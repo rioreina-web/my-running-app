@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workout Detail · Feature Spread</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,200..900;1,200..900&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+/* ── Post Run Drip foundations (from colors_and_type.css) ─────────── */
+:root{
+  --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF; --paper-deep:#E8E4DF;
+  --rule:#E8E4E0; --rule-strong:#D8D2CB;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-light:#E8764A; --coral-deep:#B84420; --coral-wash:rgba(212,89,42,.12);
+  --mood-struggling:#C45A3A; --mood-tired:#C4873A;
+  --font-display:"Crimson Pro",Georgia,"Times New Roman",serif;
+  --font-body:"PT Serif",Georgia,"Times New Roman",serif;
+  --font-mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --tracking-label:.12em; --tracking-caption:.10em; --tracking-meta:.14em;
+  --ease-out:cubic-bezier(.2,.7,.2,1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+body{background:#DEDAD4;font-family:var(--font-body);color:var(--ink);
+     padding:40px 16px 72px;display:flex;flex-direction:column;align-items:center;gap:14px}
+
+/* ── Stage chrome (prototype only) ────────────────────────────────── */
+.stage-note{font-family:var(--font-mono);font-size:10px;letter-spacing:var(--tracking-meta);
+  text-transform:uppercase;color:#8A837B;text-align:center;max-width:390px;line-height:1.7}
+.phone{width:390px;height:844px;background:var(--paper);border-radius:38px;overflow:hidden;
+  box-shadow:0 18px 50px rgba(0,0,0,.18);position:relative;display:flex;flex-direction:column;
+  touch-action:pan-y}
+
+/* ── Sheet chrome ─────────────────────────────────────────────────── */
+.sheet-grab{height:22px;display:flex;align-items:center;justify-content:center;background:var(--paper);flex:none}
+.sheet-grab i{display:block;width:34px;height:4px;border-radius:999px;background:var(--rule-strong)}
+.sheet-bar{flex:none;z-index:20;background:var(--paper);
+  display:flex;align-items:baseline;justify-content:space-between;
+  padding:6px 24px 10px;border-bottom:1px solid var(--rule)}
+.sheet-bar button{background:none;border:0;cursor:pointer;font-family:var(--font-display);
+  font-weight:600;font-size:15px;color:var(--ink-2);padding:2px 0}
+.sheet-bar .edit{color:var(--coral)}
+.sheet-bar .folio{font-family:var(--font-mono);font-size:9px;letter-spacing:var(--tracking-meta);
+  color:var(--ink-3);text-transform:uppercase}
+
+/* ── Pager ────────────────────────────────────────────────────────── */
+.stack{flex:1;position:relative;overflow:hidden;cursor:grab}
+.stack.dragging{cursor:grabbing}
+.track{display:flex;height:100%;will-change:transform}
+.track.animate{transition:transform 320ms var(--ease-out)}
+.page{width:390px;flex:none;height:100%;display:flex;flex-direction:column;
+  background:var(--paper);position:relative}
+/* the gutter shadow that reads as a sheet of paper lifting */
+.page+.page::before{content:"";position:absolute;left:0;top:0;bottom:0;width:14px;
+  background:linear-gradient(to right,rgba(26,24,21,.07),rgba(26,24,21,0));pointer-events:none}
+.page .body{flex:1;overflow-y:auto;overflow-x:hidden;scrollbar-width:none;padding-bottom:8px}
+.page .body::-webkit-scrollbar{display:none}
+
+/* running head on continuation pages */
+.runhead{flex:none;display:flex;justify-content:space-between;align-items:baseline;
+  padding:12px 24px 8px;border-bottom:1px solid var(--rule)}
+.runhead span{font-family:var(--font-mono);font-size:9px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--ink-3)}
+.runhead .sec{color:var(--ink-2)}
+
+/* folio — the page-turn indicator */
+.folio-bar{flex:none;display:flex;align-items:center;justify-content:space-between;
+  gap:10px;padding:11px 24px 15px;border-top:1px solid var(--rule);background:var(--paper)}
+.ticks{display:flex;align-items:center;gap:5px}
+.ticks i{width:14px;height:2px;background:var(--rule-strong);display:block;
+  transition:background 150ms var(--ease-out)}
+.ticks i.on{background:var(--coral)}
+.folio-bar .no{font-family:var(--font-mono);font-size:9px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-3)}
+.folio-bar .sess{font-family:var(--font-mono);font-size:9px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-3);margin-left:auto}
+
+/* ── Shared editorial atoms ───────────────────────────────────────── */
+.wrap{padding:0 24px}
+.eyebrow{font-family:var(--font-mono);font-size:11px;font-weight:500;
+  letter-spacing:var(--tracking-label);color:var(--ink-2);text-transform:uppercase}
+.eyebrow--coral{color:var(--coral)}
+.caption{font-family:var(--font-mono);font-size:10px;font-weight:500;letter-spacing:var(--tracking-caption);
+  color:var(--ink-3);text-transform:uppercase}
+.rule-mark{display:flex;align-items:center;gap:8px;margin:30px 0}
+.rule-mark::before,.rule-mark::after{content:"";flex:1;height:1px;background:var(--rule)}
+.rule-mark i{width:3px;height:3px;border-radius:999px;background:var(--rule-strong)}
+
+/* ── Front page ───────────────────────────────────────────────────── */
+.masthead{display:flex;justify-content:space-between;align-items:baseline;
+  padding:18px 24px 10px;border-bottom:1px solid var(--ink);margin-bottom:2px}
+.masthead .title{font-family:var(--font-mono);font-size:9px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink)}
+.masthead .issue{font-family:var(--font-mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+.masthead-thin{height:2px;border-bottom:1px solid var(--ink);margin:0 24px 26px}
+
+.kicker{display:flex;align-items:center;gap:8px;margin-bottom:14px}
+.kicker .dot{width:4px;height:4px;border-radius:999px;background:var(--coral)}
+
+h1.headline{font-family:var(--font-display);font-weight:700;font-size:58px;line-height:.92;
+  letter-spacing:-.025em;color:var(--ink)}
+h1.headline .period{color:var(--coral)}
+.deck{font-family:var(--font-body);font-style:italic;font-size:17px;line-height:1.55;
+  color:var(--ink-2);margin-top:16px;max-width:31ch}
+
+.byline{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:22px;
+  padding:13px 0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;
+  background:var(--coral-wash);font-family:var(--font-mono);font-size:10px;font-weight:600;
+  letter-spacing:var(--tracking-caption);text-transform:uppercase;color:var(--mood-struggling)}
+.pill i{width:5px;height:5px;border-radius:999px;background:var(--mood-struggling)}
+.byline .src{font-family:var(--font-mono);font-size:10px;letter-spacing:var(--tracking-caption);
+  text-transform:uppercase;color:var(--ink-3)}
+.byline .sep{color:var(--ink-3);font-size:10px}
+
+.measures{display:grid;grid-template-columns:1fr 1fr 1fr;margin-top:26px}
+.measures div{padding:2px 0}
+.measures div+div{padding-left:14px;border-left:1px solid var(--rule)}
+.measures .v{font-family:var(--font-mono);font-weight:600;font-size:27px;letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums;line-height:1}
+.measures .v small{font-size:12px;font-weight:500;color:var(--ink-2);letter-spacing:0}
+.measures .k{margin-top:10px}
+
+/* ── Prescription sidebar ─────────────────────────────────────────── */
+.sidebar{margin-top:28px;background:var(--paper-elevated);border-top:2px solid var(--ink);
+  border-bottom:1px solid var(--rule-strong);padding:16px 18px 18px}
+.sidebar .head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px}
+.sidebar .head a{font-family:var(--font-display);font-weight:600;font-size:13px;color:var(--coral);
+  text-decoration:none;border-bottom:1px solid transparent}
+.sidebar .head a:hover{border-bottom-color:var(--coral)}
+.reps{list-style:none}
+.reps li{display:flex;align-items:baseline;gap:10px;padding:8px 0;border-bottom:1px dotted var(--rule-strong)}
+.reps li:last-child{border-bottom:0}
+.reps .n{font-family:var(--font-mono);font-size:9px;color:var(--ink-3);width:14px;letter-spacing:.08em}
+.reps .d{font-family:var(--font-mono);font-weight:600;font-size:14px;font-variant-numeric:tabular-nums;min-width:64px}
+.reps .p{font-family:var(--font-body);font-size:14px;color:var(--ink-2)}
+.reps .rest{color:var(--ink-3);font-style:italic;font-family:var(--font-body);font-size:13px}
+.sidebar .total{display:flex;justify-content:space-between;margin-top:14px;padding-top:12px;
+  border-top:1px solid var(--ink)}
+.sidebar .total span{font-family:var(--font-mono);font-size:11px;letter-spacing:var(--tracking-caption);
+  text-transform:uppercase;color:var(--ink-2)}
+.sidebar .total b{font-family:var(--font-mono);font-size:13px;font-variant-numeric:tabular-nums}
+
+/* ── Journal entry ────────────────────────────────────────────────── */
+.entry{font-family:var(--font-body);font-size:16.5px;line-height:1.66;color:var(--ink);margin-top:18px}
+.entry p+p{margin-top:14px;text-indent:1.4em}
+.entry-foot{display:flex;justify-content:space-between;align-items:center;margin-top:20px}
+.entry-foot .memo{font-family:var(--font-display);font-weight:600;font-size:13px;color:var(--ink-2)}
+
+.pull{margin:36px 0 0;padding:24px 0;border-top:1px solid var(--ink);border-bottom:1px solid var(--ink)}
+.pull q{font-family:var(--font-display);font-style:italic;font-weight:500;font-size:25px;line-height:1.25;
+  color:var(--ink);quotes:"“" "”"}
+.pull .attr{margin-top:16px}
+
+/* ── Conditions ───────────────────────────────────────────────────── */
+.conditions{border:1px solid var(--rule-strong);background:var(--card);padding:18px}
+.cond-grid{display:grid;grid-template-columns:1fr 1fr;gap:0;margin-top:14px}
+.cond-grid .c{padding:11px 0;border-bottom:1px solid var(--rule);display:flex;
+  align-items:baseline;justify-content:space-between}
+.cond-grid .c:nth-child(odd){padding-right:12px;border-right:1px solid var(--rule)}
+.cond-grid .c:nth-child(even){padding-left:12px}
+.cond-grid .c:nth-last-child(-n+2){border-bottom:0}
+.cond-grid .c:last-child:nth-child(odd){grid-column:1 / -1;border-right:0;padding-right:0}
+.cond-grid .cv{font-family:var(--font-mono);font-weight:600;font-size:14px;font-variant-numeric:tabular-nums}
+.cond-grid .cv.warn{color:var(--mood-tired)}
+.signal{display:inline-flex;align-items:center;gap:8px;margin-top:18px;padding:7px 13px;
+  border:1px solid var(--rule-strong);border-radius:999px;background:var(--paper-elevated)}
+.signal i{width:6px;height:6px;border-radius:999px;background:var(--mood-tired)}
+.signal .lb{font-family:var(--font-mono);font-size:10px;letter-spacing:var(--tracking-caption);
+  text-transform:uppercase;color:var(--ink-2)}
+.signal .vl{font-family:var(--font-mono);font-weight:600;font-size:12px;color:var(--ink)}
+.read{font-family:var(--font-body);font-style:italic;font-size:15px;line-height:1.6;
+  color:var(--ink);margin-top:18px;padding-left:14px;border-left:2px solid rgba(212,89,42,.5)}
+
+/* ── Figures ──────────────────────────────────────────────────────── */
+.fig{margin-top:28px}
+.fig:first-child{margin-top:24px}
+.fig-head{display:flex;justify-content:space-between;align-items:baseline;
+  padding-bottom:11px;border-bottom:1px solid var(--ink)}
+.fig-head .no{font-family:var(--font-mono);font-size:10px;letter-spacing:var(--tracking-caption);
+  text-transform:uppercase;color:var(--coral)}
+.fig-head .ttl{font-family:var(--font-display);font-weight:700;font-size:19px;letter-spacing:-.01em}
+.fig-head .meta{font-family:var(--font-mono);font-size:10px;letter-spacing:var(--tracking-caption);
+  text-transform:uppercase;color:var(--ink-3)}
+.figcap{font-family:var(--font-body);font-style:italic;font-size:13px;line-height:1.5;
+  color:var(--ink-2);margin-top:14px;padding-top:11px;border-top:1px solid var(--rule)}
+.chips{display:flex;gap:6px;margin:16px 0 8px;flex-wrap:wrap}
+.chip{font-family:var(--font-mono);font-size:9.5px;letter-spacing:var(--tracking-caption);
+  text-transform:uppercase;padding:5px 10px;border-radius:999px;border:1px solid var(--rule-strong);
+  background:transparent;color:var(--ink-2);cursor:pointer;transition:all 150ms var(--ease-out)}
+.chip:hover{color:var(--ink)}
+.chip[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+.chip.coral[aria-pressed="true"]{background:var(--coral);border-color:var(--coral);color:#fff}
+
+table.splits{width:100%;border-collapse:collapse;margin-top:14px}
+table.splits th{font-family:var(--font-mono);font-size:9.5px;font-weight:500;letter-spacing:var(--tracking-caption);
+  text-transform:uppercase;color:var(--ink-3);text-align:right;padding:9px 0 8px;border-bottom:1px solid var(--ink)}
+table.splits th:first-child{text-align:left}
+table.splits td{font-family:var(--font-mono);font-size:13px;font-variant-numeric:tabular-nums;
+  text-align:right;padding:9px 0;border-bottom:1px solid var(--rule);color:var(--ink)}
+table.splits td:first-child{text-align:left;color:var(--ink-2);font-size:11px;letter-spacing:.06em}
+table.splits tr.best td{color:var(--coral)}
+table.splits td.pace{font-weight:600}
+table.splits tr:last-child td{border-bottom:1px solid var(--ink)}
+.fix{margin-top:18px;font-family:var(--font-display);font-weight:600;font-size:13px;color:var(--coral);
+  background:none;border:0;cursor:pointer;border-bottom:1px solid rgba(212,89,42,.35);padding-bottom:2px}
+
+.zones{margin-top:16px}
+.zrow{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--rule)}
+.zrow:last-child{border-bottom:0}
+.zrow .zl{font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;color:var(--ink-2);width:20px}
+.zrow .zb{flex:1;height:7px;background:var(--paper-deep);position:relative}
+.zrow .zb i{position:absolute;left:0;top:0;bottom:0;background:var(--ink-3);display:block}
+.zrow.peak .zb i{background:var(--coral)}
+.zrow .zv{font-family:var(--font-mono);font-size:11px;font-variant-numeric:tabular-nums;color:var(--ink-2);width:52px;text-align:right}
+.zrow.peak .zv{color:var(--ink);font-weight:600}
+
+.colophon{margin-top:34px;padding:22px 0 6px;border-top:1px solid var(--ink);text-align:center}
+.colophon .sig{font-family:var(--font-body);font-style:italic;font-size:12px;color:var(--ink-3)}
+
+/* turn hint — shown once on the front page */
+.turn-hint{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:18px;
+  font-family:var(--font-mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink-3);animation:fadehint 2.4s var(--ease-out) 1.2s both}
+@keyframes fadehint{from{opacity:0;transform:translateX(6px)}40%{opacity:1;transform:none}to{opacity:.85;transform:none}}
+</style>
+</head>
+<body>
+
+<div class="stage-note">Post Run Drip · workout detail, paged · drag or use ← → to turn</div>
+
+<div class="phone">
+  <div class="sheet-grab"><i></i></div>
+  <div class="sheet-bar">
+    <button class="edit">Edit</button>
+    <div class="folio">Aug 18 · Session 31</div>
+    <button>Done</button>
+  </div>
+
+  <div class="stack" id="stack">
+    <div class="track" id="track">
+
+      <!-- ══ PAGE 1 · FRONT ══════════════════════════════════════ -->
+      <article class="page" data-name="Front page">
+        <div class="body">
+          <div class="masthead">
+            <div class="title">Post Run Drip</div>
+            <div class="issue">Tue · Aug 18 · 4:55 pm</div>
+          </div>
+          <div class="masthead-thin"></div>
+
+          <div class="wrap">
+            <div class="kicker"><span class="dot"></span><span class="eyebrow eyebrow--coral">The session</span>
+              <span class="eyebrow" style="color:var(--ink-3)">·&nbsp; 3 × 2 mi</span></div>
+
+            <h1 class="headline">Intervals<span class="period">.</span></h1>
+
+            <p class="deck">Three by two miles at 78° and a 73° dewpoint. The splits held. The body didn't want them.</p>
+
+            <div class="byline">
+              <span class="pill"><i></i>Struggling</span>
+              <span class="sep">·</span>
+              <span class="src">From Strava</span>
+              <span class="sep">·</span>
+              <span class="src">Filed 4:55 pm</span>
+            </div>
+
+            <div class="measures">
+              <div><div class="v">6.22<small> mi</small></div><div class="caption k">Distance</div></div>
+              <div><div class="v">36:41</div><div class="caption k">Moving</div></div>
+              <div><div class="v">5:54<small> /mi</small></div><div class="caption k">Avg pace</div></div>
+            </div>
+
+            <div class="sidebar">
+              <div class="head">
+                <span class="eyebrow">The prescription</span>
+                <a href="#">Edit ↗</a>
+              </div>
+              <ul class="reps">
+                <li><span class="n">01</span><span class="d">2.02 mi</span><span class="p">at 5:28 /mi</span></li>
+                <li><span class="rest" style="margin-left:24px">2 min jog</span></li>
+                <li><span class="n">02</span><span class="d">2.01 mi</span><span class="p">at 5:27 /mi</span></li>
+                <li><span class="rest" style="margin-left:24px">2 min jog</span></li>
+                <li><span class="n">03</span><span class="d">2.01 mi</span><span class="p">at 5:32 /mi</span></li>
+              </ul>
+              <div class="total"><span>Work total</span><b>6.2 mi · 37 min</b></div>
+            </div>
+
+            <div class="turn-hint" id="hint">Turn for the words <span>→</span></div>
+          </div>
+        </div>
+      </article>
+
+      <!-- ══ PAGE 2 · THE WORDS ═════════════════════════════════ -->
+      <article class="page" data-name="In your words">
+        <div class="runhead"><span>Post Run Drip · Intervals</span><span class="sec">In your words</span></div>
+        <div class="body">
+          <div class="wrap" style="padding-top:26px">
+            <div class="eyebrow">In your words</div>
+            <div class="entry">
+              <p>I struggled a lot with today's 3×2 mile workout. It was hot and humid, and I've been feeling a bit worn down, almost with a sore throat-ish kind of vibe.</p>
+              <p>Overall, it wasn't a great workout, and I feel this hasn't been a good training block for my fitness.</p>
+            </div>
+            <div class="entry-foot">
+              <span class="memo">▶ Play memo · 0:42</span>
+              <span class="caption">Edit entry</span>
+            </div>
+
+            <div class="pull">
+              <q>I feel this hasn't been a good training block for my fitness.</q>
+              <div class="caption attr">Third mention of “worn down” in nine days</div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- ══ PAGE 3 · THE CONDITIONS ════════════════════════════ -->
+      <article class="page" data-name="The conditions">
+        <div class="runhead"><span>Post Run Drip · Intervals</span><span class="sec">The conditions</span></div>
+        <div class="body">
+          <div class="wrap" style="padding-top:24px">
+            <section class="conditions">
+              <div class="eyebrow">The conditions</div>
+              <div class="cond-grid">
+                <div class="c"><span class="caption">Temp</span><span class="cv">78°</span></div>
+                <div class="c"><span class="caption">Dewpoint</span><span class="cv warn">73°</span></div>
+                <div class="c"><span class="caption">Heat cost</span><span class="cv warn">+10 s/mi</span></div>
+                <div class="c"><span class="caption">Climb</span><span class="cv">+255 ft</span></div>
+                <div class="c"><span class="caption">Avg HR</span><span class="cv">165</span></div>
+              </div>
+              <div class="signal"><i></i><span class="lb">Heat</span><span class="vl">+10 s/mi</span></div>
+              <p class="read">Z4 carried the most time. Adjusted for the dewpoint, the reps land within 2 s/mi of your last honest 3×2.</p>
+            </section>
+
+            <div class="fig">
+              <div class="fig-head">
+                <div><div class="no">Fig. 3</div><div class="ttl">Where the time went</div></div>
+                <div class="meta">38 min</div>
+              </div>
+              <div class="zones">
+                <div class="zrow"><span class="zl">Z1</span><span class="zb"><i style="width:8%"></i></span><span class="zv">3 min</span></div>
+                <div class="zrow"><span class="zl">Z2</span><span class="zb"><i style="width:13%"></i></span><span class="zv">5 min</span></div>
+                <div class="zrow"><span class="zl">Z3</span><span class="zb"><i style="width:16%"></i></span><span class="zv">6 min</span></div>
+                <div class="zrow peak"><span class="zl">Z4</span><span class="zb"><i style="width:58%"></i></span><span class="zv">22 min</span></div>
+                <div class="zrow"><span class="zl">Z5</span><span class="zb"><i style="width:5%"></i></span><span class="zv">2 min</span></div>
+              </div>
+              <p class="figcap">The shape of a threshold session, run on a taxed day.</p>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- ══ PAGE 4 · THE SPLITS ════════════════════════════════ -->
+      <article class="page" data-name="The splits">
+        <div class="runhead"><span>Post Run Drip · Intervals</span><span class="sec">The splits</span></div>
+        <div class="body">
+          <div class="wrap">
+            <section class="fig" style="margin-top:24px">
+              <div class="fig-head">
+                <div><div class="no">Fig. 1</div><div class="ttl">Six miles, by the mile</div></div>
+                <div class="meta">6 splits</div>
+              </div>
+              <div class="chips">
+                <button class="chip" aria-pressed="false" id="chip-heat">Heat-adj</button>
+                <button class="chip coral" aria-pressed="true">Pace color</button>
+                <button class="chip" aria-pressed="false">Elev</button>
+                <button class="chip" aria-pressed="true" id="chip-mi">Mi</button>
+              </div>
+              <svg id="splitsChart" viewBox="0 0 342 152" width="100%" height="152" role="img"
+                   aria-label="Bar chart of six mile splits against the session average"></svg>
+              <p class="figcap">Mile 3 is the only rep that ran clear of the 5:29 average.</p>
+
+              <table class="splits">
+                <thead><tr><th>Rep</th><th>Time</th><th>Pace</th><th>HR</th></tr></thead>
+                <tbody id="splitBody"></tbody>
+              </table>
+              <button class="fix">Fix reps ↗</button>
+            </section>
+          </div>
+        </div>
+      </article>
+
+      <!-- ══ PAGE 5 · THE EFFORT ════════════════════════════════ -->
+      <article class="page" data-name="The effort">
+        <div class="runhead"><span>Post Run Drip · Intervals</span><span class="sec">The effort</span></div>
+        <div class="body">
+          <div class="wrap">
+            <section class="fig" style="margin-top:24px">
+              <div class="fig-head">
+                <div><div class="no">Fig. 2</div><div class="ttl">The effort</div></div>
+                <div class="meta">6.2 mi · 38:10</div>
+              </div>
+              <svg id="traceChart" viewBox="0 0 342 200" width="100%" height="200" role="img"
+                   aria-label="Pace trace across the run showing three work intervals and two recoveries"></svg>
+              <p class="figcap">Best mile 4:36 · window average 6:45.</p>
+            </section>
+
+            <div class="colophon">
+              <div class="caption" style="margin-bottom:10px">Post Run Drip · Session 31</div>
+              <div class="sig">— restraint as foundation, intensity as accent</div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+    </div>
+  </div>
+
+  <!-- folio / page-turn indicator -->
+  <div class="folio-bar">
+    <div class="ticks" id="ticks"></div>
+    <div class="no" id="folioNo">Page 1 of 5</div>
+    <div class="sess">31 / 50</div>
+  </div>
+</div>
+
+<div class="stage-note">Swipe or drag left to turn · ← → keys also work</div>
+
+<script>
+/* ───────── data ───────── */
+const splits = [
+  {mi:1, time:'5:26', sec:326, pace:'5:25', pSec:325, hr:164},
+  {mi:2, time:'5:31', sec:331, pace:'5:30', pSec:330, hr:166},
+  {mi:3, time:'5:21', sec:321, pace:'5:20', pSec:320, hr:168},
+  {mi:4, time:'5:37', sec:337, pace:'5:35', pSec:335, hr:171},
+  {mi:5, time:'5:29', sec:329, pace:'5:28', pSec:328, hr:168},
+  {mi:6, time:'5:38', sec:338, pace:'5:37', pSec:337, hr:171}
+];
+const AVG = 329;
+const fmt = s => Math.floor(s/60) + ':' + String(Math.round(s%60)).padStart(2,'0');
+
+/* ───────── Fig 1 · splits ───────── */
+function drawSplits(heatAdj){
+  const W=342,H=152,padL=30,padR=6,padT=14,padB=24;
+  const cw=W-padL-padR, ch=H-padT-padB;
+  const off = heatAdj ? -10 : 0;
+  const vals = splits.map(s=>s.pSec+off);
+  const slow = 342+off, fast = 314+off;
+  const y = v => padT + ch*((v-fast)/(slow-fast));
+  const bw = cw/splits.length*0.62, gap = cw/splits.length;
+  const best = Math.min(...vals);
+  let g='';
+  [320+off,330+off,340+off].forEach(v=>{
+    g+=`<line x1="${padL}" x2="${W-padR}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="#E8E4E0" stroke-width="1"/>`;
+    g+=`<text x="${padL-6}" y="${(y(v)+3).toFixed(1)}" text-anchor="end" font-family="ui-monospace,Menlo,monospace" font-size="8.5" fill="#9B9590">${fmt(v)}</text>`;
+  });
+  splits.forEach((s,i)=>{
+    const v=vals[i];
+    const x=padL+gap*i+(gap-bw)/2;
+    const top=y(v), h=Math.max(2,(padT+ch)-top);
+    const isBest = v===best;
+    g+=`<rect x="${x.toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}"
+         fill="${isBest?'#D4592A':'#1A1815'}" opacity="${isBest?'1':(0.30+0.45*(1-(v-fast)/(slow-fast))).toFixed(2)}"/>`;
+    g+=`<text x="${(x+bw/2).toFixed(1)}" y="${H-10}" text-anchor="middle" font-family="ui-monospace,Menlo,monospace"
+         font-size="9" letter-spacing="0.06em" fill="${isBest?'#D4592A':'#9B9590'}">${s.mi}</text>`;
+  });
+  const ay=y(AVG+off);
+  g+=`<line x1="${padL}" x2="${W-padR}" y1="${ay.toFixed(1)}" y2="${ay.toFixed(1)}" stroke="#1A1815" stroke-width="1" stroke-dasharray="3 3" opacity="0.55"/>`;
+  g+=`<text x="${W-padR}" y="${(ay-5).toFixed(1)}" text-anchor="end" font-family="ui-monospace,Menlo,monospace" font-size="8.5" letter-spacing="0.1em" fill="#6B6560">AVG ${fmt(AVG+off)}</text>`;
+  g+=`<line x1="${padL}" x2="${W-padR}" y1="${padT+ch}" y2="${padT+ch}" stroke="#1A1815" stroke-width="1"/>`;
+  document.getElementById('splitsChart').innerHTML=g;
+  document.getElementById('splitBody').innerHTML = splits.map((s,i)=>{
+    const v=vals[i];
+    return `<tr class="${v===best?'best':''}"><td>MI ${s.mi}</td><td>${heatAdj?fmt(s.sec+off):s.time}</td>
+      <td class="pace">${fmt(v)}</td><td>${s.hr}</td></tr>`;
+  }).join('');
+}
+
+/* ───────── Fig 2 · effort trace ───────── */
+function drawTrace(){
+  const W=342,H=200,padL=30,padR=6,padT=12,padB=26;
+  const cw=W-padL-padR, ch=H-padT-padB;
+  const fast=270, slow=560;
+  const y=v=>padT+ch*((v-fast)/(slow-fast));
+  const N=220;
+  const blocks=[[0,14,505],[14,60,328],[60,74,512],[74,120,327],[120,134,515],[134,182,331],[182,220,520]];
+  const pts=[];
+  for(let i=0;i<N;i++){
+    const b=blocks.find(b=>i>=b[0]&&i<b[1])||blocks[blocks.length-1];
+    const inWork=b[2]<400;
+    const t=(i-b[0])/Math.max(1,(b[1]-b[0]));
+    let v=b[2];
+    if(inWork) v += 7*t;
+    if(t<0.05) v += (inWork? 130:-120)*(1-t/0.05);
+    if(t>0.95) v += (inWork? 120:-110)*((t-0.95)/0.05);
+    v += Math.sin(i*1.7)*(inWork?2.5:9) + Math.sin(i*0.53)*(inWork?3:7);
+    pts.push([padL+cw*i/(N-1), y(Math.max(fast+6,Math.min(slow-6,v)))]);
+  }
+  let g='';
+  [[14,60],[74,120],[134,182]].forEach(([a,b])=>{
+    const x1=padL+cw*a/(N-1), x2=padL+cw*b/(N-1);
+    g+=`<rect x="${x1.toFixed(1)}" y="${padT}" width="${(x2-x1).toFixed(1)}" height="${ch}" fill="rgba(212,89,42,0.055)"/>`;
+    g+=`<line x1="${x1.toFixed(1)}" x2="${x1.toFixed(1)}" y1="${padT}" y2="${padT+ch}" stroke="#D4592A" stroke-width="1" opacity="0.35"/>`;
+  });
+  [300,360,420,480,540].forEach(v=>{
+    g+=`<line x1="${padL}" x2="${W-padR}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="#E8E4E0" stroke-width="1"/>`;
+    g+=`<text x="${padL-6}" y="${(y(v)+3).toFixed(1)}" text-anchor="end" font-family="ui-monospace,Menlo,monospace" font-size="8.5" fill="#9B9590">${fmt(v)}</text>`;
+  });
+  const d=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+  g+=`<path d="${d} L ${padL+cw} ${padT+ch} L ${padL} ${padT+ch} Z" fill="rgba(26,24,21,0.035)"/>`;
+  g+=`<path d="${d}" fill="none" stroke="#1A1815" stroke-width="1.4" stroke-linejoin="round"/>`;
+  g+=`<line x1="${padL}" x2="${W-padR}" y1="${padT+ch}" y2="${padT+ch}" stroke="#1A1815" stroke-width="1"/>`;
+  ['Rep 1','Rep 2','Rep 3'].forEach((lab,i)=>{
+    const a=[14,74,134][i], b=[60,120,182][i];
+    const x=padL+cw*((a+b)/2)/(N-1);
+    g+=`<text x="${x.toFixed(1)}" y="${H-9}" text-anchor="middle" font-family="ui-monospace,Menlo,monospace"
+        font-size="8.5" letter-spacing="0.1em" fill="#D4592A">${lab.toUpperCase()}</text>`;
+  });
+  document.getElementById('traceChart').innerHTML=g;
+}
+
+/* ───────── page turning ───────── */
+const track = document.getElementById('track');
+const stack = document.getElementById('stack');
+const pages = [...track.children];
+const PW = 390;                       // page width
+const TURN = 0.22;                    // fraction of page that commits a turn
+let page = 0, dragging = false, locked = null, x0 = 0, y0 = 0, dx = 0, t0 = 0;
+
+// folio ticks
+const ticks = document.getElementById('ticks');
+ticks.innerHTML = pages.map(()=>'<i></i>').join('');
+const tickEls = [...ticks.children];
+
+function place(offset = 0, animate = true){
+  track.classList.toggle('animate', animate);
+  track.style.transform = `translate3d(${-page*PW + offset}px,0,0)`;
+}
+function paint(){
+  tickEls.forEach((t,i)=>t.classList.toggle('on', i === page));
+  document.getElementById('folioNo').textContent =
+    `Page ${page+1} of ${pages.length} · ${pages[page].dataset.name}`;
+  // a turned page always starts at its top
+  pages.forEach(p=>p.querySelector('.body').scrollTop = 0);
+}
+function go(n){
+  const next = Math.max(0, Math.min(pages.length-1, n));
+  if(next !== page){ page = next; paint(); }
+  place(0, true);
+}
+
+stack.addEventListener('pointerdown', e=>{
+  if(e.pointerType === 'mouse' && e.button !== 0) return;
+  dragging = true; locked = null; x0 = e.clientX; y0 = e.clientY; dx = 0; t0 = performance.now();
+  stack.classList.add('dragging');
+  stack.setPointerCapture(e.pointerId);
+});
+stack.addEventListener('pointermove', e=>{
+  if(!dragging) return;
+  const mx = e.clientX - x0, my = e.clientY - y0;
+  if(locked === null){
+    if(Math.abs(mx) < 6 && Math.abs(my) < 6) return;
+    locked = Math.abs(mx) > Math.abs(my) ? 'x' : 'y';   // let vertical gestures scroll the page
+  }
+  if(locked !== 'x') return;
+  dx = mx;
+  // resistance at the first and last page — the paper runs out
+  if((page === 0 && dx > 0) || (page === pages.length-1 && dx < 0)) dx *= 0.32;
+  place(dx, false);
+});
+function release(){
+  if(!dragging) return;
+  dragging = false; stack.classList.remove('dragging');
+  const v = dx / Math.max(1, performance.now() - t0);      // px per ms
+  const far = Math.abs(dx) > PW*TURN, fast = Math.abs(v) > 0.5;
+  if(locked === 'x' && (far || fast)) go(page + (dx < 0 ? 1 : -1));
+  else place(0, true);
+  dx = 0; locked = null;
+}
+stack.addEventListener('pointerup', release);
+stack.addEventListener('pointercancel', release);
+stack.addEventListener('pointerleave', release);
+
+addEventListener('keydown', e=>{
+  if(e.key === 'ArrowRight') go(page+1);
+  if(e.key === 'ArrowLeft')  go(page-1);
+});
+tickEls.forEach((t,i)=>{ t.style.cursor='pointer'; t.addEventListener('click',()=>go(i)); });
+
+/* ───────── chart interactions ───────── */
+let heat=false;
+document.getElementById('chip-heat').addEventListener('click',e=>{
+  heat=!heat; e.currentTarget.setAttribute('aria-pressed',heat); drawSplits(heat);
+});
+document.querySelectorAll('.chip').forEach(c=>{
+  if(c.id==='chip-heat') return;
+  c.addEventListener('click',()=>c.setAttribute('aria-pressed', c.getAttribute('aria-pressed')!=='true'));
+});
+
+drawSplits(false); drawTrace(); paint(); place(0,false);
+</script>
+</body>
+</html>

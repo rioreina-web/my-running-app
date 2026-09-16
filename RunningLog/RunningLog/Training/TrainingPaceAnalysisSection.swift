@@ -1029,7 +1029,7 @@ fileprivate struct BarPeriodDetailView: View {
                let chipLabel = Self.typeLabels[slug] {
                 Text(chipLabel)
                     .font(.dripCaption(10))
-                    .foregroundStyle(Color.drip.electric)
+                    .foregroundStyle(Color.drip.coralDeep)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 2)
                     .background(Color.drip.coral.opacity(0.12))

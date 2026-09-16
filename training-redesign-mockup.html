@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Training — Redesign Mockup · Post Run Drip</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,600;0,700;1,400&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF; --paper-deep:#E8E4DF; --rule:#E8E4E0;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-deep:#B84420; --coral-wash:rgba(212,89,42,.12);
+  /* mood */
+  --mood-energized:#2D8A4E; --mood-positive:#4A9E6B; --mood-tired:#C4873A; --mood-struggling:#C45A3A;
+  /* pace depth ramp — blue, 7 stops from Easy (pale sky) to Mile (navy) */
+  --p-easy:#93B9D6; --p-steady:#6E9BC4; --p-mp:#4E7FB0; --p-lt:#2E5E97; --p-10k:#234E86; --p-5k:#173A6B; --p-mile:#0E1D4E;
+  --font-display:"Crimson Pro",Georgia,serif;
+  --font-body:"PT Serif",Georgia,serif;
+  --font-mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{
+  background:#DED9D2; font-family:var(--font-body); color:var(--ink);
+  -webkit-font-smoothing:antialiased; padding:32px 16px 56px; min-height:100vh;
+}
+.stage{max-width:1120px;margin:0 auto;}
+.stage-head{text-align:center;margin-bottom:28px;}
+.stage-head .k{font-family:var(--font-mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2);}
+.stage-head h1{font-family:var(--font-display);font-weight:700;font-size:30px;letter-spacing:-.01em;margin-top:6px;}
+.stage-head p{font-family:var(--font-body);font-style:italic;color:var(--ink-2);font-size:14px;margin-top:6px;}
+
+/* phone frame */
+.phone{
+  width:390px;margin:0 auto;background:var(--paper);border-radius:40px;
+  box-shadow:0 24px 60px rgba(0,0,0,.22),0 2px 0 rgba(255,255,255,.5) inset;
+  border:10px solid #17130f;overflow:hidden;position:relative;
+}
+.notch{height:26px;display:flex;align-items:center;justify-content:space-between;padding:0 26px;background:var(--paper);}
+.notch .time{font-family:var(--font-mono);font-size:12px;font-weight:600;padding-top:6px;}
+.notch .status{font-family:var(--font-mono);font-size:11px;color:var(--ink-2);padding-top:6px;}
+
+.screen{height:800px;overflow-y:auto;overflow-x:hidden;}
+.screen::-webkit-scrollbar{width:0;}
+.pad{padding:0 22px;}
+
+/* plate strip */
+.plate{display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:9.5px;
+  letter-spacing:.13em;text-transform:uppercase;color:var(--ink-2);padding:10px 22px 0;}
+
+/* header */
+.eyebrow{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);}
+.eyebrow.coral{color:var(--coral);}
+.head-date{font-family:var(--font-mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-top:14px;}
+.head-title{font-family:var(--font-display);font-weight:700;font-size:38px;letter-spacing:-.015em;line-height:1;margin-top:6px;}
+.head-sub{font-family:var(--font-body);font-style:italic;color:var(--ink-2);font-size:13.5px;margin-top:8px;line-height:1.45;}
+
+/* segmenter */
+.seg{display:flex;gap:0;margin:20px 0 4px;border-bottom:1px solid var(--rule);}
+.seg button{flex:1;background:none;border:none;font-family:var(--font-mono);font-size:11px;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--ink-3);padding:10px 0 12px;cursor:pointer;position:relative;}
+.seg button.on{color:var(--ink);}
+.seg button.on::after{content:"";position:absolute;left:50%;transform:translateX(-50%);bottom:-1px;width:34px;height:2px;background:var(--coral);}
+
+/* summary ribbon */
+.ribbon{display:flex;align-items:stretch;margin:18px 0 6px;}
+.ribbon .cell{flex:1;text-align:center;padding:2px 4px;}
+.ribbon .cell + .cell{border-left:1px solid var(--rule);}
+.ribbon .n{font-family:var(--font-mono);font-weight:600;font-size:22px;font-variant-numeric:tabular-nums;letter-spacing:-.01em;}
+.ribbon .l{font-family:var(--font-mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);margin-top:5px;}
+.ribbon .n small{font-size:12px;color:var(--ink-2);font-weight:600;}
+.ribbon-note{font-family:var(--font-mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);
+  text-align:center;margin:12px 0 2px;padding-top:12px;border-top:1px solid var(--rule);}
+
+/* editorial rule */
+.drule{display:flex;align-items:center;gap:8px;margin:22px 0 16px;}
+.drule::before,.drule::after{content:"";flex:1;height:1px;background:var(--rule);}
+.drule .dot{width:3px;height:3px;border-radius:999px;background:var(--ink-3);}
+
+/* WEEK BLOCK */
+.wk{margin-bottom:26px;}
+.wk-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px;}
+.wk-head .wk-of{font-family:var(--font-mono);font-size:11px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink);}
+.wk-head .wk-of .tag{color:var(--coral);}
+.wk-mi{font-family:var(--font-mono);font-variant-numeric:tabular-nums;font-size:11px;letter-spacing:.05em;color:var(--ink-2);}
+.wk-mi b{color:var(--ink);font-weight:600;font-size:14px;}
+.wk-mi .delta{color:var(--ink-3);}
+.wk-mi .delta.up{color:var(--ink-2);}
+.wk-note{font-family:var(--font-body);font-size:12.5px;font-style:italic;color:var(--ink-2);line-height:1.4;margin:2px 0 12px;}
+
+/* 7-day grid */
+.days{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;}
+.day{position:relative;min-height:96px;border-radius:8px;display:flex;flex-direction:column;
+  align-items:center;padding:7px 2px 8px;background:var(--card);border:1px solid var(--rule);}
+.day .dow{font-family:var(--font-mono);font-size:8.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);}
+.day .dnum{font-family:var(--font-mono);font-size:11px;font-weight:600;color:var(--ink-2);margin-top:1px;font-variant-numeric:tabular-nums;}
+.day .fill{margin-top:8px;width:30px;height:30px;border-radius:7px;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;line-height:1;}
+.day .fill .mi{font-family:var(--font-mono);font-weight:700;font-size:12px;font-variant-numeric:tabular-nums;}
+.day .zone{font-family:var(--font-mono);font-size:8px;letter-spacing:.04em;text-transform:uppercase;margin-top:7px;color:var(--ink-2);text-align:center;line-height:1.25;}
+.day .zone b{color:var(--ink);font-weight:600;}
+/* pace-filled runs: white text on blue */
+.fill.easy{background:var(--p-easy);color:#12325a;}
+.fill.steady{background:var(--p-steady);color:#fff;}
+.fill.mp{background:var(--p-mp);color:#fff;}
+.fill.lt{background:var(--p-lt);color:#fff;}
+.fill.k10{background:var(--p-10k);color:#fff;}
+.fill.k5{background:var(--p-5k);color:#fff;}
+.fill.mile{background:var(--p-mile);color:#fff;}
+/* non-pace sessions — never blue */
+.fill.rest{background:var(--paper-deep);color:var(--ink-3);width:30px;height:30px;}
+.fill.xt{background:transparent;border:1.5px dashed var(--ink-3);color:var(--ink-2);}
+.fill.st{background:var(--ink);color:var(--paper);}
+.fill.rest .rlab,.fill.xt .rlab,.fill.st .rlab{font-family:var(--font-mono);font-size:8.5px;font-weight:600;letter-spacing:.04em;}
+/* planned = dashed outline, lighter */
+.day.planned{background:var(--paper-elevated);border-style:dashed;border-color:#d9d3cc;}
+.day.planned .fill{opacity:.62;}
+.day.today{border:1.5px solid var(--coral);}
+.day.today .dnum{color:var(--coral);}
+/* mood dot top-right */
+.mood{position:absolute;top:7px;right:7px;width:6px;height:6px;border-radius:999px;}
+.mood.energized{background:var(--mood-energized);}
+.mood.positive{background:var(--mood-positive);}
+.mood.tired{background:var(--mood-tired);}
+.mood.struggling{background:var(--mood-struggling);}
+/* niggle marker */
+.niggle{position:absolute;bottom:6px;right:7px;width:5px;height:5px;border-radius:999px;background:var(--coral);}
+
+/* legend */
+.legend{margin:6px 0 4px;padding:16px 0 4px;border-top:1px solid var(--rule);}
+.legend .lh{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-2);margin-bottom:10px;}
+.ramp{display:flex;height:10px;border-radius:3px;overflow:hidden;}
+.ramp span{flex:1;}
+.ramp-labs{display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:8px;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--ink-3);margin-top:5px;}
+.legkeys{display:flex;flex-wrap:wrap;gap:10px 16px;margin-top:14px;}
+.legkeys .key{display:flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2);}
+.legkeys .sw{width:12px;height:12px;border-radius:4px;flex:none;}
+.sw.rest{background:var(--paper-deep);}
+.sw.xt{border:1.5px dashed var(--ink-3);}
+.sw.st{background:var(--ink);}
+.sw.mood{background:var(--mood-positive);border-radius:999px;width:8px;height:8px;}
+.sw.niggle{background:var(--coral);border-radius:999px;width:8px;height:8px;}
+
+/* footer expand */
+.foot{margin-top:20px;padding:14px 0 6px;border-top:1px solid var(--rule);display:flex;justify-content:space-between;align-items:center;}
+.foot .fl{font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);}
+.foot .fr{font-family:var(--font-display);font-weight:600;font-size:13px;color:var(--coral);}
+
+/* tab bar */
+.tabs{display:flex;border-top:1px solid var(--rule);background:var(--paper);}
+.tabs .t{flex:1;text-align:center;padding:9px 0 12px;font-family:var(--font-mono);font-size:8.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);}
+.tabs .t.on{color:var(--ink);}
+.tabs .t .d{width:5px;height:5px;border-radius:999px;background:transparent;margin:0 auto 5px;}
+.tabs .t.on .d{background:var(--coral);}
+.home-ind{height:5px;width:120px;background:var(--ink);opacity:.85;border-radius:999px;margin:2px auto 8px;}
+
+.caption{max-width:390px;margin:16px auto 0;font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;
+  text-transform:uppercase;color:#8a847c;text-align:center;line-height:1.7;}
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="stage-head">
+    <div class="k">Post Run Drip · Redesign Mockup</div>
+    <h1>Training, as an editorial calendar.</h1>
+    <p>Every session — runs, cross-train, strength, rest — read week by week.</p>
+  </div>
+
+  <div class="phone">
+    <div class="notch">
+      <span class="time">11:53</span>
+      <span class="status">◍ ⌃ 78</span>
+    </div>
+    <div class="screen">
+
+      <div class="plate">
+        <span>RUNNING LOG — TRAINING</span>
+        <span>FIG. 04 · JUL 10</span>
+      </div>
+
+      <div class="pad">
+        <div class="head-date">JUN 14 — JUL 10</div>
+        <div class="head-title">Your training.</div>
+        <div class="head-sub">Four weeks. Read top to bottom, most recent first.</div>
+
+        <div class="seg">
+          <button>Week</button>
+          <button class="on">Month</button>
+          <button>Block</button>
+        </div>
+
+        <!-- summary ribbon: workout-centric, no voice-memo count -->
+        <div class="ribbon">
+          <div class="cell"><div class="n">176</div><div class="l">Miles</div></div>
+          <div class="cell"><div class="n">28</div><div class="l">Runs</div></div>
+          <div class="cell"><div class="n">4</div><div class="l">Quality</div></div>
+          <div class="cell"><div class="n">73<small>%</small></div><div class="l">Easy</div></div>
+        </div>
+        <div class="ribbon-note">21:24 hrs moving · avg 44 mi / wk · 3 cross · 2 strength</div>
+
+        <div class="drule"><span class="dot"></span></div>
+      </div>
+
+      <div class="pad">
+
+        <!-- WEEK · current, partial + planned -->
+        <div class="wk">
+          <div class="wk-head">
+            <div class="wk-of">Week of Jul 6 <span class="tag">· this week</span></div>
+            <div class="wk-mi"><b>23</b>/42 mi</div>
+          </div>
+          <div class="wk-note">Three easy days banked before the long run. Wednesday’s 10K reps hit 5:10 — sharpest of the block.</div>
+          <div class="days">
+            <div class="day">
+              <div class="mood positive"></div>
+              <div class="dow">Mon</div><div class="dnum">6</div>
+              <div class="fill easy"><span class="mi">6</span></div>
+              <div class="zone"><b>Easy</b></div>
+            </div>
+            <div class="day">
+              <div class="dow">Tue</div><div class="dnum">7</div>
+              <div class="fill easy"><span class="mi">5</span></div>
+              <div class="zone"><b>Easy</b></div>
+            </div>
+            <div class="day">
+              <div class="mood energized"></div>
+              <div class="dow">Wed</div><div class="dnum">8</div>
+              <div class="fill k10"><span class="mi">8</span></div>
+              <div class="zone"><b>10K</b><br>reps</div>
+            </div>
+            <div class="day">
+              <div class="dow">Thu</div><div class="dnum">9</div>
+              <div class="fill rest"><span class="rlab">REST</span></div>
+              <div class="zone">Rest</div>
+            </div>
+            <div class="day today">
+              <div class="dow">Fri</div><div class="dnum">10</div>
+              <div class="fill easy"><span class="mi">4</span></div>
+              <div class="zone"><b>Easy</b><br>today</div>
+            </div>
+            <div class="day planned">
+              <div class="dow">Sat</div><div class="dnum">11</div>
+              <div class="fill steady"><span class="mi">14</span></div>
+              <div class="zone">Long</div>
+            </div>
+            <div class="day planned">
+              <div class="dow">Sun</div><div class="dnum">12</div>
+              <div class="fill easy"><span class="mi">5</span></div>
+              <div class="zone">Easy</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- WEEK · Jun 29 -->
+        <div class="wk">
+          <div class="wk-head">
+            <div class="wk-of">Week of Jun 29</div>
+            <div class="wk-mi"><b>46</b> mi <span class="delta up">▲ 3</span></div>
+          </div>
+          <div class="wk-note">Peak week. MP 8 on Wednesday, then 15 on tired legs Saturday and held it together.</div>
+          <div class="days">
+            <div class="day">
+              <div class="mood positive"></div>
+              <div class="dow">Mon</div><div class="dnum">29</div>
+              <div class="fill easy"><span class="mi">6</span></div><div class="zone"><b>Easy</b></div>
+            </div>
+            <div class="day">
+              <div class="dow">Tue</div><div class="dnum">30</div>
+              <div class="fill steady"><span class="mi">7</span></div><div class="zone"><b>Steady</b></div>
+            </div>
+            <div class="day">
+              <div class="mood energized"></div>
+              <div class="dow">Wed</div><div class="dnum">1</div>
+              <div class="fill mp"><span class="mi">8</span></div><div class="zone"><b>MP</b></div>
+            </div>
+            <div class="day">
+              <div class="dow">Thu</div><div class="dnum">2</div>
+              <div class="fill easy"><span class="mi">5</span></div><div class="zone"><b>Easy</b></div>
+            </div>
+            <div class="day">
+              <div class="dow">Fri</div><div class="dnum">3</div>
+              <div class="fill rest"><span class="rlab">REST</span></div><div class="zone">Rest</div>
+            </div>
+            <div class="day">
+              <div class="mood tired"></div>
+              <div class="dow">Sat</div><div class="dnum">4</div>
+              <div class="fill steady"><span class="mi">15</span></div><div class="zone">Long</div>
+            </div>
+            <div class="day">
+              <div class="dow">Sun</div><div class="dnum">5</div>
+              <div class="fill easy"><span class="mi">5</span></div><div class="zone"><b>Easy</b></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- WEEK · Jun 22 -->
+        <div class="wk">
+          <div class="wk-head">
+            <div class="wk-of">Week of Jun 22</div>
+            <div class="wk-mi"><b>43</b> mi <span class="delta">▲ 2</span></div>
+          </div>
+          <div class="wk-note">Calf niggle logged Tuesday after the 5K reps. Swapped Thursday to the bike — held the week together.</div>
+          <div class="days">
+            <div class="day">
+              <div class="dow">Mon</div><div class="dnum">22</div>
+              <div class="fill easy"><span class="mi">6</span></div><div class="zone"><b>Easy</b></div>
+            </div>
+            <div class="day">
+              <div class="mood struggling"></div><div class="niggle"></div>
+              <div class="dow">Tue</div><div class="dnum">23</div>
+              <div class="fill k5"><span class="mi">8</span></div><div class="zone"><b>5K</b><br>reps</div>
+            </div>
+            <div class="day">
+              <div class="dow">Wed</div><div class="dnum">24</div>
+              <div class="fill easy"><span class="mi">5</span></div><div class="zone"><b>Easy</b></div>
+            </div>
+            <div class="day">
+              <div class="dow">Thu</div><div class="dnum">25</div>
+              <div class="fill xt"><span class="rlab">XT</span></div><div class="zone">Bike</div>
+            </div>
+            <div class="day">
+              <div class="dow">Fri</div><div class="dnum">26</div>
+              <div class="fill easy"><span class="mi">6</span></div><div class="zone"><b>Easy</b></div>
+            </div>
+            <div class="day">
+              <div class="mood positive"></div>
+              <div class="dow">Sat</div><div class="dnum">27</div>
+              <div class="fill steady"><span class="mi">13</span></div><div class="zone">Long</div>
+            </div>
+            <div class="day">
+              <div class="dow">Sun</div><div class="dnum">28</div>
+              <div class="fill easy"><span class="mi">5</span></div><div class="zone"><b>Easy</b></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- WEEK · Jun 15 -->
+        <div class="wk">
+          <div class="wk-head">
+            <div class="wk-of">Week of Jun 15</div>
+            <div class="wk-mi"><b>41</b> mi</div>
+          </div>
+          <div class="wk-note">Block opener. Friday’s 5K reps averaged 4:36 off a strength day two days prior.</div>
+          <div class="days">
+            <div class="day">
+              <div class="dow">Mon</div><div class="dnum">15</div>
+              <div class="fill easy"><span class="mi">5</span></div><div class="zone"><b>Easy</b></div>
+            </div>
+            <div class="day">
+              <div class="dow">Tue</div><div class="dnum">16</div>
+              <div class="fill steady"><span class="mi">6</span></div><div class="zone"><b>Steady</b></div>
+            </div>
+            <div class="day">
+              <div class="mood positive"></div>
+              <div class="dow">Wed</div><div class="dnum">17</div>
+              <div class="fill easy"><span class="mi">5</span></div><div class="zone"><b>Easy</b></div>
+            </div>
+            <div class="day">
+              <div class="dow">Thu</div><div class="dnum">18</div>
+              <div class="fill st"><span class="rlab">ST</span></div><div class="zone">Strength</div>
+            </div>
+            <div class="day">
+              <div class="mood energized"></div>
+              <div class="dow">Fri</div><div class="dnum">19</div>
+              <div class="fill k5"><span class="mi">7</span></div><div class="zone"><b>5K</b><br>reps</div>
+            </div>
+            <div class="day">
+              <div class="dow">Sat</div><div class="dnum">20</div>
+              <div class="fill steady"><span class="mi">14</span></div><div class="zone">Long</div>
+            </div>
+            <div class="day">
+              <div class="dow">Sun</div><div class="dnum">21</div>
+              <div class="fill easy"><span class="mi">4</span></div><div class="zone"><b>Easy</b></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- legend -->
+        <div class="legend">
+          <div class="lh">Pace · easy to fast</div>
+          <div class="ramp">
+            <span style="background:var(--p-easy)"></span>
+            <span style="background:var(--p-steady)"></span>
+            <span style="background:var(--p-mp)"></span>
+            <span style="background:var(--p-lt)"></span>
+            <span style="background:var(--p-10k)"></span>
+            <span style="background:var(--p-5k)"></span>
+            <span style="background:var(--p-mile)"></span>
+          </div>
+          <div class="ramp-labs"><span>Easy</span><span>Steady</span><span>MP</span><span>LT</span><span>10K</span><span>5K</span><span>Mile</span></div>
+          <div class="legkeys">
+            <div class="key"><span class="sw rest"></span>Rest</div>
+            <div class="key"><span class="sw xt"></span>Cross-train</div>
+            <div class="key"><span class="sw st"></span>Strength</div>
+            <div class="key"><span class="sw mood"></span>Feeling logged</div>
+            <div class="key"><span class="sw niggle"></span>Niggle</div>
+          </div>
+        </div>
+
+        <div class="foot">
+          <div class="fl">Volume · by intensity</div>
+          <div class="fr">Expand ↗</div>
+        </div>
+
+      </div>
+
+      <div style="height:14px"></div>
+      <div class="tabs">
+        <div class="t"><div class="d"></div>Log</div>
+        <div class="t on"><div class="d"></div>Training</div>
+        <div class="t"><div class="d"></div>Trends</div>
+        <div class="t"><div class="d"></div>Coach</div>
+        <div class="t"><div class="d"></div>Plan</div>
+      </div>
+      <div class="home-ind"></div>
+
+    </div>
+  </div>
+
+  <div class="caption">Warm paper · ink · one coral · blue depth-ramp = pace · mood pills = warm/green · coral = niggle only</div>
+</div>
+</body>
+</html>

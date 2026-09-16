@@ -46,7 +46,7 @@ export function EmptyState({
     >
       {eyebrow ? (
         <span
-          className={`font-body text-[11px] font-medium tracking-[1.5px] uppercase ${eyebrowTone}`}
+          className={`font-mono text-[11px] font-medium tracking-[0.12em] uppercase ${eyebrowTone}`}
         >
           {eyebrow}
         </span>

@@ -1,0 +1,1281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Adaptive plan builder · Running Log</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@200..900&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+/* =============================================================
+   Post Run Drip — Adaptive Plan Builder prototype (coach portal)
+   "Restraint as foundation, intensity as accent."
+   Sibling of prototypes/workout-builder.html (Fig. W-01).
+   Three-palette rule: blue = pace · warm = mood · coral = alert.
+   ============================================================= */
+:root {
+  --paper:           #F5F3F0;
+  --paper-elevated:  #FAFAF8;
+  --card:            #FFFFFF;
+  --paper-deep:      #E8E4DF;
+  --rule:            #E8E4E0;
+  --ink:             #1A1815;
+  --ink-2:           #6B6560;
+  --ink-3:           #9B9590;
+  --coral:           #D4592A;
+  --coral-light:     #E8764A;
+  --coral-deep:      #B84420;
+  --coral-wash:      rgba(212, 89, 42, 0.12);
+  /* pace ramp — single blue hue, ten depths (PaceSpectrum.swift) */
+  --pace-easy:      #93B9D6;
+  --pace-easy-text: #5E93BE;
+  --pace-moderate:  #74A8CC;
+  --pace-steady:    #578FC0;
+  --pace-mp:        #3F7CB5;
+  --pace-hmp:       #2F66A8;
+  --pace-lt:        #27549B;
+  --pace-10k:       #20448B;
+  --pace-5k:        #1A3679;
+  --pace-3k:        #142964;
+  --pace-fast:      #0E1D4E;
+  --font-display: "Crimson Pro", Georgia, "Times New Roman", serif;
+  --font-body:    "PT Serif", Georgia, "Times New Roman", serif;
+  --font-mono:    ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --t-display-xl: 40px;
+  --t-display-m:  24px;
+  --t-display-s:  20px;
+  --t-body:       15px;
+  --t-body-sm:    13px;
+  --t-meta:       11px;
+  --t-meta-sm:    10px;
+  --tracking-label:  0.12em;
+  --tracking-caption: 0.10em;
+  --tracking-meta:   0.14em;
+  --shadow-card:  0 2px 8px rgba(0, 0, 0, 0.06);
+  --shadow-press: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--paper); color: var(--ink);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+  min-height: 100vh;
+}
+.shell { max-width: 1220px; margin: 0 auto; padding: 24px 24px 80px; }
+
+/* ---- Plate strip / type helpers --------------------------- */
+.plate-strip {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-family: var(--font-mono); font-size: var(--t-meta); font-weight: 500;
+  letter-spacing: var(--tracking-meta); color: var(--ink-2);
+  text-transform: uppercase; padding-bottom: 16px;
+  border-bottom: 1px solid var(--rule); margin-bottom: 32px;
+}
+.eyebrow {
+  font-family: var(--font-mono); font-size: var(--t-meta); font-weight: 500;
+  letter-spacing: var(--tracking-label); color: var(--ink-2); text-transform: uppercase;
+}
+.eyebrow--coral { color: var(--coral); }
+.display { font-family: var(--font-display); font-weight: 700; color: var(--ink); letter-spacing: -0.01em; line-height: 1.05; }
+.stat { font-family: var(--font-mono); font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; line-height: 1; }
+.body-sm { font-family: var(--font-body); font-size: var(--t-body-sm); color: var(--ink-2); line-height: 1.5; }
+.caption {
+  font-family: var(--font-mono); font-size: var(--t-meta-sm); font-weight: 500;
+  color: var(--ink-2); letter-spacing: var(--tracking-caption); text-transform: uppercase;
+}
+.aside { font-family: var(--font-body); font-style: italic; font-size: var(--t-body-sm); color: var(--ink-2); line-height: 1.5; }
+
+.ed-rule { display: flex; align-items: center; gap: 8px; margin: 32px 0; }
+.ed-rule::before, .ed-rule::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
+.ed-rule span { width: 3px; height: 3px; border-radius: 999px; background: var(--ink-3); }
+
+.page-head h1 { font-size: var(--t-display-xl); }
+.page-head p { font-family: var(--font-body); font-style: italic; font-size: var(--t-body); color: var(--ink-2); margin-top: 8px; }
+
+/* ---- Layout ------------------------------------------------ */
+.grid { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 32px; align-items: start; margin-top: 32px; }
+@media (max-width: 960px) { .grid { grid-template-columns: 1fr; } .side-col { position: static !important; } }
+.side-col { position: sticky; top: 24px; display: flex; flex-direction: column; gap: 28px; }
+.section { margin-bottom: 8px; }
+.section > .eyebrow { display: block; margin-bottom: 12px; }
+.card { background: var(--card); border-radius: 12px; box-shadow: var(--shadow-card); padding: 16px; }
+
+/* ---- Inputs ------------------------------------------------ */
+input[type="text"], textarea, select {
+  font-family: var(--font-body); font-size: var(--t-body); color: var(--ink);
+  background: var(--paper-elevated); border: 1px solid var(--rule);
+  border-radius: 8px; padding: 9px 12px; width: 100%;
+  transition: border-color 150ms var(--ease-out);
+}
+input[type="text"]:focus, textarea:focus, select:focus { outline: 2px solid var(--coral); outline-offset: 2px; border-color: var(--coral); }
+textarea { resize: vertical; line-height: 1.5; }
+select { appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%236B6560' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 28px; cursor: pointer; width: auto; }
+.name-input {
+  font-family: var(--font-display); font-weight: 700; font-size: var(--t-display-m);
+  background: transparent; border: none; border-bottom: 1px solid var(--rule);
+  border-radius: 0; padding: 4px 0 10px; letter-spacing: -0.01em; width: 100%;
+}
+.name-input:focus { outline: none; border-bottom-color: var(--coral); }
+.num-input {
+  font-family: var(--font-mono) !important; font-variant-numeric: tabular-nums;
+  font-size: var(--t-body-sm) !important; text-align: center; padding: 7px 4px !important;
+}
+/* input[type=text] { width:100% } outranks a bare class — element-prefix these */
+input.w-mi   { width: 46px; }
+input.w-reps { width: 44px; }
+input.w-off  { width: 58px; }
+input.w-abs  { width: 64px; }
+select.sm    { font-family: var(--font-mono); font-size: 12px; padding: 5px 26px 5px 9px; }
+
+/* ---- Buttons ----------------------------------------------- */
+.btn {
+  font-family: var(--font-display); font-weight: 600; font-size: 15px;
+  color: var(--ink); background: var(--card); border: 1px solid var(--rule);
+  border-radius: 10px; padding: 9px 16px; cursor: pointer;
+  transition: all 150ms var(--ease-out);
+}
+.btn:hover { background: var(--paper-elevated); }
+.btn:active { transform: scale(0.98); }
+.btn--sm { font-size: 13px; padding: 6px 12px; border-radius: 8px; }
+.link-action {
+  font-family: var(--font-display); font-weight: 600; font-size: 15px;
+  color: var(--coral); background: none; border: none; cursor: pointer;
+  text-decoration: underline; text-underline-offset: 3px; padding: 0;
+  transition: color 150ms var(--ease-out);
+}
+.link-action:hover { color: var(--coral-deep); }
+.ghost-link {
+  font-family: var(--font-mono); font-size: var(--t-meta-sm); letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--ink-3); background: none; border: none;
+  cursor: pointer; padding: 2px 0;
+}
+.ghost-link:hover { color: var(--coral); }
+
+/* ---- Skeleton chips ---------------------------------------- */
+.skel-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.skel-chip {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  background: var(--card); border: 1px solid var(--rule); border-radius: 10px;
+  padding: 8px 0; width: 74px; cursor: pointer; user-select: none;
+  transition: all 150ms var(--ease-out);
+}
+.skel-chip:hover { border-color: var(--ink-3); }
+.skel-chip .dow { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; color: var(--ink-3); }
+.skel-chip .role { font-family: var(--font-display); font-weight: 600; font-size: 14px; color: var(--ink); }
+.skel-chip.is-rest .role, .skel-chip.is-easy .role { color: var(--ink-3); font-weight: 500; }
+.skel-chip.is-quality { border-color: var(--ink); }
+.skel-chip .dbl {
+  font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.06em; color: var(--ink-3);
+  background: none; border: 1px solid var(--rule); border-radius: 999px; padding: 1px 8px;
+  cursor: pointer; margin-top: 2px; transition: all 150ms var(--ease-out);
+}
+.skel-chip .dbl:hover { color: var(--ink); border-color: var(--ink-3); }
+.skel-chip .dbl.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.week-right { margin-left: auto; display: flex; gap: 12px; align-items: baseline; }
+.sess-count { font-family: var(--font-mono); font-size: var(--t-meta-sm); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+.sess-count.over { color: var(--coral-deep); }
+.slot.dragover { border: 1.5px dashed var(--coral); background: var(--coral-wash); }
+.lc-pin {
+  font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--ink-3); background: none; border: none; cursor: pointer; padding: 0 2px;
+}
+.lc-pin:hover { color: var(--ink); }
+.lc-pin.on { color: var(--coral); }
+.lc-add {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--ink-2); background: var(--paper-deep); border: none; border-radius: 999px;
+  padding: 4px 10px; cursor: pointer; transition: all 150ms var(--ease-out);
+}
+.lc-add:hover { color: var(--ink); background: var(--rule); }
+
+/* ---- Ramp -------------------------------------------------- */
+.ramp { display: flex; gap: 10px; align-items: flex-end; height: 96px; margin: 14px 2px 6px; }
+.ramp-col { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 5px; cursor: pointer; height: 100%; }
+.ramp-bar { width: 100%; border-radius: 4px 4px 0 0; overflow: hidden; position: relative; transition: height 200ms var(--ease-out); display: flex; flex-direction: column; }
+.ramp-seg { width: 100%; flex: none; }
+.ramp-col.active .ramp-bar { outline: 1.5px solid var(--ink); outline-offset: 2px; }
+.ramp-col .wk { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.08em; color: var(--ink-3); }
+.ramp-col.active .wk { color: var(--ink); font-weight: 600; }
+.ramp-flag { width: 6px; height: 6px; border-radius: 999px; background: var(--coral); margin-bottom: 2px; flex: none; }
+.ramp-helpers { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.pill-btn {
+  font-family: var(--font-mono); font-size: var(--t-meta-sm); letter-spacing: 0.04em;
+  color: var(--ink-2); background: var(--paper-deep); border: none; border-radius: 999px;
+  padding: 5px 10px; cursor: pointer; transition: all 150ms var(--ease-out);
+}
+.pill-btn:hover { color: var(--ink); background: var(--rule); }
+
+/* ---- Week cards --------------------------------------------- */
+.weeks-list { display: flex; flex-direction: column; gap: 12px; }
+.week-card { background: var(--card); border-radius: 12px; box-shadow: var(--shadow-card); padding: 14px 16px; border: 1px solid transparent; cursor: pointer; }
+.week-card.active { border-color: var(--ink); }
+.week-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.week-head .wknum { font-family: var(--font-display); font-weight: 700; font-size: var(--t-display-s); min-width: 52px; }
+.week-head .mi-range { display: flex; align-items: center; gap: 4px; font-family: var(--font-mono); font-size: var(--t-body-sm); color: var(--ink-2); }
+.week-warn { font-family: var(--font-mono); font-size: var(--t-meta-sm); letter-spacing: 0.06em; text-transform: uppercase; color: var(--coral-deep); }
+.day-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-top: 12px; }
+@media (max-width: 760px) { .day-grid { grid-template-columns: repeat(4, 1fr); } }
+.day-col { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.slot {
+  border: 1px dashed var(--rule); border-radius: 10px; padding: 7px 8px 8px;
+  cursor: pointer; transition: all 150ms var(--ease-out); background: var(--paper-elevated);
+  min-height: 68px; min-width: 0; flex: 1;
+}
+.slot:hover { border-color: var(--ink-3); }
+.slot .caption { display: block; margin-bottom: 4px; font-size: 9px; }
+.slot .slot-hint { font-family: var(--font-body); font-style: italic; font-size: 11px; color: var(--ink-3); line-height: 1.35; display: block; }
+.slot .open-role { font-family: var(--font-display); font-weight: 600; font-size: 13px; color: var(--ink-2); display: block; }
+.slot.is-rest, .slot.is-easy { border-style: dotted; }
+.slot.awaiting { border: 1.5px dashed var(--coral); background: var(--coral-wash); }
+.slot.filled { border: 1px solid var(--rule); background: var(--card); border-style: solid; }
+.slot.filled .w-name { font-family: var(--font-display); font-weight: 600; font-size: 13px; line-height: 1.2; color: var(--ink); display: block; overflow-wrap: break-word; }
+.slot .dot-row { display: flex; gap: 3px; margin-top: 5px; }
+.slot .slot-x { float: right; font-family: var(--font-mono); font-size: 11px; color: var(--ink-3); background: none; border: none; cursor: pointer; padding: 0 0 2px 5px; }
+.slot .slot-x:hover { color: var(--coral-deep); }
+.easy-fill-line { font-family: var(--font-body); font-style: italic; font-size: 12px; color: var(--ink-3); margin-top: 10px; }
+
+/* zone dot + tag */
+.zone-tag { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); }
+.zone-dot { width: 7px; height: 7px; border-radius: 999px; flex: none; }
+
+/* ---- Instance editor ---------------------------------------- */
+.inst-editor { margin-top: 12px; border-top: 1px solid var(--rule); padding-top: 12px; cursor: default; }
+.inst-step { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 7px 0; border-bottom: 1px solid var(--rule); }
+.inst-step:last-of-type { border-bottom: none; }
+.inst-step .caption { min-width: 74px; color: var(--ink-3); }
+.inst-step .dist-lbl { font-family: var(--font-mono); font-size: var(--t-body-sm); color: var(--ink); font-variant-numeric: tabular-nums; }
+.inst-step .x { font-family: var(--font-mono); font-size: var(--t-body-sm); color: var(--ink-3); }
+.mode-note { font-family: var(--font-body); font-style: italic; font-size: 11px; color: var(--ink-3); }
+.inst-note-row { margin-top: 10px; }
+.inst-note-row textarea { font-size: var(--t-body-sm); font-style: italic; min-height: 40px; padding: 7px 10px; }
+
+/* ---- Library ------------------------------------------------ */
+.lib-tools { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.lib-tools input { font-size: var(--t-body-sm); padding: 7px 10px; flex: 1; min-width: 120px; }
+.filter-chip {
+  font-family: var(--font-mono); font-size: var(--t-meta-sm); letter-spacing: var(--tracking-caption);
+  text-transform: uppercase; color: var(--ink-2); background: var(--card);
+  border: 1px solid var(--rule); border-radius: 999px; padding: 6px 12px; cursor: pointer;
+  transition: all 150ms var(--ease-out);
+}
+.filter-chip:hover { color: var(--ink); }
+.filter-chip.active { border: 1.5px solid var(--coral); color: var(--ink); }
+.lib-list { display: flex; flex-direction: column; gap: 8px; max-height: 350px; overflow-y: auto; padding-right: 2px; }
+.lib-card { background: var(--card); border-radius: 10px; box-shadow: var(--shadow-press); border: 1px solid var(--rule); padding: 11px 13px; cursor: pointer; transition: all 150ms var(--ease-out); }
+.lib-card:hover { border-color: var(--ink-3); }
+.lib-card .lc-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.lib-card .lc-name { font-family: var(--font-display); font-weight: 600; font-size: 15px; }
+.lib-card .lc-role { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); }
+.lib-card .lc-sum { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-2); margin-top: 4px; font-variant-numeric: tabular-nums; }
+.lib-card .lc-tags { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+.lib-foot { display: flex; justify-content: space-between; align-items: baseline; margin-top: 10px; }
+.lib-hint { font-family: var(--font-body); font-style: italic; font-size: 12px; color: var(--ink-3); min-height: 16px; margin-bottom: 8px; }
+.lib-hint.hot { color: var(--coral-deep); }
+
+/* ---- Preview ------------------------------------------------ */
+.athlete-pills { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.athlete-pill {
+  font-family: var(--font-mono); font-size: var(--t-meta-sm); letter-spacing: var(--tracking-caption);
+  text-transform: uppercase; color: var(--ink-2); background: var(--card);
+  border: 1px solid var(--rule); border-radius: 999px; padding: 7px 14px; cursor: pointer;
+  transition: all 150ms var(--ease-out);
+}
+.athlete-pill:hover { color: var(--ink); }
+.athlete-pill.active { border: 1.5px solid var(--coral); color: var(--ink); }
+.preview-card { background: var(--card); border-radius: 12px; box-shadow: var(--shadow-card); padding: 20px; }
+.pv-title { font-family: var(--font-display); font-weight: 700; font-size: var(--t-display-s); }
+.pv-sub { font-family: var(--font-mono); font-size: var(--t-body-sm); color: var(--ink-2); font-variant-numeric: tabular-nums; margin: 4px 0 14px; }
+.pv-day { display: flex; gap: 10px; padding: 9px 0; border-top: 1px solid var(--rule); }
+.pv-day:last-of-type { border-bottom: 1px solid var(--rule); }
+.pv-dow { font-family: var(--font-mono); font-size: var(--t-meta-sm); letter-spacing: 0.1em; color: var(--ink-3); min-width: 32px; padding-top: 3px; }
+.pv-main { flex: 1; min-width: 0; }
+.pv-line { font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink); }
+.pv-meta { font-family: var(--font-mono); font-size: var(--t-meta-sm); color: var(--ink-2); margin-top: 3px; font-variant-numeric: tabular-nums; }
+.pv-soft { font-family: var(--font-body); font-style: italic; font-size: 12.5px; color: var(--ink-2); }
+.pv-note { font-family: var(--font-body); font-style: italic; font-size: 12px; color: var(--ink-2); margin-top: 4px; line-height: 1.45; }
+.pv-moved { color: var(--coral-deep); }
+.pv-foot { font-family: var(--font-body); font-style: italic; font-size: 12px; color: var(--ink-3); margin-top: 12px; line-height: 1.5; }
+
+/* ---- Rules -------------------------------------------------- */
+.rule-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--rule); }
+.rule-row:last-of-type { border-bottom: none; }
+.rule-row input.rule-text {
+  flex: 1; background: transparent; border: none; border-radius: 0; padding: 2px 0;
+  font-family: var(--font-body); font-size: var(--t-body-sm); color: var(--ink);
+}
+.rule-row input.rule-text:focus { outline: none; box-shadow: 0 1px 0 var(--coral); }
+.rule-row.off input.rule-text { color: var(--ink-3); }
+.rule-del { font-family: var(--font-mono); font-size: 13px; color: var(--ink-3); background: none; border: none; cursor: pointer; padding: 2px 4px; }
+.rule-del:hover { color: var(--coral-deep); }
+.toggle { display: inline-flex; align-items: center; cursor: pointer; user-select: none; }
+.toggle input { display: none; }
+.toggle .track { width: 30px; height: 18px; border-radius: 999px; background: var(--paper-deep); position: relative; transition: background 150ms var(--ease-out); flex: none; }
+.toggle .track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 999px; background: var(--card); box-shadow: var(--shadow-press); transition: left 150ms var(--ease-out); }
+.toggle input:checked + .track { background: var(--coral); }
+.toggle input:checked + .track::after { left: 14px; }
+.ai-demo { margin-top: 14px; padding-left: 12px; border-left: 2px solid rgba(212, 89, 42, 0.5); }
+.ai-demo p { font-family: var(--font-body); font-style: italic; font-size: var(--t-body-sm); color: var(--ink-2); line-height: 1.55; margin-top: 8px; }
+
+.plate-footer { margin-top: 56px; text-align: center; font-family: var(--font-body); font-style: italic; font-size: var(--t-body-sm); color: var(--ink-3); }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <div class="plate-strip">
+    <span>Running Log — Coach Portal · Plan Builder · Beta</span>
+    <span>Fig. P-02 · Jul 2026</span>
+  </div>
+
+  <div class="page-head">
+    <h1 class="display">Adaptive plan builder.</h1>
+    <p>Sketch the block once — every athlete runs it in their own paces, on their own days.</p>
+  </div>
+
+  <div class="grid">
+
+    <!-- ══════════ LEFT · PLAN CANVAS ══════════ -->
+    <div>
+
+      <div class="section">
+        <span class="eyebrow">Plan</span>
+        <input type="text" id="planName" class="name-input" value="Fall marathon block" placeholder="Name the plan">
+        <div style="display:flex; gap:10px; align-items:center; margin-top:12px; flex-wrap:wrap;">
+          <span class="caption">Race</span>
+          <input type="text" id="raceInput" value="Chicago Marathon · Oct 11" style="width:240px; font-size:13px; padding:7px 10px;">
+          <span class="caption" style="margin-left:8px;">Weeks</span>
+          <span class="stat" id="weekCount" style="font-size:15px;">8</span>
+        </div>
+      </div>
+
+      <div class="ed-rule"><span></span></div>
+
+      <div class="section">
+        <span class="eyebrow">Week skeleton</span>
+        <p class="aside" style="margin-bottom:12px;">Tap a day to change its role; tap 2× for an AM + PM double. All 7 days take workouts — up to 7 sessions a week before the counter pushes back. Roles just mark where key sessions are expected; easy days you leave empty fill themselves. Each athlete's own preferences override this default — Ben's speed day lands on Wednesday.</p>
+        <div class="skel-row" id="skelRow"></div>
+      </div>
+
+      <div class="ed-rule"><span></span></div>
+
+      <div class="section">
+        <span class="eyebrow">Mileage ramp</span>
+        <div class="card">
+          <p class="aside">Ranges, not points — the athlete sees "44–48 mi", never a single number. Color is pace: the pale-sky base is easy volume; the blue deepens with the intensity of the miles you've placed. Tap a bar to jump to that week.</p>
+          <div class="ramp" id="rampBars"></div>
+          <div class="ramp-helpers">
+            <button class="pill-btn" data-helper="linear">linear 40 → 55</button>
+            <button class="pill-btn" data-helper="down4">down week every 4th · −20%</button>
+            <button class="pill-btn" data-helper="taper">taper last 2 wks</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="ed-rule"><span></span></div>
+
+      <div class="section">
+        <span class="eyebrow">Weeks</span>
+        <div class="weeks-list" id="weeksList"></div>
+      </div>
+
+      <div class="ed-rule"><span></span></div>
+
+      <div class="section">
+        <span class="eyebrow eyebrow--coral">Rules, guidelines &amp; notes · what the assistant may propose</span>
+        <div class="card">
+          <p class="aside" style="margin-bottom:4px;">When the assistant drafts a reschedule or a block rewrite, it reasons inside these lines. Hard rules it will not cross; guidelines it will bend and say so. It proposes — you decide. Nothing lands on an athlete's plan without your confirm.</p>
+          <div id="rulesList"></div>
+          <div style="margin-top:10px;"><button class="ghost-link" id="addRuleBtn">+ add a rule ↗</button></div>
+        </div>
+        <div class="card" style="margin-top:12px;">
+          <span class="caption" style="display:block; margin-bottom:8px;">Coach's notes · context the assistant carries</span>
+          <textarea id="aiNote" rows="3">Maya tends to overcook rep one — bias her toward controlled starts. If a niggle shows up twice in one week, cut intensity before volume. In the specific phase, the Saturday long run never drops below 90 minutes.</textarea>
+          <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:10px; flex-wrap:wrap; gap:8px;">
+            <span class="aside">Carried silently — the athlete never sees this verbatim.</span>
+            <button class="link-action" id="aiDemoBtn">Preview the assistant's reasoning ↗</button>
+          </div>
+          <div class="ai-demo" id="aiDemoOut" style="display:none;"></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ══════════ RIGHT · LIBRARY + PREVIEW ══════════ -->
+    <div class="side-col">
+
+      <div class="section">
+        <span class="eyebrow">Workout library</span>
+        <div class="lib-hint" id="libHint"></div>
+        <div class="lib-tools">
+          <input type="text" id="libSearch" placeholder="Search the library">
+          <button class="filter-chip active" data-filter="all">All</button>
+          <button class="filter-chip" data-filter="speed">Speed</button>
+          <button class="filter-chip" data-filter="medium">Medium</button>
+          <button class="filter-chip" data-filter="long">Long</button>
+          <button class="filter-chip" data-filter="easy">Easy</button>
+        </div>
+        <div class="lib-list" id="libList"></div>
+        <div class="lib-foot">
+          <span class="aside">Built in the workout builder; placed here.</span>
+          <a class="ghost-link" href="workout-builder.html" style="text-decoration:none;">New workout ↗</a>
+        </div>
+      </div>
+
+      <div class="section">
+        <span class="eyebrow">Preview · As the athlete runs it</span>
+        <div class="athlete-pills" id="athletePills"></div>
+        <div class="preview-card" id="previewCard"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="plate-footer">— restraint as foundation, intensity as accent</div>
+</div>
+
+<script>
+/* =============================================================
+   Pace math — ported from web/src/components/coach/workout-helpers.ts
+   Keep in sync with derivePaceTableFromGoal / oneHourPaceSecPerMile.
+   ============================================================= */
+const RACE_RATIOS_TO_10K = {
+  mile: 0.139583, threeK: 0.277083, fiveK: 0.481250, tenK: 1.0,
+  half: 2.204167, marathon: 4.615625,
+};
+const RACE_DISTANCE_MI = {
+  mile: 1.0, threeK: 1.864113, fiveK: 3.106856, tenK: 6.213712,
+  half: 13.109375, marathon: 26.21875,
+};
+const TRAINING_MP_SPEED_RATIO = { steady: 0.95, moderate: 0.85, longRun: 0.80, easy: 0.75 };
+
+function equivalentRacePaceSecPerMile(fromKey, fromTimeSec, toKey) {
+  const base10K = fromTimeSec / RACE_RATIOS_TO_10K[fromKey];
+  return (base10K * RACE_RATIOS_TO_10K[toKey]) / RACE_DISTANCE_MI[toKey];
+}
+function oneHourPaceSecPerMile(tenKSecPerMile, hmSecPerMile) {
+  const d10 = RACE_DISTANCE_MI.tenK, dH = RACE_DISTANCE_MI.half, target = 3600;
+  const t10 = tenKSecPerMile * d10, tH = hmSecPerMile * dH;
+  if (t10 >= target) return tenKSecPerMile;
+  if (tH <= target) return hmSecPerMile;
+  const frac = (target - t10) / (tH - t10);
+  return target / (d10 + frac * (dH - d10));
+}
+function derivePaceTable(anchorKey, anchorTimeSec) {
+  const pace = (toKey) => equivalentRacePaceSecPerMile(anchorKey, anchorTimeSec, toKey);
+  const mp = pace('marathon'), hm = pace('half'), tenK = pace('tenK');
+  const tp = (r) => mp / r;
+  return {
+    easy: tp(TRAINING_MP_SPEED_RATIO.easy), moderate: tp(TRAINING_MP_SPEED_RATIO.moderate),
+    steady: tp(TRAINING_MP_SPEED_RATIO.steady), longRun: tp(TRAINING_MP_SPEED_RATIO.longRun),
+    mp, hm, threshold: oneHourPaceSecPerMile(tenK, hm),
+    tenK, fiveK: pace('fiveK'), threeK: pace('threeK'), mile: pace('mile'),
+  };
+}
+
+/* ---- Zones (10-zone taxonomy + Long) — blue ramp only ------- */
+const ZONES = [
+  { key: 'easy',      label: 'Easy',     kind: 'training', color: 'var(--pace-easy)',     text: 'var(--pace-easy-text)' },
+  { key: 'moderate',  label: 'Moderate', kind: 'training', color: 'var(--pace-moderate)', text: 'var(--pace-moderate)' },
+  { key: 'steady',    label: 'Steady',   kind: 'training', color: 'var(--pace-steady)',   text: 'var(--pace-steady)' },
+  { key: 'longRun',   label: 'Long',     kind: 'training', color: 'var(--pace-moderate)', text: 'var(--pace-moderate)' },
+  { key: 'mp',        label: 'MP',       kind: 'race',     color: 'var(--pace-mp)',   text: 'var(--pace-mp)' },
+  { key: 'hm',        label: 'HMP',      kind: 'race',     color: 'var(--pace-hmp)',  text: 'var(--pace-hmp)' },
+  { key: 'threshold', label: 'LT',       kind: 'race',     color: 'var(--pace-lt)',   text: 'var(--pace-lt)' },
+  { key: 'tenK',      label: '10K',      kind: 'race',     color: 'var(--pace-10k)',  text: 'var(--pace-10k)' },
+  { key: 'fiveK',     label: '5K',       kind: 'race',     color: 'var(--pace-5k)',   text: 'var(--pace-5k)' },
+  { key: 'threeK',    label: '3K',       kind: 'race',     color: 'var(--pace-3k)',   text: 'var(--pace-3k)' },
+  { key: 'mile',      label: 'Mile',     kind: 'race',     color: 'var(--pace-fast)', text: 'var(--pace-fast)' },
+];
+const zoneByKey = Object.fromEntries(ZONES.map(z => [z.key, z]));
+
+/* ---- Formatting --------------------------------------------- */
+function fmtClock(totalSec) {
+  totalSec = Math.round(totalSec);
+  const h = Math.floor(totalSec / 3600), m = Math.floor((totalSec % 3600) / 60), s = totalSec % 60;
+  if (h > 0) return h + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+  return m + ':' + String(s).padStart(2, '0');
+}
+function fmtPace(secPerMile) { return fmtClock(secPerMile) + ' /mi'; }
+function fmtPaceRange(midSec) { return fmtClock(midSec * 0.95) + '–' + fmtClock(midSec * 1.05) + ' /mi'; }
+function parseClockStr(s) {
+  s = (s || '').trim();
+  let m = s.match(/^(\d{1,2}):(\d{2})$/);
+  if (m) return (+m[1]) * 60 + (+m[2]);
+  m = s.match(/^(\d+(?:\.\d+)?)$/);
+  if (m) return +m[1];
+  return null;
+}
+function distMi(d) {
+  if (d.t === 'mi') return d.v;
+  if (d.t === 'km') return d.v / 1.609344;
+  if (d.t === 'm')  return d.v / 1609.344;
+  return null; // time-based
+}
+function distLabel(d) {
+  if (d.t === 'time') return d.v < 60 ? d.v + '″' : Math.round(d.v / 60) + '′';
+  if (d.t === 'm') return d.v + 'm';
+  return d.v + ' ' + d.t;
+}
+function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
+
+/* =============================================================
+   Workout library — authored in the workout builder (Fig. W-01)
+   step.pace: {mode:'zone', zone, off}  off = sec/mi tweak (±)
+              {mode:'abs',  t}          reps → target per rep;
+                                        blocks/wu/cd → sec per mile
+   ============================================================= */
+const KIND_CAP = { wu: 'Warm-up', reps: 'Reps', block: 'Block', cd: 'Cool-down' };
+const LIBRARY = [
+  { id: 'lib800', name: '800s, 5K rhythm', role: 'speed', steps: [
+    { kind: 'wu',   dist: { t: 'mi', v: 2 },   pace: { mode: 'zone', zone: 'easy', off: 0 } },
+    { kind: 'reps', reps: 6, dist: { t: 'm', v: 800 }, pace: { mode: 'zone', zone: 'fiveK', off: 0 }, rec: { t: 'm', v: 400, style: 'jog' } },
+    { kind: 'cd',   dist: { t: 'mi', v: 2 },   pace: { mode: 'zone', zone: 'easy', off: 0 } },
+  ]},
+  { id: 'libfixed', name: '800s, fixed 3:00', role: 'speed', steps: [
+    { kind: 'wu',   dist: { t: 'mi', v: 2 },   pace: { mode: 'zone', zone: 'easy', off: 0 } },
+    { kind: 'reps', reps: 6, dist: { t: 'm', v: 800 }, pace: { mode: 'abs', t: 180 }, rec: { t: 'm', v: 400, style: 'jog' } },
+    { kind: 'cd',   dist: { t: 'mi', v: 2 },   pace: { mode: 'zone', zone: 'easy', off: 0 } },
+  ]},
+  { id: 'lib400', name: '3K 400s', role: 'speed', steps: [
+    { kind: 'wu',   dist: { t: 'mi', v: 2 },   pace: { mode: 'zone', zone: 'easy', off: 0 } },
+    { kind: 'reps', reps: 12, dist: { t: 'm', v: 400 }, pace: { mode: 'zone', zone: 'threeK', off: 0 }, rec: { t: 'm', v: 200, style: 'jog' } },
+    { kind: 'cd',   dist: { t: 'mi', v: 1.5 }, pace: { mode: 'zone', zone: 'easy', off: 0 } },
+  ]},
+  { id: 'liblt', name: 'LT cruise miles', role: 'medium', steps: [
+    { kind: 'wu',   dist: { t: 'mi', v: 2 },   pace: { mode: 'zone', zone: 'easy', off: 0 } },
+    { kind: 'reps', reps: 3, dist: { t: 'mi', v: 2 }, pace: { mode: 'zone', zone: 'threshold', off: 0 }, rec: { t: 'time', v: 120, style: 'jog' } },
+    { kind: 'cd',   dist: { t: 'mi', v: 1 },   pace: { mode: 'zone', zone: 'easy', off: 0 } },
+  ]},
+  { id: 'libhmp', name: 'HMP steady state', role: 'medium', steps: [
+    { kind: 'wu',    dist: { t: 'mi', v: 1.5 }, pace: { mode: 'zone', zone: 'easy', off: 0 } },
+    { kind: 'block', dist: { t: 'mi', v: 5 },   pace: { mode: 'zone', zone: 'hm', off: 0 } },
+    { kind: 'cd',    dist: { t: 'mi', v: 1.5 }, pace: { mode: 'zone', zone: 'easy', off: 0 } },
+  ]},
+  { id: 'libstrides', name: 'Hills, 20″ strides', role: 'medium', steps: [
+    { kind: 'block', dist: { t: 'time', v: 2400 }, pace: { mode: 'zone', zone: 'easy', off: 0 } },
+    { kind: 'reps',  reps: 8, dist: { t: 'time', v: 20 }, pace: { mode: 'zone', zone: 'mile', off: 0 }, rec: { t: 'time', v: 60, style: 'walk' } },
+  ]},
+  { id: 'libmplong', name: 'Long wo · MP finish', role: 'long', steps: [
+    { kind: 'wu',    dist: { t: 'mi', v: 3 }, pace: { mode: 'zone', zone: 'easy', off: 0 } },
+    { kind: 'block', dist: { t: 'mi', v: 8 }, pace: { mode: 'zone', zone: 'mp', off: 0 } },
+    { kind: 'cd',    dist: { t: 'mi', v: 2 }, pace: { mode: 'zone', zone: 'easy', off: 0 } },
+  ]},
+  { id: 'libplong', name: 'Progressive long', role: 'long', steps: [
+    { kind: 'block', dist: { t: 'mi', v: 7 }, pace: { mode: 'zone', zone: 'easy', off: 0 } },
+    { kind: 'block', dist: { t: 'mi', v: 5 }, pace: { mode: 'zone', zone: 'moderate', off: 0 } },
+    { kind: 'block', dist: { t: 'mi', v: 2 }, pace: { mode: 'zone', zone: 'steady', off: 0 } },
+  ]},
+  { id: 'libshake', name: 'AM shakeout', role: 'easy', steps: [
+    { kind: 'block', dist: { t: 'mi', v: 4 }, pace: { mode: 'zone', zone: 'easy', off: 0 } },
+  ]},
+  { id: 'libpm5', name: 'PM double, 5 mi', role: 'easy', steps: [
+    { kind: 'block', dist: { t: 'mi', v: 5 }, pace: { mode: 'zone', zone: 'easy', off: 0 } },
+  ]},
+];
+const libById = Object.fromEntries(LIBRARY.map(w => [w.id, w]));
+
+/* ---- Sample athletes (race-anchored) ------------------------- */
+const ATHLETES = [
+  { id: 'maya',  name: 'Maya',  anchorKey: 'marathon', anchorSec: 12480, anchorLbl: '3:28 marathon', tier: 'base',
+    q: { speed: 'TUE', medium: 'THU', long: 'SAT' }, rest: 'MON' },
+  { id: 'ben',   name: 'Ben',   anchorKey: 'fiveK', anchorSec: 1185, anchorLbl: '19:45 5K', tier: 'building',
+    q: { speed: 'WED', medium: 'FRI', long: 'SUN' }, rest: 'TUE' },
+  { id: 'priya', name: 'Priya', anchorKey: 'half', anchorSec: 5880, anchorLbl: '1:38 half', tier: 'advanced',
+    q: { speed: 'TUE', medium: 'FRI', long: 'SUN' }, rest: 'WED' },
+];
+ATHLETES.forEach(a => a.paceTable = derivePaceTable(a.anchorKey, a.anchorSec));
+const TIER_LABEL = { building: 'Building', base: 'Base', advanced: 'Advanced' };
+const TIER_ADJ = { building: -1, base: 0, advanced: 1 };
+
+/* =============================================================
+   State
+   ============================================================= */
+const DOWS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+const ROLE_CYCLE = ['rest', 'easy', 'speed', 'medium', 'long'];
+const QUALITY_ROLES = ['speed', 'medium', 'long'];
+
+const state = {
+  skeleton: {
+    MON: { role: 'rest',   double: false }, TUE: { role: 'speed',  double: false },
+    WED: { role: 'easy',   double: false }, THU: { role: 'medium', double: false },
+    FRI: { role: 'easy',   double: false }, SAT: { role: 'long',   double: false },
+    SUN: { role: 'easy',   double: false },
+  },
+  favs: {},
+  weeks: [
+    { phase: 'base',     min: 38, max: 42, slots: {} },
+    { phase: 'base',     min: 40, max: 45, slots: {} },
+    { phase: 'build',    min: 43, max: 48, slots: {} },
+    { phase: 'down',     min: 34, max: 38, slots: {} },
+    { phase: 'build',    min: 46, max: 51, slots: {} },
+    { phase: 'specific', min: 48, max: 53, slots: {} },
+    { phase: 'specific', min: 44, max: 48, slots: {} },
+    { phase: 'taper',    min: 28, max: 32, slots: {} },
+  ],
+  instances: {}, nextInst: 1,
+  selWeek: 2, awaiting: null, open: null,
+  selAthlete: 'maya',
+  libFilter: 'all', libQuery: '',
+  rules: [
+    { on: true,  strength: 'hard',  text: 'No back-to-back quality days.' },
+    { on: true,  strength: 'hard',  text: 'Weekly volume never jumps more than 10%.' },
+    { on: true,  strength: 'hard',  text: 'Protect the final 14-day taper — no added intensity.' },
+    { on: true,  strength: 'guide', text: 'Long run stays on the weekend.' },
+    { on: true,  strength: 'guide', text: 'A missed quality day is skipped, not stacked onto the next one.' },
+    { on: false, strength: 'guide', text: 'Down week every 4th week, roughly −20% volume.' },
+  ],
+};
+
+function createInstance(libId) {
+  const id = 'i' + state.nextInst++;
+  state.instances[id] = { libId, steps: structuredClone(libById[libId].steps), note: '' };
+  return id;
+}
+/* prefill so the canvas reads as lived-in */
+state.weeks[2].slots = { 'TUE.AM': createInstance('lib800'), 'THU.AM': createInstance('liblt'), 'SAT.AM': createInstance('libmplong') };
+state.weeks[3].slots = { 'TUE.AM': createInstance('libfixed'), 'SAT.AM': createInstance('libplong') };
+state.weeks[4].slots = { 'TUE.AM': createInstance('lib400'), 'THU.AM': createInstance('libhmp'), 'SAT.AM': createInstance('libmplong') };
+state.instances[state.weeks[2].slots['SAT.AM']].note = 'Settle into MP by mile two. If it feels like racing, it is — back off.';
+
+/* =============================================================
+   Resolution helpers
+   ============================================================= */
+function stepPaceSec(step, pt) {
+  if (step.pace.mode === 'abs') {
+    if (step.kind === 'reps') {
+      const mi = distMi(step.dist);
+      return mi ? step.pace.t / mi : null;
+    }
+    return step.pace.t; // blocks: sec per mile
+  }
+  const base = pt[step.pace.zone];
+  return base != null ? base + (step.pace.off || 0) : null;
+}
+function resolvedReps(step, tier) {
+  if (step.kind !== 'reps' || step.reps < 3) return step.reps || 1;
+  return Math.max(1, step.reps + TIER_ADJ[tier]);
+}
+function stepMiles(step, pt, tier) {
+  const p = stepPaceSec(step, pt);
+  const oneMi = step.dist.t === 'time' ? (p ? step.dist.v / p : 0) : distMi(step.dist);
+  if (step.kind === 'reps') {
+    const R = resolvedReps(step, tier);
+    let recMi = 0;
+    if (step.rec && step.rec.t !== 'time') recMi = distMi(step.rec) * Math.max(0, R - 1);
+    return oneMi * R + recMi;
+  }
+  return oneMi;
+}
+function instMiles(inst, pt, tier) {
+  return inst.steps.reduce((s, st) => s + stepMiles(st, pt, tier), 0);
+}
+function zoneTagHTML(zone) {
+  const z = zoneByKey[zone];
+  return '<span class="zone-tag"><span class="zone-dot" style="background:' + z.color + '"></span>' + z.label + '</span>';
+}
+function offLabel(off) {
+  if (!off) return '';
+  return (off < 0 ? '−' : '+') + Math.abs(off) + 's';
+}
+function instSummary(inst) {
+  return inst.steps.map(st => {
+    const d = distLabel(st.dist);
+    if (st.kind === 'wu') return d + ' wu';
+    if (st.kind === 'cd') return d + ' cd';
+    if (st.kind === 'reps') {
+      if (st.pace.mode === 'abs') return st.reps + ' × ' + d + ' in ' + fmtClock(st.pace.t);
+      return st.reps + ' × ' + d + ' @ ' + zoneByKey[st.pace.zone].label + offLabel(st.pace.off);
+    }
+    if (st.pace.mode === 'abs') return d + ' @ ' + fmtClock(st.pace.t) + ' /mi';
+    return d + ' @ ' + zoneByKey[st.pace.zone].label + offLabel(st.pace.off);
+  }).join(' · ');
+}
+function instZones(inst) {
+  const keys = [];
+  inst.steps.forEach(st => {
+    if (st.pace.mode === 'zone' && st.pace.zone !== 'easy' && !keys.includes(st.pace.zone)) keys.push(st.pace.zone);
+  });
+  return keys;
+}
+function mainStep(inst) {
+  return inst.steps.find(st => st.kind === 'reps')
+      || inst.steps.filter(st => st.kind === 'block').sort((a, b) => (distMi(b.dist) || 0) - (distMi(a.dist) || 0))[0]
+      || inst.steps[0];
+}
+
+/* =============================================================
+   Rendering
+   ============================================================= */
+const $ = (id) => document.getElementById(id);
+const PHASES = ['base', 'build', 'specific', 'down', 'taper'];
+
+/* Every day is a slot — all 7 take workouts, plus a PM slot per 2× double.
+   Roles only mark expectations: quality days read as open sessions, easy
+   days auto-fill unless the coach places something. */
+function sessionSlots() {
+  const out = [];
+  DOWS.forEach(d => {
+    const sk = state.skeleton[d];
+    out.push({ dow: d, sess: 'AM', role: sk.role, key: d + '.AM' });
+    if (sk.double && sk.role !== 'rest') out.push({ dow: d, sess: 'PM', role: 'double', key: d + '.PM' });
+  });
+  return out;
+}
+/* intended sessions = placed workouts + open quality/double slots */
+function weekSessions(w) {
+  return sessionSlots().filter(s => w.slots[s.key] || QUALITY_ROLES.includes(s.role) || s.role === 'double').length;
+}
+
+function renderSkeleton() {
+  $('skelRow').innerHTML = DOWS.map(d => {
+    const sk = state.skeleton[d];
+    const cls = QUALITY_ROLES.includes(sk.role) ? 'is-quality' : 'is-' + sk.role;
+    const dbl = sk.role === 'rest' ? '' :
+      '<button class="dbl' + (sk.double ? ' on' : '') + '" data-dbl="' + d + '" title="AM + PM double">2×</button>';
+    return '<div class="skel-chip ' + cls + '" data-skel="' + d + '"><span class="dow">' + d + '</span><span class="role">' + sk.role + '</span>' + dbl + '</div>';
+  }).join('');
+}
+
+function rampWarn(i) {
+  if (i === 0) return false;
+  const prev = state.weeks[i - 1], cur = state.weeks[i];
+  return cur.phase !== 'down' && cur.min > prev.min * 1.10 + 0.01;
+}
+/* nearest zone for an absolute pace — so fixed-clock miles still read in blue */
+function nearestZoneKey(paceSec, pt) {
+  let best = 'fiveK', bestD = Infinity;
+  ZONES.forEach(z => {
+    const d = Math.abs(pt[z.key] - paceSec);
+    if (d < bestD) { bestD = d; best = z.key; }
+  });
+  return best;
+}
+/* miles by pace zone for one week's placed sessions (reference athlete's
+   paces turn time-based steps into miles for the sketch) */
+function weekZoneMiles(w) {
+  const pt = ATHLETES[0].paceTable;
+  const zm = {};
+  sessionSlots().forEach(s => {
+    const id = w.slots[s.key];
+    if (!id) return;
+    state.instances[id].steps.forEach(st => {
+      const mi = stepMiles(st, pt, 'base');
+      if (!mi) return;
+      const zone = st.pace.mode === 'zone' ? st.pace.zone : nearestZoneKey(stepPaceSec(st, pt) || pt.fiveK, pt);
+      zm[zone] = (zm[zone] || 0) + mi;
+    });
+  });
+  return zm;
+}
+function renderRamp() {
+  const maxMi = Math.max(...state.weeks.map(w => (w.min + w.max) / 2), 1);
+  $('rampBars').innerHTML = state.weeks.map((w, i) => {
+    const mid = (w.min + w.max) / 2;
+    const h = Math.max(6, Math.round((mid / maxMi) * 78));
+    const zm = weekZoneMiles(w);
+    const placed = Object.values(zm).reduce((a, b) => a + b, 0);
+    /* everything not placed is easy fill — it joins the Easy segment */
+    zm.easy = (zm.easy || 0) + Math.max(0, mid - placed);
+    const total = Math.max(mid, placed) || 1;
+    /* stack: easy at the base, faster zones deepening toward the top */
+    const segs = [...ZONES].reverse().map(z => {
+      const mi = zm[z.key];
+      if (!mi) return '';
+      return '<div class="ramp-seg" style="height:' + Math.max(2, (mi / total) * h) + 'px; background:' + z.color + '" title="' + z.label + ' · ' + mi.toFixed(1) + ' mi"></div>';
+    }).join('');
+    const warn = rampWarn(i) ? '<span class="ramp-flag" title="Jump over 10% — your own rule flags this"></span>' : '';
+    return '<div class="ramp-col' + (i === state.selWeek ? ' active' : '') + '" data-ramp="' + i + '" title="W' + (i + 1) + ' · ' + w.min + '–' + w.max + ' mi">' +
+      warn + '<div class="ramp-bar" style="height:' + h + 'px">' + segs + '</div>' +
+      '<span class="wk">W' + (i + 1) + '</span></div>';
+  }).join('');
+}
+
+function slotCell(w, wi, s) {
+  const instId = w.slots[s.key];
+  const await_ = state.awaiting && state.awaiting.w === wi && state.awaiting.key === s.key;
+  const cap = '<span class="caption">' + s.dow + (s.sess === 'PM' ? ' · pm' : '') + '</span>';
+  const roleCls = s.sess === 'PM' ? '' : (QUALITY_ROLES.includes(s.role) ? '' : ' is-' + s.role);
+  if (!instId) {
+    let body;
+    if (await_) body = '<span class="slot-hint" style="color:var(--coral-deep)">pick from the library →</span>';
+    else if (s.role === 'rest' && s.sess === 'AM') body = '<span class="slot-hint">rest</span>';
+    else if (s.role === 'easy' && s.sess === 'AM') body = '<span class="slot-hint">easy · auto-fill</span>';
+    else body = '<span class="open-role">' + (s.sess === 'PM' ? 'double' : s.role) + '</span><span class="slot-hint">add a workout</span>';
+    return '<div class="slot' + roleCls + (await_ ? ' awaiting' : '') + '" data-slot="' + wi + ':' + s.key + '">' + cap + body + '</div>';
+  }
+  const inst = state.instances[instId];
+  const lib = libById[inst.libId];
+  const dots = instZones(inst).map(z =>
+    '<span class="zone-dot" style="background:' + zoneByKey[z].color + '" title="' + zoneByKey[z].label + '"></span>').join('');
+  return '<div class="slot filled" data-slot="' + wi + ':' + s.key + '" title="' + esc(instSummary(inst)) + '">' +
+    '<button class="slot-x" data-clear="' + wi + ':' + s.key + '" title="remove">×</button>' + cap +
+    '<span class="w-name">' + esc(lib.name) + '</span>' +
+    (dots ? '<div class="dot-row">' + dots + '</div>' : '') +
+    (inst.note ? '<span class="caption" style="display:block; margin-top:4px; color:var(--ink-3)">note</span>' : '') +
+    '</div>';
+}
+
+function paceControlsHTML(instId, si, step) {
+  const isReps = step.kind === 'reps';
+  const modeSel = '<select class="sm" data-inst="' + instId + '" data-si="' + si + '" data-act="pmode">' +
+    '<option value="zone"' + (step.pace.mode === 'zone' ? ' selected' : '') + '>adaptive · zone</option>' +
+    '<option value="abs"' + (step.pace.mode === 'abs' ? ' selected' : '') + '>absolute · ' + (isReps ? 'rep time' : 'pace') + '</option></select>';
+  if (step.pace.mode === 'abs') {
+    const suffix = isReps ? '<span class="mode-note">per rep — every athlete runs this number</span>'
+                          : '<span class="mode-note">/mi — same for everyone</span>';
+    return modeSel + ' <input type="text" class="num-input w-abs" data-inst="' + instId + '" data-si="' + si + '" data-act="abs" value="' + fmtClock(step.pace.t) + '"> ' + suffix;
+  }
+  const zoneSel = '<select class="sm" data-inst="' + instId + '" data-si="' + si + '" data-act="zone">' +
+    ZONES.map(z => '<option value="' + z.key + '"' + (z.key === step.pace.zone ? ' selected' : '') + '>' + z.label + '</option>').join('') + '</select>';
+  const off = '<input type="text" class="num-input w-off" data-inst="' + instId + '" data-si="' + si + '" data-act="off" value="' + (step.pace.off || '') + '" placeholder="±s/mi" title="Tweak off the zone in sec/mi — negative is faster">';
+  return modeSel + ' ' + zoneSel + ' ' + off + ' <span class="mode-note">follows each athlete’s race anchor</span>';
+}
+
+function editorHTML(wi, key) {
+  const instId = state.weeks[wi].slots[key];
+  const inst = state.instances[instId];
+  const lib = libById[inst.libId];
+  const rows = inst.steps.map((st, si) => {
+    const repsCtl = st.kind === 'reps'
+      ? '<input type="text" class="num-input w-reps" data-inst="' + instId + '" data-si="' + si + '" data-act="reps" value="' + st.reps + '"><span class="x">×</span>'
+      : '';
+    const rec = st.rec ? '<span class="mode-note" style="margin-left:4px;">' + distLabel(st.rec) + ' ' + st.rec.style + ' rec</span>' : '';
+    return '<div class="inst-step"><span class="caption">' + KIND_CAP[st.kind] + '</span>' +
+      repsCtl + '<span class="dist-lbl">' + distLabel(st.dist) + '</span>' +
+      paceControlsHTML(instId, si, st) + rec + '</div>';
+  }).join('');
+  return '<div class="inst-editor" data-stop="1">' +
+    '<div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px;">' +
+    '<span class="caption">Customize · ' + esc(lib.name) + ' · this placement only</span>' +
+    '<button class="ghost-link" data-closeed="1">close ↗</button></div>' + rows +
+    '<div class="inst-note-row"><textarea data-inst="' + instId + '" data-act="note" placeholder="Coaching instruction — lands verbatim on the athlete’s card, in your words.">' + esc(inst.note) + '</textarea></div>' +
+    '</div>';
+}
+
+function renderWeeks() {
+  $('weekCount').textContent = state.weeks.length;
+  $('weeksList').innerHTML = state.weeks.map((w, wi) => {
+    const nSess = weekSessions(w);
+    const warn = rampWarn(wi) ? '<span class="week-warn">ramp +' + Math.round((w.min / state.weeks[wi - 1].min - 1) * 100) + '%</span>' : '';
+    const over = nSess > 7;
+    const sess = '<span class="sess-count' + (over ? ' over' : '') + '">' + nSess + ' sessions' + (over ? ' · over 7' : '') + '</span>';
+    const copy = wi < state.weeks.length - 1 ? '<button class="ghost-link" data-copyweek="' + wi + '">copy → W' + (wi + 2) + '</button>' : '';
+    const phaseSel = '<select class="sm" data-week="' + wi + '" data-act="phase">' +
+      PHASES.map(p => '<option value="' + p + '"' + (p === w.phase ? ' selected' : '') + '>' + p + '</option>').join('') + '</select>';
+    const cols = DOWS.map(d => {
+      const sk = state.skeleton[d];
+      let cells = slotCell(w, wi, { dow: d, sess: 'AM', role: sk.role, key: d + '.AM' });
+      if (sk.double && sk.role !== 'rest') cells += slotCell(w, wi, { dow: d, sess: 'PM', role: 'double', key: d + '.PM' });
+      return '<div class="day-col">' + cells + '</div>';
+    }).join('');
+    const openEd = state.open && state.open.w === wi && w.slots[state.open.key] ? editorHTML(wi, state.open.key) : '';
+    const easyLine = '<div class="easy-fill-line">Empty easy days fill themselves — the plan budgets the rest of the ' + w.min + '–' + w.max + ' mi around what you place.</div>';
+    return '<div class="week-card' + (wi === state.selWeek ? ' active' : '') + '" data-wcard="' + wi + '">' +
+      '<div class="week-head"><span class="wknum">W' + (wi + 1) + '</span>' + phaseSel +
+      '<span class="mi-range"><input type="text" class="num-input w-mi" data-week="' + wi + '" data-act="min" value="' + w.min + '"> – ' +
+      '<input type="text" class="num-input w-mi" data-week="' + wi + '" data-act="max" value="' + w.max + '"> mi</span>' +
+      '<span class="week-right">' + sess + warn + copy + '</span></div>' +
+      '<div class="day-grid">' + cols + '</div>' + easyLine + openEd + '</div>';
+  }).join('');
+}
+
+function renderLibrary() {
+  const q = state.libQuery.toLowerCase();
+  const items = LIBRARY.filter(w =>
+    (state.libFilter === 'all' || w.role === state.libFilter) &&
+    (!q || w.name.toLowerCase().includes(q)))
+    .sort((a, b) => (state.favs[b.id] ? 1 : 0) - (state.favs[a.id] ? 1 : 0));
+  $('libList').innerHTML = items.map(w => {
+    const fake = { libId: w.id, steps: w.steps, note: '' };
+    const pinned = state.favs[w.id];
+    return '<div class="lib-card" data-lib="' + w.id + '" draggable="true">' +
+      '<div class="lc-top"><span class="lc-name">' + esc(w.name) + '</span>' +
+      '<span style="display:flex; gap:8px; align-items:baseline;"><span class="lc-role">' + w.role + '</span>' +
+      '<button class="lc-pin' + (pinned ? ' on' : '') + '" data-pin="' + w.id + '" title="pin to the top">' + (pinned ? 'pinned' : 'pin') + '</button></span></div>' +
+      '<div class="lc-sum">' + esc(instSummary(fake)) + '</div>' +
+      '<div class="lc-tags">' + instZones(fake).map(zoneTagHTML).join('') +
+      '<span style="flex:1"></span><button class="lc-add" data-addlib="' + w.id + '">+ add to W' + (state.selWeek + 1) + '</button></div></div>';
+  }).join('') || '<div class="aside" style="padding:8px 2px;">Nothing matches. Clear the search, or build it fresh in the workout builder.</div>';
+  const hintEl = $('libHint');
+  if (state.awaiting) {
+    hintEl.textContent = 'Placing into W' + (state.awaiting.w + 1) + ' · ' + state.awaiting.key.replace('.', ' ') + ' — tap a workout.';
+    hintEl.className = 'lib-hint hot';
+  } else {
+    hintEl.textContent = 'Drag onto a slot, use + add, or tap a card to drop it into the active week.';
+    hintEl.className = 'lib-hint';
+  }
+  document.querySelectorAll('.filter-chip').forEach(c => c.classList.toggle('active', c.dataset.filter === state.libFilter));
+}
+
+/* quick add: matching open slot first (speed card → speed slot), else any open slot */
+function quickAdd(libId) {
+  const w = state.weeks[state.selWeek];
+  const qs = sessionSlots();
+  const role = libById[libId].role;
+  const target = qs.find(s => !w.slots[s.key] && s.role === role)
+             || (role === 'easy' ? qs.find(s => !w.slots[s.key] && (s.role === 'double' || s.role === 'easy')) : null)
+             || qs.find(s => !w.slots[s.key] && QUALITY_ROLES.includes(s.role))
+             || qs.find(s => !w.slots[s.key] && s.role !== 'rest');
+  if (!target) {
+    $('libHint').textContent = 'W' + (state.selWeek + 1) + ' is full — tap another week, clear a slot, or add a 2× double.';
+    $('libHint').className = 'lib-hint hot';
+    return;
+  }
+  w.slots[target.key] = createInstance(libId);
+  state.awaiting = null;
+  render();
+}
+
+/* ---- Preview ------------------------------------------------- */
+function sessionBodyHTML(s, w, athlete, moved) {
+  const pt = athlete.paceTable;
+  const instId = w.slots[s.key];
+  if (!instId) {
+    return '<div class="pv-soft">' + (s.sess === 'PM' ? 'pm double' : s.role) + ' slot is open — add from the library</div>';
+  }
+  const inst = state.instances[instId];
+  const lib = libById[inst.libId];
+  const ms = mainStep(inst);
+  let line, meta;
+  if (ms.kind === 'reps') {
+    const R = resolvedReps(ms, athlete.tier);
+    if (ms.pace.mode === 'abs') {
+      line = R + ' × ' + distLabel(ms.dist) + ' in ' + fmtClock(ms.pace.t);
+      meta = 'fixed target — the same clock for every athlete';
+    } else {
+      const p = stepPaceSec(ms, pt);
+      const mi = distMi(ms.dist);
+      const z = zoneByKey[ms.pace.zone];
+      line = R + ' × ' + distLabel(ms.dist) + ' @ <span style="color:' + z.text + '">' + z.label + offLabel(ms.pace.off) + '</span>';
+      meta = (mi && p ? fmtClock(p * mi) + ' per rep · ' + fmtPace(p) : '@ ' + z.label + ' effort') +
+             (ms.rec ? ' · ' + distLabel(ms.rec) + ' ' + ms.rec.style + ' rec' : '');
+    }
+  } else {
+    const p = stepPaceSec(ms, pt);
+    const z = ms.pace.mode === 'zone' ? zoneByKey[ms.pace.zone] : null;
+    line = distLabel(ms.dist) + (z ? ' @ <span style="color:' + z.text + '">' + z.label + offLabel(ms.pace.off) + '</span>' : ' @ ' + fmtPace(ms.pace.t));
+    meta = p ? (z && z.kind === 'training' ? fmtPaceRange(p) : fmtPace(p)) : '';
+  }
+  const movedTag = moved ? ' <span class="pv-moved" title="moved to this athlete’s preferred day">↷ from ' + s.dow + '</span>' : '';
+  const totalMi = instMiles(inst, pt, athlete.tier);
+  return '<div class="pv-line">' + esc(lib.name) + movedTag + '</div>' +
+    '<div class="pv-meta">' + line + (meta ? ' · ' + meta : '') + ' · ' + totalMi.toFixed(1) + ' mi</div>' +
+    (inst.note ? '<div class="pv-note">“' + esc(inst.note) + '” <span style="color:var(--ink-3)">— you</span></div>' : '');
+}
+/* Remap coach days onto the athlete's preferred days. Only a role with a
+   single, un-doubled coach day moves; doubles stay put so AM and PM never
+   split across the week. */
+function athleteSessionMap(w, athlete) {
+  const qs = sessionSlots().filter(s =>
+    w.slots[s.key] || QUALITY_ROLES.includes(s.role) || s.role === 'double');
+  const roleDays = {};
+  qs.forEach(s => { if (s.sess === 'AM') (roleDays[s.role] = roleDays[s.role] || []).push(s.dow); });
+  const map = {};
+  qs.forEach(s => {
+    let day = s.dow;
+    if (s.sess === 'AM' && athlete.q[s.role] && roleDays[s.role] && roleDays[s.role].length === 1 && !state.skeleton[s.dow].double) {
+      day = athlete.q[s.role];
+    }
+    (map[day] = map[day] || []).push({ s, moved: day !== s.dow });
+  });
+  return map;
+}
+function previewDayHTML(dow, w, athlete, map) {
+  const pt = athlete.paceTable;
+  let inner;
+  const entries = map[dow];
+  if (entries && entries.length) {
+    const hasAM = entries.some(en => en.s.sess === 'AM');
+    let pre = '';
+    if (!hasAM) {
+      pre = '<span class="caption" style="display:block; margin-bottom:2px; color:var(--ink-3)">am</span>' +
+            '<div class="pv-soft">easy · ' + fmtPaceRange(pt.easy) + '</div>';
+    }
+    const tagged = entries.length > 1 || !hasAM || entries.some(en => en.s.sess === 'PM');
+    inner = pre + entries.map((en, i) => {
+      const tag = tagged
+        ? '<span class="caption" style="display:block; margin:' + (i || pre ? '8px' : '0') + ' 0 2px; color:var(--ink-3)">' + en.s.sess.toLowerCase() + '</span>'
+        : '';
+      return tag + sessionBodyHTML(en.s, w, athlete, en.moved);
+    }).join('');
+  } else if (dow === athlete.rest) {
+    inner = '<div class="pv-soft">rest day</div>';
+  } else {
+    inner = '<div class="pv-soft">easy · ' + fmtPaceRange(pt.easy) + '</div>';
+  }
+  return '<div class="pv-day"><span class="pv-dow">' + dow + '</span><div class="pv-main">' + inner + '</div></div>';
+}
+function renderPreview() {
+  $('athletePills').innerHTML = ATHLETES.map(a =>
+    '<button class="athlete-pill' + (a.id === state.selAthlete ? ' active' : '') + '" data-athlete="' + a.id + '">' + a.name + ' · ' + TIER_LABEL[a.tier] + '</button>').join('');
+  const athlete = ATHLETES.find(a => a.id === state.selAthlete);
+  const w = state.weeks[state.selWeek];
+  const pt = athlete.paceTable;
+  const qs = sessionSlots();
+  const qMi = qs.reduce((sum, s) => {
+    const id = w.slots[s.key];
+    return sum + (id ? instMiles(state.instances[id], pt, athlete.tier) : 0);
+  }, 0);
+  const mid = (w.min + w.max) / 2;
+  const easyMi = Math.max(0, mid - qMi);
+  const map = athleteSessionMap(w, athlete);
+  const days = DOWS.map(d => previewDayHTML(d, w, athlete, map)).join('');
+  $('previewCard').innerHTML =
+    '<div class="pv-title">Week ' + (state.selWeek + 1) + ' · ' + w.phase + '</div>' +
+    '<div class="pv-sub">' + w.min + '–' + w.max + ' mi · ' + weekSessions(w) + ' sessions · anchored on ' + athlete.anchorLbl + ' · ' + TIER_LABEL[athlete.tier] + ' tier</div>' +
+    days +
+    '<div class="pv-foot">Placed sessions come to ' + qMi.toFixed(1) + ' mi; the plan spreads ≈' + easyMi.toFixed(0) + ' easy miles across the open days. Adaptive targets follow ' + athlete.name + '’s anchor; absolute targets read the same on every card.</div>';
+}
+
+/* ---- Rules ---------------------------------------------------- */
+function renderRules() {
+  $('rulesList').innerHTML = state.rules.map((r, i) =>
+    '<div class="rule-row' + (r.on ? '' : ' off') + '">' +
+    '<label class="toggle"><input type="checkbox" data-rule="' + i + '" data-act="on"' + (r.on ? ' checked' : '') + '><span class="track"></span></label>' +
+    '<select class="sm" data-rule="' + i + '" data-act="strength">' +
+      '<option value="hard"' + (r.strength === 'hard' ? ' selected' : '') + '>hard rule</option>' +
+      '<option value="guide"' + (r.strength === 'guide' ? ' selected' : '') + '>guideline</option></select>' +
+    '<input type="text" class="rule-text" data-rule="' + i + '" data-act="text" value="' + esc(r.text) + '">' +
+    '<button class="rule-del" data-delrule="' + i + '" title="remove">×</button></div>').join('');
+}
+
+function renderAIDemo() {
+  const athlete = ATHLETES.find(a => a.id === state.selAthlete);
+  const hard = state.rules.filter(r => r.on && r.strength === 'hard').map(r => r.text.replace(/\.$/, '').toLowerCase());
+  const guides = state.rules.filter(r => r.on && r.strength === 'guide');
+  const w = state.weeks[state.selWeek];
+  const firstSlot = sessionSlots().find(s => w.slots[s.key]);
+  const slotDow = firstSlot ? firstSlot.dow : null;
+  const wo = firstSlot ? libById[state.instances[w.slots[firstSlot.key]].libId].name : 'the quality session';
+  const noteBit = $('aiNote').value.trim() ? ' It also carries your block note, quietly.' : '';
+  $('aiDemoOut').innerHTML =
+    '<span class="eyebrow eyebrow--coral">If ' + athlete.name + ' logs "fatigue" and misses ' + (slotDow || 'a quality day') + '</span>' +
+    '<p>The assistant reads ' + hard.length + ' hard rule' + (hard.length === 1 ? '' : 's') +
+    (hard.length ? ' (' + esc(hard.slice(0, 2).join('; ')) + (hard.length > 2 ? '; …' : '') + ')' : '') +
+    ' and drafts one proposal: slide ' + esc(wo) + ' to the next open day, trim the easy runs to hold ' + w.min + '–' + w.max + ' mi, leave the long run where it is.' +
+    (guides.length ? ' Where it bends a guideline, it says which one and why.' : '') + noteBit +
+    ' The draft waits in your review queue — nothing is applied until you confirm.</p>';
+  $('aiDemoOut').style.display = 'block';
+}
+
+function render() {
+  renderSkeleton(); renderRamp(); renderWeeks(); renderLibrary(); renderPreview(); renderRules();
+}
+
+/* =============================================================
+   Events
+   ============================================================= */
+document.addEventListener('click', (e) => {
+  const t = e.target;
+  const closest = (sel) => t.closest(sel);
+
+  const dbl = closest('[data-dbl]');
+  if (dbl) {
+    const sk = state.skeleton[dbl.dataset.dbl];
+    sk.double = !sk.double;
+    state.awaiting = null; state.open = null;
+    render(); return;
+  }
+  const skel = closest('[data-skel]');
+  if (skel) {
+    const sk = state.skeleton[skel.dataset.skel];
+    sk.role = ROLE_CYCLE[(ROLE_CYCLE.indexOf(sk.role) + 1) % ROLE_CYCLE.length];
+    if (sk.role === 'rest') sk.double = false;
+    state.awaiting = null; state.open = null;
+    render(); return;
+  }
+  const ramp = closest('[data-ramp]');
+  if (ramp) { state.selWeek = +ramp.dataset.ramp; render(); return; }
+
+  const clear = closest('[data-clear]');
+  if (clear) {
+    const [wi, key] = clear.dataset.clear.split(':');
+    delete state.weeks[+wi].slots[key];
+    if (state.open && state.open.w === +wi && state.open.key === key) state.open = null;
+    render(); return;
+  }
+  const cw = closest('[data-copyweek]');
+  if (cw) {
+    const wi = +cw.dataset.copyweek;
+    const src = state.weeks[wi], dst = state.weeks[wi + 1];
+    if (dst) {
+      sessionSlots().forEach(s => {
+        if (src.slots[s.key]) {
+          const id = 'i' + state.nextInst++;
+          state.instances[id] = structuredClone(state.instances[src.slots[s.key]]);
+          dst.slots[s.key] = id;
+        }
+      });
+      state.selWeek = wi + 1; state.open = null;
+      render();
+    }
+    return;
+  }
+  if (closest('[data-closeed]')) { state.open = null; render(); return; }
+  if (closest('.inst-editor')) return; // clicks inside the editor stay put
+
+  const slot = closest('[data-slot]');
+  if (slot) {
+    const [wiS, key] = slot.dataset.slot.split(':');
+    const wi = +wiS;
+    const w = state.weeks[wi];
+    state.selWeek = wi;
+    if (w.slots[key]) {
+      state.open = (state.open && state.open.w === wi && state.open.key === key) ? null : { w: wi, key };
+      state.awaiting = null;
+    } else {
+      const same = state.awaiting && state.awaiting.w === wi && state.awaiting.key === key;
+      state.awaiting = same ? null : { w: wi, key };
+      state.open = null;
+    }
+    render(); return;
+  }
+  const pin = closest('[data-pin]');
+  if (pin) { state.favs[pin.dataset.pin] = !state.favs[pin.dataset.pin]; renderLibrary(); return; }
+  const addlib = closest('[data-addlib]');
+  if (addlib) { quickAdd(addlib.dataset.addlib); return; }
+  const lib = closest('[data-lib]');
+  if (lib) {
+    if (state.awaiting) {
+      const { w, key } = state.awaiting;
+      state.weeks[w].slots[key] = createInstance(lib.dataset.lib);
+      state.awaiting = null; state.selWeek = w;
+      render();
+    } else {
+      quickAdd(lib.dataset.lib); // no slot picked — drop it into the active week
+    }
+    return;
+  }
+  const wcard = closest('[data-wcard]');
+  if (wcard && !closest('select') && !closest('input')) { state.selWeek = +wcard.dataset.wcard; render(); return; }
+
+  const chip = closest('.filter-chip');
+  if (chip) { state.libFilter = chip.dataset.filter; renderLibrary(); return; }
+
+  const ath = closest('[data-athlete]');
+  if (ath) { state.selAthlete = ath.dataset.athlete; renderPreview(); return; }
+
+  const delRule = closest('[data-delrule]');
+  if (delRule) { state.rules.splice(+delRule.dataset.delrule, 1); renderRules(); return; }
+  if (t.id === 'addRuleBtn') {
+    state.rules.push({ on: true, strength: 'guide', text: 'Write the rule in plain words — the assistant reads it as written.' });
+    renderRules(); return;
+  }
+  if (t.id === 'aiDemoBtn') { renderAIDemo(); return; }
+
+  const helper = closest('[data-helper]');
+  if (helper) {
+    const n = state.weeks.length;
+    if (helper.dataset.helper === 'linear') {
+      state.weeks.forEach((w, i) => {
+        const mid = 40 + (55 - 40) * (i / Math.max(1, n - 1));
+        w.min = Math.round(mid - 2); w.max = Math.round(mid + 3);
+        if (w.phase === 'down' || w.phase === 'taper') w.phase = 'build';
+      });
+    } else if (helper.dataset.helper === 'down4') {
+      state.weeks.forEach((w, i) => {
+        if ((i + 1) % 4 === 0) {
+          const prev = state.weeks[i - 1];
+          w.phase = 'down'; w.min = Math.round(prev.min * 0.78); w.max = Math.round(prev.max * 0.82);
+        }
+      });
+    } else if (helper.dataset.helper === 'taper') {
+      const peak = Math.max(...state.weeks.map(w => (w.min + w.max) / 2));
+      const w2 = state.weeks[n - 2], w1 = state.weeks[n - 1];
+      w2.phase = 'taper'; w2.min = Math.round(peak * 0.70); w2.max = Math.round(peak * 0.78);
+      w1.phase = 'taper'; w1.min = Math.round(peak * 0.50); w1.max = Math.round(peak * 0.58);
+    }
+    render(); return;
+  }
+});
+
+document.addEventListener('input', (e) => {
+  const t = e.target;
+  if (t.id === 'libSearch') { state.libQuery = t.value; renderLibrary(); return; }
+  if (t.id === 'aiNote') return;
+
+  const act = t.dataset.act;
+  if (!act) return;
+
+  if (t.dataset.week != null) {
+    const w = state.weeks[+t.dataset.week];
+    if (act === 'min') { const v = parseFloat(t.value); if (v > 0) { w.min = v; renderRamp(); renderPreview(); } }
+    if (act === 'max') { const v = parseFloat(t.value); if (v > 0) { w.max = v; renderRamp(); renderPreview(); } }
+    if (act === 'phase') { w.phase = t.value; renderRamp(); renderPreview(); }
+    return;
+  }
+  if (t.dataset.rule != null) {
+    const r = state.rules[+t.dataset.rule];
+    if (act === 'on') { r.on = t.checked; renderRules(); }
+    if (act === 'strength') r.strength = t.value;
+    if (act === 'text') r.text = t.value;
+    return;
+  }
+  if (t.dataset.inst != null) {
+    const inst = state.instances[t.dataset.inst];
+    if (!inst) return;
+    if (act === 'note') { inst.note = t.value; renderPreview(); return; }
+    const st = inst.steps[+t.dataset.si];
+    if (!st) return;
+    if (act === 'reps') { const v = parseInt(t.value, 10); if (v > 0) st.reps = v; }
+    if (act === 'zone') { st.pace.zone = t.value; }
+    if (act === 'off')  { const v = parseFloat(t.value); st.pace.off = isNaN(v) ? 0 : v; }
+    if (act === 'pmode') {
+      if (t.value === 'abs' && st.pace.mode !== 'abs') {
+        /* seed the absolute number from Maya's adaptive target so the switch feels continuous */
+        const pt = ATHLETES[0].paceTable;
+        const p = pt[st.pace.zone] + (st.pace.off || 0);
+        const mi = distMi(st.dist);
+        st.pace = { mode: 'abs', t: st.kind === 'reps' && mi ? Math.round(p * mi) : Math.round(p) };
+      } else if (t.value === 'zone' && st.pace.mode !== 'zone') {
+        st.pace = { mode: 'zone', zone: st.kind === 'reps' ? 'fiveK' : 'mp', off: 0 };
+      }
+      renderWeeks(); renderPreview(); return;
+    }
+    if (act === 'abs') { const v = parseClockStr(t.value); if (v != null && v > 0) st.pace.t = v; }
+    /* keep the open editor's inputs untouched; refresh the preview only */
+    renderPreview();
+    return;
+  }
+});
+
+/* selects fire 'change' in some browsers without 'input' */
+document.addEventListener('change', (e) => {
+  if (e.target.tagName === 'SELECT') {
+    e.target.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+});
+
+/* ---- Drag a library card onto any slot ----------------------- */
+document.addEventListener('dragstart', (e) => {
+  const card = e.target.closest ? e.target.closest('[data-lib]') : null;
+  if (card) e.dataTransfer.setData('text/plain', card.dataset.lib);
+});
+document.addEventListener('dragover', (e) => {
+  const slot = e.target.closest ? e.target.closest('[data-slot]') : null;
+  if (slot) { e.preventDefault(); slot.classList.add('dragover'); }
+});
+document.addEventListener('dragleave', (e) => {
+  const slot = e.target.closest ? e.target.closest('[data-slot]') : null;
+  if (slot) slot.classList.remove('dragover');
+});
+document.addEventListener('drop', (e) => {
+  const slot = e.target.closest ? e.target.closest('[data-slot]') : null;
+  if (!slot) return;
+  e.preventDefault();
+  const libId = e.dataTransfer.getData('text/plain');
+  if (!libById[libId]) return;
+  const [wiS, key] = slot.dataset.slot.split(':');
+  state.weeks[+wiS].slots[key] = createInstance(libId); // dropping onto a filled slot replaces it
+  state.awaiting = null; state.selWeek = +wiS;
+  render();
+});
+
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,493 @@
+//
+//  RouteMapView.swift
+//  RunningLog
+//
+//  The single, canonical GPS route map for the whole app.
+//
+//  Replaces both the old hand-drawn `RRRouteShape` sketch (interval receipt)
+//  and the bare `RouteMapCard` map (run detail) with one real MapKit map:
+//
+//    • Real Apple Maps tiles (flat, POI-free — editorial, not cluttered).
+//    • A polyline COLORED BY PACE, computed from the route's own timestamps,
+//      so it works identically for HealthKit and Strava-synced runs.
+//    • Start / finish markers, plus optional numbered rep pins and mile ticks.
+//    • Tap to expand to a fullscreen, pannable, zoomable map.
+//
+//  All heavy geometry (cleaning, downsampling, pace, segments, mile markers)
+//  is computed once in `init` so SwiftUI re-renders (toggles, sheet
+//  animation) stay cheap.
+//
+
+import CoreLocation
+import MapKit
+import SwiftUI
+
+// MARK: - Marker model
+
+/// A labelled pin placed on the route (an interval rep, or a mile split).
+struct RouteMarker: Identifiable {
+    let id = UUID()
+    let coordinate: CLLocationCoordinate2D
+    let label: String
+    let kind: Kind
+    enum Kind { case rep, mile }
+}
+
+// MARK: - RouteMapView
+
+struct RouteMapView: View {
+    // Precomputed, immutable render data.
+    private let clean: [CLLocation]
+    private let segments: [RouteSegment]
+    private let downsampledCoords: [CLLocationCoordinate2D]
+    private let repMarkers: [RouteMarker]
+    private let mileMarkers: [RouteMarker]
+    private let region: MKCoordinateRegion
+    private let hasPaceColor: Bool
+
+    private let height: CGFloat
+
+    @State private var showFullscreen = false
+
+    /// - Parameters:
+    ///   - route: cleaned-or-raw GPS points (sanitized again internally).
+    ///   - repMarkers: optional numbered interval pins.
+    ///   - showMileMarkers: place a tick every whole mile.
+    ///   - height: inline map height.
+    init(
+        route: [CLLocation],
+        repMarkers: [RouteMarker] = [],
+        showMileMarkers: Bool = true,
+        height: CGFloat = 240
+    ) {
+        let cleaned = RouteSanitizer.clean(route)
+        self.clean = cleaned
+        self.height = height
+
+        // Downsample to keep the segment count (and annotation count) sane on
+        // long runs — a 20-miler can be 10k+ points. ~240 points is plenty for
+        // a smooth-looking line at any zoom we show inline.
+        let ds = RouteMapView.downsample(cleaned, maxPoints: 240)
+        self.downsampledCoords = ds.map(\.coordinate)
+
+        let paces = RouteMapView.segmentPaces(ds)
+        let (lo, hi) = RouteMapView.paceBounds(paces)
+        self.hasPaceColor = hi > lo && ds.count > 2
+
+        self.segments = RouteMapView.buildSegments(ds, paces: paces, lo: lo, hi: hi, colored: hi > lo)
+        self.repMarkers = repMarkers
+        self.mileMarkers = showMileMarkers ? RouteMapView.buildMileMarkers(cleaned) : []
+        self.region = RouteMapView.boundingRegion(cleaned)
+    }
+
+    var body: some View {
+        Group {
+            if clean.count > 1 {
+                mapBody
+            } else {
+                emptyState
+            }
+        }
+    }
+
+    // MARK: Inline map
+
+    private var mapBody: some View {
+        Map(initialPosition: .region(region), interactionModes: []) {
+            routeContent
+        }
+        .mapStyle(.standard(elevation: .flat, pointsOfInterest: .excludingAll))
+        .mapControls { }
+        .frame(height: height)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(alignment: .topTrailing) { expandButton }
+        .overlay(alignment: .bottomLeading) { if hasPaceColor { paceLegend } }
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.drip.divider, lineWidth: 1)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 12))
+        .onTapGesture { showFullscreen = true }
+        .accessibilityElement()
+        .accessibilityLabel("Run route map. Double tap to expand.")
+        .fullScreenCover(isPresented: $showFullscreen) {
+            RouteMapFullscreen(
+                region: region,
+                segments: segments,
+                downsampledCoords: downsampledCoords,
+                clean: clean,
+                repMarkers: repMarkers,
+                mileMarkers: mileMarkers,
+                hasPaceColor: hasPaceColor
+            )
+        }
+    }
+
+    /// Shared map overlay content (line + markers), reused by the fullscreen map.
+    @MapContentBuilder
+    private var routeContent: some MapContent {
+        RouteMapContent(
+            segments: segments,
+            downsampledCoords: downsampledCoords,
+            clean: clean,
+            repMarkers: repMarkers,
+            mileMarkers: mileMarkers
+        )
+    }
+
+    // MARK: Chrome
+
+    private var expandButton: some View {
+        Image(systemName: "arrow.up.left.and.arrow.down.right")
+            .font(.system(size: 12, weight: .bold))
+            .foregroundStyle(Color.drip.textPrimary)
+            .padding(8)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+            .padding(10)
+    }
+
+    private var paceLegend: some View {
+        HStack(spacing: 6) {
+            Text("FAST").font(.dripStat(8)).foregroundStyle(Color.drip.coral)
+            LinearGradient(
+                colors: [Color.drip.coral, Color.drip.tired, Color.drip.textTertiary],
+                startPoint: .leading, endPoint: .trailing
+            )
+            .frame(width: 44, height: 4)
+            .clipShape(Capsule())
+            Text("SLOW").font(.dripStat(8)).foregroundStyle(Color.drip.textTertiary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(.regularMaterial, in: Capsule())
+        .padding(10)
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "mappin.slash")
+                .font(.system(size: 20, weight: .regular))
+                .foregroundStyle(Color.drip.textTertiary)
+            Text("No GPS for this run")
+                .font(.dripLabel(13))
+                .foregroundStyle(Color.drip.textSecondary)
+            Text("Treadmill and indoor runs won't have a map.")
+                .font(.dripCaption(11))
+                .foregroundStyle(Color.drip.textTertiary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: height)
+        .background(Color.drip.cardBackgroundElevated)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.drip.divider, lineWidth: 1)
+        )
+    }
+}
+
+// MARK: - Shared map content
+
+/// The line + markers, factored out so the inline and fullscreen maps draw
+/// exactly the same thing.
+struct RouteMapContent: MapContent {
+    let segments: [RouteSegment]
+    let downsampledCoords: [CLLocationCoordinate2D]
+    let clean: [CLLocation]
+    let repMarkers: [RouteMarker]
+    let mileMarkers: [RouteMarker]
+
+    @MapContentBuilder
+    var body: some MapContent {
+        // White casing underneath for contrast against varied map tiles.
+        if downsampledCoords.count > 1 {
+            MapPolyline(coordinates: downsampledCoords)
+                .stroke(
+                    Color.white.opacity(0.95),
+                    style: StrokeStyle(lineWidth: 6.5, lineCap: .round, lineJoin: .round)
+                )
+        }
+
+        // Colored pace segments on top.
+        ForEach(segments) { seg in
+            MapPolyline(coordinates: [seg.a, seg.b])
+                .stroke(seg.color, style: StrokeStyle(lineWidth: 3.6, lineCap: .round))
+        }
+
+        // Mile ticks (drawn below rep pins / start / finish).
+        ForEach(mileMarkers) { m in
+            Annotation(m.label, coordinate: m.coordinate, anchor: .center) {
+                MileTick(label: m.label)
+            }
+            .annotationTitles(.hidden)
+        }
+
+        // Interval rep pins.
+        ForEach(repMarkers) { r in
+            Annotation(r.label, coordinate: r.coordinate, anchor: .center) {
+                RepPin(label: r.label)
+            }
+            .annotationTitles(.hidden)
+        }
+
+        // Start (green) and finish (coral).
+        if let start = clean.first?.coordinate {
+            Annotation("Start", coordinate: start, anchor: .center) {
+                EndpointDot(fill: Color.drip.positive)
+            }
+            .annotationTitles(.hidden)
+        }
+        if let finish = clean.last?.coordinate {
+            Annotation("Finish", coordinate: finish, anchor: .center) {
+                EndpointDot(fill: Color.drip.coral)
+            }
+            .annotationTitles(.hidden)
+        }
+    }
+}
+
+// MARK: - Fullscreen
+
+private struct RouteMapFullscreen: View {
+    let region: MKCoordinateRegion
+    let segments: [RouteSegment]
+    let downsampledCoords: [CLLocationCoordinate2D]
+    let clean: [CLLocation]
+    let repMarkers: [RouteMarker]
+    let mileMarkers: [RouteMarker]
+    let hasPaceColor: Bool
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var camera: MapCameraPosition
+
+    init(
+        region: MKCoordinateRegion,
+        segments: [RouteSegment],
+        downsampledCoords: [CLLocationCoordinate2D],
+        clean: [CLLocation],
+        repMarkers: [RouteMarker],
+        mileMarkers: [RouteMarker],
+        hasPaceColor: Bool
+    ) {
+        self.region = region
+        self.segments = segments
+        self.downsampledCoords = downsampledCoords
+        self.clean = clean
+        self.repMarkers = repMarkers
+        self.mileMarkers = mileMarkers
+        self.hasPaceColor = hasPaceColor
+        _camera = State(initialValue: .region(region))
+    }
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Map(position: $camera) {
+                RouteMapContent(
+                    segments: segments,
+                    downsampledCoords: downsampledCoords,
+                    clean: clean,
+                    repMarkers: repMarkers,
+                    mileMarkers: mileMarkers
+                )
+            }
+            .mapStyle(.standard(elevation: .flat, pointsOfInterest: .excludingAll))
+            .ignoresSafeArea()
+
+            Button { dismiss() } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(Color.drip.textPrimary)
+                    .padding(12)
+                    .background(.regularMaterial, in: Circle())
+            }
+            .padding(16)
+        }
+    }
+}
+
+// MARK: - Marker glyphs
+
+private struct EndpointDot: View {
+    let fill: Color
+    var body: some View {
+        Circle()
+            .fill(fill)
+            .frame(width: 14, height: 14)
+            .overlay(Circle().stroke(.white, lineWidth: 2.5))
+            .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
+    }
+}
+
+private struct RepPin: View {
+    let label: String
+    var body: some View {
+        Text(label)
+            .font(.dripStat(9))
+            .foregroundStyle(Color.drip.textPrimary)
+            .frame(width: 18, height: 18)
+            .background(Color.white, in: Circle())
+            .overlay(Circle().stroke(Color.drip.textPrimary, lineWidth: 1.4))
+            .shadow(color: .black.opacity(0.2), radius: 2, y: 1)
+    }
+}
+
+private struct MileTick: View {
+    let label: String
+    var body: some View {
+        Text(label)
+            .font(.dripStat(8))
+            .foregroundStyle(Color.drip.textSecondary)
+            .frame(width: 14, height: 14)
+            .background(Color.drip.cardBackgroundElevated, in: Circle())
+            .overlay(Circle().stroke(Color.drip.divider, lineWidth: 1))
+    }
+}
+
+// MARK: - Pace segment
+
+/// One short colored stretch of the route. Built once, never recomputed.
+struct RouteSegment: Identifiable {
+    let id: Int
+    let a: CLLocationCoordinate2D
+    let b: CLLocationCoordinate2D
+    let color: Color
+}
+
+// MARK: - Geometry & pace helpers
+
+private extension RouteMapView {
+
+    /// Even-stride downsample that always keeps the first and last point.
+    static func downsample(_ locs: [CLLocation], maxPoints: Int) -> [CLLocation] {
+        guard locs.count > maxPoints, maxPoints > 2 else { return locs }
+        let stride = Double(locs.count - 1) / Double(maxPoints - 1)
+        var out: [CLLocation] = []
+        out.reserveCapacity(maxPoints)
+        for i in 0..<maxPoints {
+            out.append(locs[min(Int((Double(i) * stride).rounded()), locs.count - 1)])
+        }
+        return out
+    }
+
+    /// Pace (sec/mile) for the segment ending at each index, smoothed.
+    /// Element 0 mirrors element 1. Uses distance/time so it is source-agnostic.
+    static func segmentPaces(_ locs: [CLLocation]) -> [Double] {
+        guard locs.count > 1 else { return [] }
+        var raw = [Double](repeating: 0, count: locs.count)
+        for i in 1..<locs.count {
+            let meters = locs[i].distance(from: locs[i - 1])
+            let dt = locs[i].timestamp.timeIntervalSince(locs[i - 1].timestamp)
+            if meters > 0.3, dt > 0 {
+                let speed = meters / dt                       // m/s
+                raw[i] = min(1609.344 / speed, 1200)          // cap 20:00/mi
+            } else {
+                raw[i] = raw[i - 1]
+            }
+        }
+        raw[0] = raw.count > 1 ? raw[1] : 0
+        return movingAverage(raw, window: 5)
+    }
+
+    static func movingAverage(_ xs: [Double], window: Int) -> [Double] {
+        guard window > 1, xs.count > window else { return xs }
+        let half = window / 2
+        return xs.indices.map { i in
+            let lo = max(0, i - half), hi = min(xs.count - 1, i + half)
+            var sum = 0.0
+            for j in lo...hi { sum += xs[j] }
+            return sum / Double(hi - lo + 1)
+        }
+    }
+
+    /// 10th / 90th percentile bounds so a couple of outliers don't wash out
+    /// the whole color scale.
+    static func paceBounds(_ paces: [Double]) -> (lo: Double, hi: Double) {
+        let valid = paces.filter { $0 > 0 }.sorted()
+        guard valid.count > 4 else { return (0, 0) }
+        let lo = valid[Int(Double(valid.count) * 0.10)]
+        let hi = valid[Int(Double(valid.count) * 0.90)]
+        return hi > lo ? (lo, hi) : (valid.first ?? 0, valid.last ?? 0)
+    }
+
+    static func buildSegments(
+        _ locs: [CLLocation],
+        paces: [Double],
+        lo: Double,
+        hi: Double,
+        colored: Bool
+    ) -> [RouteSegment] {
+        guard locs.count > 1 else { return [] }
+        return (1..<locs.count).map { i in
+            let color = colored
+                ? paceColor(paces[i], lo: lo, hi: hi)
+                : Color.drip.coral
+            return RouteSegment(
+                id: i,
+                a: locs[i - 1].coordinate,
+                b: locs[i].coordinate,
+                color: color
+            )
+        }
+    }
+
+    /// Fast (low sec/mi) → coral, mid → amber, slow → warm gray.
+    static func paceColor(_ pace: Double, lo: Double, hi: Double) -> Color {
+        guard hi > lo else { return Color.drip.coral }
+        let t = min(max((pace - lo) / (hi - lo), 0), 1) // 0 fastest … 1 slowest
+        let coral = (0.831, 0.349, 0.165)  // #D4592A
+        let amber = (0.769, 0.529, 0.227)  // #C4873A
+        let gray  = (0.608, 0.584, 0.565)  // #9B9590
+        if t < 0.5 {
+            return lerp(coral, amber, t / 0.5)
+        } else {
+            return lerp(amber, gray, (t - 0.5) / 0.5)
+        }
+    }
+
+    static func lerp(_ a: (Double, Double, Double), _ b: (Double, Double, Double), _ t: Double) -> Color {
+        Color(
+            red:   a.0 + (b.0 - a.0) * t,
+            green: a.1 + (b.1 - a.1) * t,
+            blue:  a.2 + (b.2 - a.2) * t
+        )
+    }
+
+    /// A pin every whole mile, found by walking cumulative distance over the
+    /// full-resolution cleaned track (not the downsampled one).
+    static func buildMileMarkers(_ locs: [CLLocation]) -> [RouteMarker] {
+        guard locs.count > 1 else { return [] }
+        let mile = 1609.344
+        var markers: [RouteMarker] = []
+        var accum = 0.0
+        var nextMile = 1
+        for i in 1..<locs.count {
+            accum += locs[i].distance(from: locs[i - 1])
+            while accum >= Double(nextMile) * mile {
+                markers.append(
+                    RouteMarker(coordinate: locs[i].coordinate, label: "\(nextMile)", kind: .mile)
+                )
+                nextMile += 1
+                if nextMile > 99 { return markers } // safety
+            }
+        }
+        return markers
+    }
+
+    static func boundingRegion(_ locs: [CLLocation]) -> MKCoordinateRegion {
+        guard !locs.isEmpty else { return MKCoordinateRegion() }
+        let lats = locs.map(\.coordinate.latitude)
+        let lngs = locs.map(\.coordinate.longitude)
+        let minLat = lats.min() ?? 0, maxLat = lats.max() ?? 0
+        let minLng = lngs.min() ?? 0, maxLng = lngs.max() ?? 0
+        let center = CLLocationCoordinate2D(
+            latitude: (minLat + maxLat) / 2,
+            longitude: (minLng + maxLng) / 2
+        )
+        let span = MKCoordinateSpan(
+            latitudeDelta: (maxLat - minLat) * 1.35 + 0.0025,
+            longitudeDelta: (maxLng - minLng) * 1.35 + 0.0025
+        )
+        return MKCoordinateRegion(center: center, span: span)
+    }
+}

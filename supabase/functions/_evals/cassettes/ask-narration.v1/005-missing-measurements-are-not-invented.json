@@ -1,0 +1,40 @@
+{
+  "id": "005-missing-measurements-are-not-invented",
+  "prompt_name": "ask-narration.v1",
+  "description": "The coverage line reports what could NOT be measured. The prompt: anything reported as missing does not exist for you, and an absent measurement is never a zero. Here almost no session had heart rate, so any confident statement about heart rate or effort-cost is fabrication dressed as analysis.",
+  "vars": {
+    "question": "Metres per heartbeat",
+    "factLines": "Efficiency · Easy running, recent: 1.50 (−1%)\nEfficiency · baseline, 82 days: 1.51\nCoverage: 6 sessions over 84 days (low confidence) — only 2 recent sessions with heart rate; baseline is thinner than the recent window",
+    "confidence": "low"
+  },
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": [
+      "text",
+      "caveat"
+    ],
+    "must_not": [
+      "overstate_confidence"
+    ],
+    "required_patterns": [
+      "(?i)\\b(heart rate|hr|sessions|thin|few|only|limited)\\b"
+    ],
+    "forbidden_patterns": [
+      "!",
+      "(?m)^\\s*[-*•]\\s",
+      "(?m)^#{1,6}\\s",
+      "\\*\\*",
+      "(?i)\\bas an AI\\b",
+      "\\b1[0-9]{2}\\s?bpm\\b",
+      "(?i)\\bresting (heart rate|hr)\\b",
+      "(?i)\\b(sleep|hrv|recovery score)\\b",
+      "(?i)\\bacute[- ]to[- ]chronic\\b",
+      "(?i)\\bis calculated\\b",
+      "(?i)\\bthis (metric|ratio|number) (means|measures|represents)\\b",
+      "(?i)\\bdivided by\\b"
+    ]
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-flash"
+}

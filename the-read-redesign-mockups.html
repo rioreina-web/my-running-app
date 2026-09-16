@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Read — Redesign Mockups</title>
+<style>
+:root{
+  --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF; --paper-deep:#E8E4DF; --rule:#E8E4E0;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-deep:#B84420; --coral-wash:rgba(212,89,42,0.12);
+  --mood-energized:#2D8A4E; --mood-positive:#4A9E6B; --mood-tired:#C4873A; --mood-struggling:#C45A3A; --mood-injured:#B83A4A;
+  --font-display:"Crimson Pro",Georgia,"Times New Roman",serif;
+  --font-body:"PT Serif",Georgia,"Times New Roman",serif;
+  --font-mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --shadow-card:0 2px 8px rgba(0,0,0,0.06);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#E4E0DA;color:var(--ink);font-family:var(--font-body);-webkit-font-smoothing:antialiased;padding:40px 24px 80px}
+.page-head{max-width:1280px;margin:0 auto 36px}
+.page-head .kicker{font-family:var(--font-mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--coral);margin-bottom:10px}
+.page-head h1{font-family:var(--font-display);font-weight:700;font-size:34px;letter-spacing:-.01em;margin-bottom:8px}
+.page-head p{font-size:15px;line-height:1.55;color:var(--ink-2);max-width:760px}
+.page-head p b{color:var(--ink)}
+
+.rail{display:flex;gap:32px;justify-content:center;align-items:flex-start;flex-wrap:wrap;max-width:1320px;margin:0 auto}
+.col{width:392px;max-width:100%}
+.col-head{margin:0 6px 14px}
+.col-head .tag{display:inline-block;font-family:var(--font-mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--coral);border:1px solid var(--coral);border-radius:999px;padding:4px 10px;margin-bottom:10px}
+.col-head h2{font-family:var(--font-display);font-weight:700;font-size:22px;margin-bottom:6px}
+.col-head p{font-size:13.5px;line-height:1.5;color:var(--ink-2)}
+
+/* phone */
+.phone{width:392px;height:812px;background:var(--paper);border-radius:44px;border:11px solid #14110E;box-shadow:0 24px 60px rgba(0,0,0,.28);overflow:hidden;position:relative}
+.notch{position:absolute;top:0;left:50%;transform:translateX(-50%);width:150px;height:30px;background:#14110E;border-radius:0 0 18px 18px;z-index:40}
+.statusbar{position:relative;z-index:30;display:flex;justify-content:space-between;align-items:center;padding:14px 28px 6px;font-family:var(--font-mono);font-size:12px;color:var(--ink);font-weight:600}
+.screen{height:calc(812px - 46px - 64px);overflow-y:auto;padding:6px 22px 24px;scrollbar-width:thin}
+.screen::-webkit-scrollbar{width:0}
+/* tab bar */
+.tabbar{position:absolute;bottom:0;left:0;right:0;height:64px;background:var(--paper);border-top:1px solid var(--rule);display:flex;z-index:30}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px}
+.tab .dot{width:5px;height:5px;border-radius:999px;background:transparent}
+.tab.active .dot{background:var(--coral)}
+.tab span{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.tab.active span{color:var(--coral)}
+
+/* shared editorial primitives */
+.eyebrow{font-family:var(--font-mono);font-size:10.5px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2)}
+.eyebrow.coral{color:var(--coral)}
+.display-xl{font-family:var(--font-display);font-weight:700;font-size:38px;letter-spacing:-.01em;line-height:1.02}
+.display-l{font-family:var(--font-display);font-weight:700;font-size:27px;line-height:1.05;letter-spacing:-.01em}
+.display-m{font-family:var(--font-display);font-weight:700;font-size:21px;line-height:1.1}
+.body{font-family:var(--font-body);font-size:15px;line-height:1.56;color:var(--ink)}
+.body-sm{font-family:var(--font-body);font-size:13px;line-height:1.5;color:var(--ink-2)}
+.quote{font-family:var(--font-body);font-style:italic;font-size:14px;line-height:1.5;color:var(--ink)}
+.stat{font-family:var(--font-mono);font-weight:600;font-variant-numeric:tabular-nums;color:var(--ink)}
+.sub{color:var(--ink-2)}
+.card{background:var(--card);border-radius:12px;box-shadow:var(--shadow-card);padding:18px}
+.rule{display:flex;align-items:center;gap:8px;margin:22px 0}
+.rule::before,.rule::after{content:"";flex:1;height:1px;background:var(--rule)}
+.rule i{width:3px;height:3px;border-radius:999px;background:var(--rule)}
+.pill{display:inline-block;font-family:var(--font-mono);font-size:9.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;padding:3px 8px;border-radius:999px}
+.pill.green{color:var(--mood-energized);background:rgba(45,138,78,.12)}
+.pill.coral{color:var(--coral-deep);background:var(--coral-wash)}
+.pill.amber{color:var(--mood-tired);background:rgba(196,135,58,.14)}
+
+/* ask bar */
+.askbar{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--rule);border-radius:999px;padding:11px 14px;box-shadow:var(--shadow-card)}
+.askbar .ph{flex:1;font-family:var(--font-body);font-size:14px;color:var(--ink-3)}
+.askbar .mic{width:30px;height:30px;border-radius:999px;background:var(--coral);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.askbar .mic svg{width:15px;height:15px;stroke:#fff;fill:none;stroke-width:2}
+.chip{display:inline-block;font-family:var(--font-body);font-size:13px;color:var(--ink);background:var(--card);border:1px solid var(--rule);border-radius:999px;padding:8px 13px;margin:0 6px 8px 0}
+.link{font-family:var(--font-display);font-weight:600;font-size:14px;color:var(--coral)}
+
+.insight{border-left:2px solid rgba(212,89,42,.5);padding-left:13px}
+svg{display:block}
+.axis{font-family:var(--font-mono);font-size:8.5px;fill:var(--ink-3);letter-spacing:.05em}
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <div class="kicker">Post Run Drip · The Read · redesign exploration</div>
+  <h1>Three ways to make The Read feel like a coach, not a dashboard</h1>
+  <p>Same data — volume, race-anchored fitness, voice-memo feeling, key sessions, niggles — three structures. All built on the core job you picked: <b>show Maya what she can't see.</b> Every number is paired with a sentence of interpretation, fitness ships as a range + confidence, niggles are surfaced never diagnosed, and there's a way to ask. Fonts shown are web fallbacks (Georgia) standing in for Crimson Pro / PT Serif.</p>
+</div>
+
+<div class="rail">
+
+<!-- ============ DIRECTION A — TRENDS STORY ============ -->
+<div class="col">
+  <div class="col-head">
+    <span class="tag">A · Trends story</span>
+    <h2>The arc, scrolled</h2>
+    <p>The long-term trend IS the spine. Each section is one chart + one sentence of what it means. She scrolls her training as a narrative; the ask bar waits at the foot.</p>
+  </div>
+  <div class="phone">
+    <div class="notch"></div>
+    <div class="statusbar"><span>11:03</span><span>5G ▰▰▰</span></div>
+    <div class="screen">
+      <div style="padding-top:6px">
+        <div class="eyebrow coral">The Read · Mon · Jun 15</div>
+        <div class="display-xl" style="margin:8px 0 6px">Where things<br>stand.</div>
+        <div class="body-sm">Advanced · base phase · 16 weeks in</div>
+      </div>
+
+      <div class="rule"><i></i></div>
+
+      <!-- VOLUME -->
+      <div class="eyebrow">The build · weekly volume</div>
+      <div style="margin:12px 0 10px">
+        <svg viewBox="0 0 330 96" width="100%" height="96">
+          <!-- bars -->
+          <g fill="#DDD7CF">
+            <rect x="2"  y="58" width="14" height="38"/><rect x="20" y="54" width="14" height="42"/>
+            <rect x="38" y="50" width="14" height="46"/><rect x="56" y="56" width="14" height="40"/>
+            <rect x="74" y="46" width="14" height="50"/><rect x="92" y="42" width="14" height="54"/>
+            <rect x="110" y="48" width="14" height="48"/><rect x="128" y="38" width="14" height="58"/>
+            <rect x="146" y="34" width="14" height="62"/><rect x="164" y="40" width="14" height="56"/>
+            <rect x="182" y="36" width="14" height="60"/><rect x="200" y="30" width="14" height="66"/>
+            <rect x="218" y="34" width="14" height="62"/>
+          </g>
+          <g fill="var(--coral)">
+            <rect x="236" y="26" width="14" height="70"/><rect x="254" y="32" width="14" height="64"/><rect x="272" y="28" width="14" height="68"/>
+          </g>
+          <!-- trend line -->
+          <polyline points="9,60 27,56 45,52 63,58 81,48 99,44 117,50 135,40 153,36 171,42 189,38 207,32 225,36 243,28 261,34 279,30" fill="none" stroke="var(--ink)" stroke-width="1.5" opacity=".55"/>
+          <text x="2" y="12" class="axis">38 MPW</text><text x="250" y="12" class="axis">53 MPW</text>
+        </svg>
+      </div>
+      <div class="insight"><div class="body">You've climbed from 38 to 53 mpw over 16 weeks without a down week steeper than 12%. That's a patient ramp — the kind that holds.</div></div>
+
+      <div class="rule"><i></i></div>
+
+      <!-- FITNESS -->
+      <div class="eyebrow">Fitness · race-anchored <span class="pill green" style="margin-left:4px">High conf</span></div>
+      <div style="display:flex;align-items:baseline;gap:8px;margin:10px 0 4px">
+        <span class="stat" style="font-size:30px">~32:10–32:48</span><span class="body-sm">10K</span>
+      </div>
+      <div style="margin:8px 0 10px">
+        <svg viewBox="0 0 330 70" width="100%" height="70">
+          <polyline points="6,52 50,50 95,46 140,44 185,40 230,37 275,34 324,32" fill="none" stroke="var(--ink)" stroke-width="2"/>
+          <!-- race markers -->
+          <line x1="95" y1="14" x2="95" y2="66" stroke="var(--coral)" stroke-width="1" opacity=".5"/>
+          <circle cx="95" cy="46" r="3.2" fill="var(--coral)"/>
+          <line x1="230" y1="14" x2="230" y2="66" stroke="var(--coral)" stroke-width="1" opacity=".5"/>
+          <circle cx="230" cy="37" r="3.2" fill="var(--coral)"/>
+          <text x="62" y="11" class="axis">OCT HALF</text><text x="205" y="11" class="axis">APR 10K</text>
+        </svg>
+      </div>
+      <div class="insight"><div class="body">Anchored to your April 10K — real fitness, not your 3:16 goal. The line is maintaining through the volume bump, which is what base phase should look like.</div></div>
+
+      <div class="rule"><i></i></div>
+
+      <!-- KEY SESSIONS -->
+      <div class="eyebrow">Key sessions · threshold drift</div>
+      <div style="margin:12px 0 10px">
+        <svg viewBox="0 0 330 78" width="100%" height="78">
+          <line x1="0" y1="64" x2="330" y2="64" stroke="var(--rule)"/>
+          <polyline points="30,20 130,30 210,42 300,52" fill="none" stroke="var(--coral)" stroke-width="1.5" opacity=".4"/>
+          <g>
+            <circle cx="30" cy="20" r="4" fill="var(--coral)"/><text x="14" y="14" class="axis">6:52</text>
+            <circle cx="130" cy="30" r="4" fill="var(--coral)"/><text x="114" y="24" class="axis">6:48</text>
+            <circle cx="210" cy="42" r="4" fill="var(--coral)"/><text x="194" y="36" class="axis">6:44</text>
+            <circle cx="300" cy="52" r="4" fill="var(--coral)"/><text x="284" y="46" class="axis">6:41</text>
+          </g>
+          <text x="14" y="76" class="axis">MAY 12</text><text x="278" y="76" class="axis">JUN 9</text>
+        </svg>
+      </div>
+      <div class="insight"><div class="body">Your LT pace has drifted from 6:52 to 6:41 /mi across four sessions at the same effort. The threshold work is landing — quietly.</div></div>
+
+      <div class="rule"><i></i></div>
+
+      <!-- FEELING — the can't-see insight -->
+      <div class="eyebrow">Feeling · from your voice logs</div>
+      <div style="margin:12px 0 10px">
+        <svg viewBox="0 0 330 54" width="100%" height="54">
+          <polyline points="6,20 40,16 74,30 108,18 142,34 176,20 210,38 244,22 278,16 320,24" fill="none" stroke="var(--ink)" stroke-width="1.5" opacity=".55"/>
+          <circle cx="142" cy="34" r="3" fill="var(--mood-tired)"/><circle cx="210" cy="38" r="3" fill="var(--mood-tired)"/>
+          <circle cx="278" cy="16" r="3" fill="var(--mood-energized)"/>
+        </svg>
+      </div>
+      <div class="insight"><div class="body">Energy reads high on Tuesdays, dips Thursdays. All three "heavy legs" mentions landed the day after a long run — a pattern you might not catch from inside it.</div>
+      <div class="quote" style="margin-top:8px">"Legs felt like sandbags the first two miles, then they came back."<span class="body-sm"> — Thu, Jun 11</span></div></div>
+
+      <div class="rule"><i></i></div>
+
+      <!-- NIGGLES -->
+      <div class="eyebrow">Watching · in your own words <span class="pill coral" style="margin-left:4px">Surface, not diagnose</span></div>
+      <div style="margin:12px 0 8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--rule)">
+          <span class="body">Right achilles</span><span class="body-sm">4 mentions · 3 weeks</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0">
+          <span class="body">Left hip</span><span class="body-sm">1 mention · this week</span>
+        </div>
+      </div>
+      <div class="body-sm" style="font-style:italic">Surfaced from what you said, never interpreted. If anything gets sharper, see a clinician.</div>
+
+      <div style="height:14px"></div>
+      <div class="askbar">
+        <span class="ph">Ask about your training…</span>
+        <span class="mic"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4"/></svg></span>
+      </div>
+    </div>
+    <div class="tabbar">
+      <div class="tab"><span class="dot"></span><span>Log</span></div>
+      <div class="tab"><span class="dot"></span><span>Trends</span></div>
+      <div class="tab"><span class="dot"></span><span>Train</span></div>
+      <div class="tab active"><span class="dot"></span><span>Coach</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ DIRECTION B — CONVERSATION FIRST ============ -->
+<div class="col">
+  <div class="col-head">
+    <span class="tag">B · Conversation-first</span>
+    <h2>Ask, and it reads back</h2>
+    <p>The ask bar is the hero. Lenses she can tap surface the patterns; the answer comes back in coach voice with a trend tucked inside. The standing summary sits quietly below.</p>
+  </div>
+  <div class="phone">
+    <div class="notch"></div>
+    <div class="statusbar"><span>11:03</span><span>5G ▰▰▰</span></div>
+    <div class="screen">
+      <div style="padding-top:6px">
+        <div class="eyebrow coral">The Read · Coach</div>
+        <div class="display-l" style="margin:8px 0 14px">What do you want to<br>understand today?</div>
+      </div>
+
+      <!-- HERO ASK -->
+      <div class="askbar" style="padding:14px 16px">
+        <span class="ph">Ask about your training…</span>
+        <span class="mic"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4"/></svg></span>
+      </div>
+
+      <!-- LENSES -->
+      <div class="eyebrow" style="margin:18px 0 10px">Lenses</div>
+      <div>
+        <span class="chip">How's my base going?</span>
+        <span class="chip">This cycle vs. last</span>
+        <span class="chip">Why do Thursdays feel flat?</span>
+        <span class="chip">Am I ready to add intensity?</span>
+      </div>
+
+      <div class="rule"><i></i></div>
+
+      <!-- SAMPLE EXCHANGE -->
+      <div style="margin-bottom:10px">
+        <div class="eyebrow coral">You asked</div>
+        <div class="body" style="margin-top:5px">Why do my Thursdays keep feeling flat?</div>
+      </div>
+      <div class="card insight" style="border-left:2px solid rgba(212,89,42,.5)">
+        <div class="body">It isn't in your head. Every Thursday this month sits the day after your long run, and all three "heavy legs" notes you recorded fell on exactly those days.</div>
+        <div style="margin:12px 0 6px">
+          <svg viewBox="0 0 300 44" width="100%" height="44">
+            <polyline points="6,16 50,14 94,30 138,16 182,32 226,18 270,30 296,16" fill="none" stroke="var(--ink)" stroke-width="1.5" opacity=".5"/>
+            <circle cx="94" cy="30" r="3" fill="var(--mood-tired)"/><circle cx="182" cy="32" r="3" fill="var(--mood-tired)"/><circle cx="270" cy="30" r="3" fill="var(--mood-tired)"/>
+            <text x="78" y="42" class="axis">THU</text><text x="166" y="42" class="axis">THU</text><text x="254" y="42" class="axis">THU</text>
+          </svg>
+        </div>
+        <div class="body">Your legs are carrying Saturday's 18. That's fatigue doing its job, not a fitness problem.</div>
+        <div class="quote" style="margin-top:10px">Worth sitting with: does Thursday want to be a true easy day, or a rest day?</div>
+      </div>
+
+      <div style="margin-top:10px"><span class="link">Ask a follow-up ↗</span></div>
+
+      <div class="rule"><i></i></div>
+
+      <!-- QUIET STANDING SUMMARY -->
+      <div class="eyebrow">Where things stand</div>
+      <div style="margin-top:10px;display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <span class="body">Volume</span><span class="stat" style="font-size:14px">53 mpw <span class="sub">·</span> <span class="pill green">Building</span></span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <span class="body">Fitness</span><span class="stat" style="font-size:14px">~32:10–32:48 <span class="sub">10K</span></span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <span class="body">Watching</span><span class="stat" style="font-size:14px">2 niggles <span class="sub">surfaced</span></span>
+        </div>
+      </div>
+      <div style="margin-top:12px"><span class="link">See the full read ↗</span></div>
+    </div>
+    <div class="tabbar">
+      <div class="tab"><span class="dot"></span><span>Log</span></div>
+      <div class="tab"><span class="dot"></span><span>Trends</span></div>
+      <div class="tab"><span class="dot"></span><span>Train</span></div>
+      <div class="tab active"><span class="dot"></span><span>Coach</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ DIRECTION C — HYBRID DIGEST ============ -->
+<div class="col">
+  <div class="col-head">
+    <span class="tag">C · Hybrid digest</span>
+    <h2>The whole read, one screen</h2>
+    <p>A coach's note up top (feeling first), one hero trend, key sessions read line-by-line, niggles, and an honest gap — with a persistent ask bar pinned at the foot.</p>
+  </div>
+  <div class="phone">
+    <div class="notch"></div>
+    <div class="statusbar"><span>11:03</span><span>5G ▰▰▰</span></div>
+    <div class="screen" style="padding-bottom:70px">
+      <div style="padding-top:6px">
+        <div class="eyebrow coral">The Read · Mon · Jun 15</div>
+        <div class="display-l" style="margin:8px 0 4px">Where things stand.</div>
+        <div class="body-sm">Advanced · base phase · fitness maintaining</div>
+      </div>
+
+      <!-- COACH NOTE, feeling first -->
+      <div class="card" style="margin:16px 0;border-left:2px solid rgba(212,89,42,.5)">
+        <div class="eyebrow coral" style="margin-bottom:8px">The read</div>
+        <div class="body">You sound steady this week — energy logs are up, and the one flat patch was the Thursday after your long run, right on cue. Underneath the feeling, the build is doing its job: 53 mpw, a clean 16-week ramp, and your threshold pace quietly dropping. Fitness is holding at your real April 10K level while volume climbs. That's the trade base phase asks for.</div>
+        <div class="quote" style="margin-top:10px">Two to sit with: is Thursday an easy day or a rest day? And does the achilles want a mention out loud to your physio?</div>
+      </div>
+
+      <!-- HERO TREND -->
+      <div class="eyebrow">The build · 16 weeks</div>
+      <div style="margin:12px 0 8px">
+        <svg viewBox="0 0 330 86" width="100%" height="86">
+          <g fill="#DDD7CF">
+            <rect x="2" y="52" width="13" height="34"/><rect x="19" y="48" width="13" height="38"/><rect x="36" y="44" width="13" height="42"/>
+            <rect x="53" y="50" width="13" height="36"/><rect x="70" y="40" width="13" height="46"/><rect x="87" y="36" width="13" height="50"/>
+            <rect x="104" y="43" width="13" height="43"/><rect x="121" y="33" width="13" height="53"/><rect x="138" y="29" width="13" height="57"/>
+            <rect x="155" y="35" width="13" height="51"/><rect x="172" y="31" width="13" height="55"/><rect x="189" y="26" width="13" height="60"/><rect x="206" y="30" width="13" height="56"/>
+          </g>
+          <g fill="var(--coral)"><rect x="223" y="22" width="13" height="64"/><rect x="240" y="28" width="13" height="58"/><rect x="257" y="24" width="13" height="62"/></g>
+          <polyline points="8,54 25,50 42,46 59,52 76,42 93,38 110,45 127,35 144,31 161,37 178,33 195,28 212,32 229,24 246,30 263,26" fill="none" stroke="var(--ink)" stroke-width="1.5" opacity=".5"/>
+          <text x="288" y="30" class="axis">+16%</text><text x="288" y="44" class="axis">vs 8wk</text>
+        </svg>
+      </div>
+      <div class="body-sm" style="margin-bottom:4px">Load is +16% over your 8-week norm and still inside a safe ramp.</div>
+
+      <div class="rule"><i></i></div>
+
+      <!-- KEY SESSIONS, read -->
+      <div class="eyebrow">Key sessions · read, not listed</div>
+      <div style="margin-top:12px">
+        <div style="padding-bottom:12px;border-bottom:1px solid var(--rule)">
+          <div style="display:flex;justify-content:space-between;align-items:baseline">
+            <span class="body" style="font-weight:700">LT · 7.4 mi</span><span class="eyebrow">Tue · Jun 9</span>
+          </div>
+          <div class="body-sm" style="margin-top:3px">6:41 /mi — your fastest threshold at this effort all block.</div>
+        </div>
+        <div style="padding:12px 0 0">
+          <div style="display:flex;justify-content:space-between;align-items:baseline">
+            <span class="body" style="font-weight:700">Long · 18.2 mi</span><span class="eyebrow">Sat · Jun 6</span>
+          </div>
+          <div class="body-sm" style="margin-top:3px">Held Steady to the end. The Thursday flatness traces straight back here.</div>
+        </div>
+      </div>
+
+      <div class="rule"><i></i></div>
+
+      <!-- NIGGLES + GAP -->
+      <div style="display:flex;gap:12px">
+        <div style="flex:1">
+          <div class="eyebrow">Watching</div>
+          <div class="stat" style="font-size:20px;margin:6px 0 3px">2 <span class="body-sm sub" style="font-weight:400">niggles</span></div>
+          <div class="body-sm">Achilles ×4, hip ×1. Surfaced, never diagnosed.</div>
+        </div>
+        <div style="flex:1">
+          <div class="eyebrow">What I can't see</div>
+          <div class="stat" style="font-size:20px;margin:6px 0 3px">1 <span class="body-sm sub" style="font-weight:400">gap</span></div>
+          <div class="body-sm">No sleep data since Jun 9 — I'd rather flag it than guess.</div>
+        </div>
+      </div>
+    </div>
+    <!-- pinned ask -->
+    <div style="position:absolute;bottom:64px;left:0;right:0;padding:10px 18px 12px;background:linear-gradient(transparent,var(--paper) 28%)">
+      <div class="askbar">
+        <span class="ph">Ask about your training…</span>
+        <span class="mic"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4"/></svg></span>
+      </div>
+    </div>
+    <div class="tabbar">
+      <div class="tab"><span class="dot"></span><span>Log</span></div>
+      <div class="tab"><span class="dot"></span><span>Trends</span></div>
+      <div class="tab"><span class="dot"></span><span>Train</span></div>
+      <div class="tab active"><span class="dot"></span><span>Coach</span></div>
+    </div>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

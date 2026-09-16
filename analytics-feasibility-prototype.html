@@ -1,0 +1,466 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Post Run Drip · Analytics on real data</title>
+<style>
+:root{--paper:#F5F3F0;--card:#FFFFFF;--rule:#E8E4E0;--ink:#1A1815;--ink-2:#6B6560;--ink-3:#9B9590;
+--coral:#D4592A;--well:#E8E4DF;
+--font-display:"Crimson Pro",Georgia,serif;--font-body:"PT Serif",Georgia,serif;
+--font-mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font-body);
+-webkit-font-smoothing:antialiased;line-height:1.55}
+.wrap{max-width:860px;margin:0 auto;padding:40px 24px 80px}
+.strip{font-family:var(--font-mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+color:var(--ink-2);display:flex;justify-content:space-between;border-bottom:1px solid var(--rule);
+padding-bottom:10px;margin-bottom:28px}
+h1{font-family:var(--font-display);font-weight:700;font-size:40px;line-height:1.05;
+letter-spacing:-.01em;margin:0 0 12px}
+.lede{font-size:16px;color:var(--ink);max-width:60ch;margin:0 0 8px}
+.eyebrow{font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:.12em;
+text-transform:uppercase;color:var(--ink-2);margin:56px 0 10px}
+.eyebrow.coral{color:var(--coral)}
+h2{font-family:var(--font-display);font-weight:700;font-size:26px;margin:0 0 10px;letter-spacing:-.01em}
+p{margin:0 0 14px;max-width:66ch}
+.card{background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:22px;margin:18px 0}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;
+background:var(--rule);border:1px solid var(--rule);border-radius:12px;overflow:hidden;margin:24px 0}
+.kpi{background:var(--card);padding:18px 16px}
+.kpi .v{font-family:var(--font-mono);font-weight:600;font-size:26px;line-height:1;
+font-variant-numeric:tabular-nums;display:block;margin-bottom:7px}
+.kpi .l{font-family:var(--font-mono);font-size:10px;letter-spacing:.10em;text-transform:uppercase;
+color:var(--ink-2)}
+.quote{font-style:italic;font-size:16px;border-left:2px solid var(--coral);padding-left:16px;
+margin:20px 0;max-width:60ch}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font-family:var(--font-mono);font-size:10px;letter-spacing:.10em;text-transform:uppercase;
+color:var(--ink-2);text-align:left;font-weight:500;padding:0 10px 8px 0;border-bottom:1px solid var(--rule)}
+td{padding:11px 10px 11px 0;border-bottom:1px solid var(--rule);vertical-align:top}
+td.num{font-family:var(--font-mono);color:var(--ink-3);width:26px}
+td.nm{font-family:var(--font-display);font-weight:600;font-size:15px;width:200px}
+td.note{color:var(--ink-2);font-size:12.5px;line-height:1.5}
+code{font-family:var(--font-mono);font-size:11.5px;background:var(--well);padding:1px 4px;border-radius:3px}
+.pill{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.10em;border:1px solid;
+border-radius:999px;padding:3px 9px;white-space:nowrap}
+.rule{display:flex;align-items:center;gap:8px;margin:44px 0}
+.rule::before,.rule::after{content:"";flex:1;height:1px;background:var(--rule)}
+.rule span{width:3px;height:3px;border-radius:999px;background:var(--rule)}
+.cap{font-family:var(--font-mono);font-size:10px;letter-spacing:.10em;text-transform:uppercase;
+color:var(--ink-3);margin-top:10px}
+table.tight td,table.tight th{padding:7px 12px 7px 0;font-size:12px}
+td.mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.corr{border-left:2px solid var(--coral);padding-left:16px;font-size:13.5px;color:var(--ink-2)}
+.corr strong{color:var(--coral)}
+</style></head><body><div class="wrap">
+
+<div class="strip"><span>Post Run Drip</span><span>Analytics · real data</span><span>02 Aug 2026</span></div>
+
+<h1>Aerobic drift, with<br>pace held constant.</h1>
+<p class="lede">Everything below is computed from your live Supabase project, not mock data:
+274 training logs back to August 2024, 1,348 mile-laps with heart rate, 167 runs with full
+1&nbsp;Hz Garmin streams, and 171 cached weather records.</p>
+
+<div class="kpis">
+<div class="kpi"><span class="v">274</span><span class="l">Training logs</span></div>
+<div class="kpi"><span class="v">1,346</span><span class="l">Laps with HR</span></div>
+<div class="kpi"><span class="v">167</span><span class="l">Runs with streams</span></div>
+<div class="kpi"><span class="v">0</span><span class="l">Runs with felt RPE</span></div>
+</div>
+
+<div class="eyebrow">Finding one · the heat correction</div>
+<h2>Your summer isn't a fitness decline.</h2>
+<p>Across your easy runs, the ones at a dew point of 70&deg;F or above average
+<strong>7:28/mi</strong>. The ones below 60&deg;F average
+<strong>7:15/mi</strong>. That is a 13-second gap that every uncorrected chart
+would read as losing fitness through July.</p>
+<p>Run the same runs through the heat adjustment already sitting in your
+<code>running_workout_laps</code> table and the gap collapses to <strong>one second</strong>:
+7:14 versus 7:13. The mean penalty is
+9s/mi; the worst single run cost 18s/mi.</p>
+<div class="card"><svg viewBox="0 0 760 300" width="100%" role="img" aria-label="Pace vs dew point, raw and heat-adjusted"><line x1="54.0" y1="88.2" x2="742.0" y2="88.2" stroke="#E8E4E0" stroke-width="1"/><text x="46.0" y="91.2" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="end" font-weight="500" style="">7:00</text><line x1="54.0" y1="177.0" x2="742.0" y2="177.0" stroke="#E8E4E0" stroke-width="1"/><text x="46.0" y="180.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="end" font-weight="500" style="">7:30</text><line x1="54.0" y1="248.0" x2="742.0" y2="248.0" stroke="#9B9590" stroke-width="1"/><text x="54.0" y="264.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="middle" font-weight="500" style="">40°</text><text x="226.0" y="264.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="middle" font-weight="500" style="">50°</text><text x="398.0" y="264.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="middle" font-weight="500" style="">60°</text><text x="570.0" y="264.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="middle" font-weight="500" style="">70°</text><text x="742.0" y="264.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="middle" font-weight="500" style="">80°</text><text x="398.0" y="282.0" font-family="var(--font-mono)" font-size="9" fill="#6B6560" text-anchor="middle" font-weight="500" style="">DEW POINT</text><line x1="484.0" y1="156.2" x2="484.0" y2="132.6" stroke="#E8E4E0" stroke-width="2"/><line x1="122.8" y1="162.2" x2="122.8" y2="162.2" stroke="#E8E4E0" stroke-width="2"/><line x1="398.0" y1="185.8" x2="398.0" y2="159.2" stroke="#E8E4E0" stroke-width="2"/><line x1="535.6" y1="191.8" x2="535.6" y2="162.2" stroke="#E8E4E0" stroke-width="2"/><line x1="535.6" y1="224.3" x2="535.6" y2="182.9" stroke="#E8E4E0" stroke-width="2"/><line x1="501.2" y1="188.8" x2="501.2" y2="150.3" stroke="#E8E4E0" stroke-width="2"/><line x1="122.8" y1="138.5" x2="122.8" y2="138.5" stroke="#E8E4E0" stroke-width="2"/><line x1="243.2" y1="150.3" x2="243.2" y2="144.4" stroke="#E8E4E0" stroke-width="2"/><line x1="449.6" y1="185.8" x2="449.6" y2="168.1" stroke="#E8E4E0" stroke-width="2"/><line x1="570.0" y1="218.4" x2="570.0" y2="182.9" stroke="#E8E4E0" stroke-width="2"/><line x1="535.6" y1="153.3" x2="535.6" y2="126.6" stroke="#E8E4E0" stroke-width="2"/><line x1="535.6" y1="135.5" x2="535.6" y2="105.9" stroke="#E8E4E0" stroke-width="2"/><line x1="105.6" y1="129.6" x2="105.6" y2="129.6" stroke="#E8E4E0" stroke-width="2"/><line x1="294.8" y1="117.8" x2="294.8" y2="108.9" stroke="#E8E4E0" stroke-width="2"/><line x1="535.6" y1="105.9" x2="535.6" y2="79.3" stroke="#E8E4E0" stroke-width="2"/><line x1="604.4" y1="162.2" x2="604.4" y2="123.7" stroke="#E8E4E0" stroke-width="2"/><line x1="312.0" y1="123.7" x2="312.0" y2="111.8" stroke="#E8E4E0" stroke-width="2"/><line x1="656.0" y1="206.6" x2="656.0" y2="153.3" stroke="#E8E4E0" stroke-width="2"/><line x1="346.4" y1="97.0" x2="346.4" y2="88.2" stroke="#E8E4E0" stroke-width="2"/><line x1="449.6" y1="97.0" x2="449.6" y2="79.3" stroke="#E8E4E0" stroke-width="2"/><line x1="449.6" y1="165.1" x2="449.6" y2="141.4" stroke="#E8E4E0" stroke-width="2"/><line x1="449.6" y1="138.5" x2="449.6" y2="114.8" stroke="#E8E4E0" stroke-width="2"/><line x1="621.6" y1="174.0" x2="621.6" y2="132.6" stroke="#E8E4E0" stroke-width="2"/><line x1="656.0" y1="135.5" x2="656.0" y2="85.2" stroke="#E8E4E0" stroke-width="2"/><line x1="587.2" y1="156.2" x2="587.2" y2="103.0" stroke="#E8E4E0" stroke-width="2"/><line x1="570.0" y1="177.0" x2="570.0" y2="144.4" stroke="#E8E4E0" stroke-width="2"/><line x1="604.4" y1="182.9" x2="604.4" y2="144.4" stroke="#E8E4E0" stroke-width="2"/><line x1="621.6" y1="141.4" x2="621.6" y2="111.8" stroke="#E8E4E0" stroke-width="2"/><line x1="552.8" y1="100.0" x2="552.8" y2="49.7" stroke="#E8E4E0" stroke-width="2"/><line x1="656.0" y1="165.1" x2="656.0" y2="129.6" stroke="#E8E4E0" stroke-width="2"/><line x1="570.0" y1="156.2" x2="570.0" y2="126.6" stroke="#E8E4E0" stroke-width="2"/><circle cx="484.0" cy="156.2" r="4.5" fill="#D4592A" stroke="#F5F3F0" stroke-width="2"><title>2026-03-25 · raw 7:23/mi · dew 65°</title></circle><circle cx="484.0" cy="132.6" r="4.5" fill="#35678F" stroke="#F5F3F0" stroke-width="2"><title>2026-03-25 · adjusted 7:15/mi</title></circle><circle cx="122.8" cy="162.2" r="4.5" fill="#D4592A" stroke="#F5F3F0" stroke-width="2"><title>2026-03-29 · raw 7:25/mi · dew 44°</title></circle><circle cx="122.8" cy="162.2" r="4.5" fill="#35678F" stroke="#F5F3F0" stroke-width="2"><title>2026-03-29 · adjusted 7:25/mi</title></circle><circle cx="398.0" cy="185.8" r="4.5" fill="#D4592A" stroke="#F5F3F0" stroke-width="2"><title>2026-03-30 · raw 7:33/mi · dew 60°</title></circle><circle cx="398.0" cy="159.2" r="4.5" fill="#35678F" stroke="#F5F3F0" stroke-width="2"><title>2026-03-30 · adjusted 7:24/mi</title></circle><circle cx="535.6" cy="191.8" r="4.5" fill="#D4592A" stroke="#F5F3F0" stroke-width="2"><title>2026-04-01 · raw 7:35/mi · dew 68°</title></circle><circle cx="535.6" cy="162.2" r="4.5" fill="#35678F" stroke="#F5F3F0" stroke-width="2"><title>2026-04-01 · adjusted 7:25/mi</title></circle><circle cx="535.6" cy="224.3" r="4.5" fill="#D4592A" stroke="#F5F3F0" stroke-width="2"><title>2026-04-02 · raw 7:46/mi · dew 68°</title></circle><circle cx="535.6" cy="182.9" r="4.5" fill="#35678F" stroke="#F5F3F0" stroke-width="2"><title>2026-04-02 · adjusted 7:32/mi</title></circle><circle cx="501.2" cy="188.8" r="4.5" fill="#D4592A" stroke="#F5F3F0" stroke-width="2"><title>2026-04-03 · raw 7:34/mi · dew 66°</title></circle><circle cx="501.2" cy="150.3" r="4.5" fill="#35678F" stroke="#F5F3F0" stroke-width="2"><title>2026-04-03 · adjusted 7:21/mi</title></circle><circle cx="122.8" cy="138.5" r="4.5" fill="#D4592A" stroke="#F5F3F0" stroke-width="2"><title>2026-04-06 · raw 7:17/mi · dew 44°</title></circle><circle cx="122.8" cy="138.5" r="4.5" fill="#35678F" stroke="#F5F3F0" stroke-width="2"><title>2026-04-06 · adjusted 7:17/mi</title></circle><circle cx="243.2" cy="150.3" r="4.5" fill="#D4592A" stroke="#F5F3F0" stroke-width="2"><title>2026-04-08 · raw 7:21/mi · dew 51°</title></circle><circle cx="243.2" cy="144.4" r="4.5" fill="#35678F" stroke="#F5F3F0" stroke-width="2"><title>2026-04-08 · adjusted 7:19/mi</title></circle><circle cx="449.6" cy="185.8" r="4.5" fill="#D4592A" stroke="#F5F3F0" stroke-width="2"><title>2026-04-09 · raw 7:33/mi · dew 63°</title></circle><circle cx="449.6" cy="168.1" r="4.5" fill="#35678F" stroke="#F5F3F0" stroke-width="2"><title>2026-04-09 · adjusted 7:27/mi</title></circle><circle cx="570.0" cy="218.4" r="4.5" fill="#D4592A" stroke="#F5F3F0" stroke-width="2"><title>2026-04-14 · raw 7:44/mi · dew 70°</title></circle><circle cx="570.0" cy="182.9" r="4.5" fill="#35678F" stroke="#F5F3F0" stroke-width="2"><title>2026-04-14 · adjusted 7:32/mi</title></circle><circle cx="535.6" cy="153.3" r="4.5" fill="#D4592A" stroke="#F5F3F0" stroke-width="2"><title>2026-04-15 · raw 7:22/mi · dew 68°</title></circle><circle cx="535.6" cy="126.6" r="4.5" fill="#35678F" stroke="#F5F3F0" stroke-width="2"><title>2026-04-15 · adjusted 7:13/mi</title></circle><circle cx="535.6" cy="135.5" r="4.5" fill="#D4592A" stroke="#F5F3F0" stroke-width="2"><title>2026-04-16 · raw 7:16/mi · dew 68°</title></circle><circle cx="535.6" cy="105.9" r="4.5" fill="#35678F" stroke="#F5F3F0" stroke-width="2"><title>2026-04-16 · adjusted 7:06/mi</title></circle><circle cx="105.6" cy="129.6" r="4.5" fill="#D4592A" stroke="#F5F3F0" stroke-width="2"><title>2026-04-19 · raw 7:14/mi · dew 43°</title></circle><circle cx="105.6" cy="129.6" r="4.5" fill="#35678F" stroke="#F5F3F0" stroke-width="2"><title>2026-04-19 · adjusted 7:14/mi</title></circle><circle cx="294.8" cy="117.8" r="4.5" fill="#D4592A" stroke="#F5F3F0" stroke-width="2"><title>2026-04-20 · raw 7:10/mi · dew 54°</title></circle><circle cx="294.8" cy="108.9" r="4.5" fill="#35678F" stroke="#F5F3F0" stroke-width="2"><title>2026-04-20 · adjusted 7:07/mi</title></circle><circle cx="535.6" cy="105.9" r="4.5" fill="#D4592A" stroke="#F5F3F0" stroke-width="2"><title>2026-04-23 · raw 7:06/mi · dew 68°</title></circle><circle cx="535.6" cy="79.3" r="4.5" fill="#35678F" stroke="#F5F3F0" stroke-width="2"><title>2026-04-23 · adjusted 6:57/mi</title></circle><circle cx="604.4" cy="162.2" r="4.5" fill="#D4592A" stroke="#F5F3F0" stroke-width="2"><title>2026-04-26 · raw 7:25/mi · dew 72°</title></circle><circle cx="604.4" cy="123.7" r="4.5" fill="#35678F" stroke="#F5F3F0" stroke-width="2"><title>2026-04-26 · adjusted 7:12/mi</title></circle><circle cx="312.0" cy="123.7" r="4.5" fill="#D4592A" stroke="#F5F3F0" stroke-width="2"><title>2026-05-04 · raw 7:12/mi · dew 55°</title></circle><circle cx="312.0" cy="111.8" r="4.5" fill="#35678F" stroke="#F5F3F0" stroke-width="2"><title>2026-05-04 · adjusted 7:08/mi</title></circle><circle cx="656.0" cy="206.6" r="4.5" fill="#D4592A" stroke="#F5F3F0" stroke-width="2"><title>2026-05-06 · raw 7:40/mi · dew 75°</title></circle><circle cx="656.0" cy="153.3" r="4.5" fill="#35678F" stroke="#F5F3F0" stroke-width="2"><title>2026-05-06 · adjusted 7:22/mi</title></circle><circle cx="346.4" cy="97.0" r="4.5" fill="#D4592A" stroke="#F5F3F0" stroke-width="2"><title>2026-05-08 · raw 7:03/mi · dew 57°</title></circle><circle cx="346.4" cy="88.2" r="4.5" fill="#35678F" stroke="#F5F3F0" stroke-width="2"><title>2026-05-08 · adjusted 7:00/mi</title></circle><circle cx="449.6" cy="97.0" r="4.5" fill="#D4592A" stroke="#F5F3F0" stroke-width="2"><title>2026-05-11 · raw 7:03/mi · dew 63°</title></circle><circle cx="449.6" cy="79.3" r="4.5" fill="#35678F" stroke="#F5F3F0" stroke-width="2"><title>2026-05-11 · adjusted 6:57/mi</title></circle><circle cx="449.6" cy="165.1" r="4.5" fill="#D4592A" stroke="#F5F3F0" stroke-width="2"><title>2026-05-13 · raw 7:26/mi · dew 63°</title></circle><circle cx="449.6" cy="141.4" r="4.5" fill="#35678F" stroke="#F5F3F0" stroke-width="2"><title>2026-05-13 · adjusted 7:18/mi</title></circle><circle cx="449.6" cy="138.5" r="4.5" fill="#D4592A" stroke="#F5F3F0" stroke-width="2"><title>2026-05-14 · raw 7:17/mi · dew 63°</title></circle><circle cx="449.6" cy="114.8" r="4.5" fill="#35678F" stroke="#F5F3F0" stroke-width="2"><title>2026-05-14 · adjusted 7:09/mi</title></circle><circle cx="621.6" cy="174.0" r="4.5" fill="#D4592A" stroke="#F5F3F0" stroke-width="2"><title>2026-05-17 · raw 7:29/mi · dew 73°</title></circle><circle cx="621.6" cy="132.6" r="4.5" fill="#35678F" stroke="#F5F3F0" stroke-width="2"><title>2026-05-17 · adjusted 7:15/mi</title></circle><circle cx="656.0" cy="135.5" r="4.5" fill="#D4592A" stroke="#F5F3F0" stroke-width="2"><title>2026-05-18 · raw 7:16/mi · dew 75°</title></circle><circle cx="656.0" cy="85.2" r="4.5" fill="#35678F" stroke="#F5F3F0" stroke-width="2"><title>2026-05-18 · adjusted 6:59/mi</title></circle><circle cx="587.2" cy="156.2" r="4.5" fill="#D4592A" stroke="#F5F3F0" stroke-width="2"><title>2026-05-19 · raw 7:23/mi · dew 71°</title></circle><circle cx="587.2" cy="103.0" r="4.5" fill="#35678F" stroke="#F5F3F0" stroke-width="2"><title>2026-05-19 · adjusted 7:05/mi</title></circle><circle cx="570.0" cy="177.0" r="4.5" fill="#D4592A" stroke="#F5F3F0" stroke-width="2"><title>2026-07-22 · raw 7:30/mi · dew 70°</title></circle><circle cx="570.0" cy="144.4" r="4.5" fill="#35678F" stroke="#F5F3F0" stroke-width="2"><title>2026-07-22 · adjusted 7:19/mi</title></circle><circle cx="604.4" cy="182.9" r="4.5" fill="#D4592A" stroke="#F5F3F0" stroke-width="2"><title>2026-07-23 · raw 7:32/mi · dew 72°</title></circle><circle cx="604.4" cy="144.4" r="4.5" fill="#35678F" stroke="#F5F3F0" stroke-width="2"><title>2026-07-23 · adjusted 7:19/mi</title></circle><circle cx="621.6" cy="141.4" r="4.5" fill="#D4592A" stroke="#F5F3F0" stroke-width="2"><title>2026-07-27 · raw 7:18/mi · dew 73°</title></circle><circle cx="621.6" cy="111.8" r="4.5" fill="#35678F" stroke="#F5F3F0" stroke-width="2"><title>2026-07-27 · adjusted 7:08/mi</title></circle><circle cx="552.8" cy="100.0" r="4.5" fill="#D4592A" stroke="#F5F3F0" stroke-width="2"><title>2026-07-29 · raw 7:04/mi · dew 69°</title></circle><circle cx="552.8" cy="49.7" r="4.5" fill="#35678F" stroke="#F5F3F0" stroke-width="2"><title>2026-07-29 · adjusted 6:47/mi</title></circle><circle cx="656.0" cy="165.1" r="4.5" fill="#D4592A" stroke="#F5F3F0" stroke-width="2"><title>2026-07-30 · raw 7:26/mi · dew 75°</title></circle><circle cx="656.0" cy="129.6" r="4.5" fill="#35678F" stroke="#F5F3F0" stroke-width="2"><title>2026-07-30 · adjusted 7:14/mi</title></circle><circle cx="570.0" cy="156.2" r="4.5" fill="#D4592A" stroke="#F5F3F0" stroke-width="2"><title>2026-08-02 · raw 7:23/mi · dew 70°</title></circle><circle cx="570.0" cy="126.6" r="4.5" fill="#35678F" stroke="#F5F3F0" stroke-width="2"><title>2026-08-02 · adjusted 7:13/mi</title></circle><text x="742.0" y="30.0" font-family="var(--font-mono)" font-size="9" fill="#D4592A" text-anchor="end" font-weight="500" style="">RAW PACE</text><text x="742.0" y="44.0" font-family="var(--font-mono)" font-size="9" fill="#35678F" text-anchor="end" font-weight="500" style="">HEAT-ADJUSTED</text></svg>
+<div class="cap">Each vertical pair is one easy run — coral is what the watch said, blue is the same run corrected for dew point.</div></div>
+<p class="quote">This is the single most valuable thing in your data right now, and it is already computed.
+It just isn't shown anywhere.</p>
+
+<div class="rule"><span></span></div>
+
+<div class="eyebrow">Finding two · HR drift</div>
+<h2>Drift is real, and it tracks the season.</h2>
+<p>Mean decoupling on your easy runs was <strong>1.4%</strong> through spring and
+<strong>3.5%</strong> in July. Both sit inside the aerobically-steady band, so this is
+heat load rather than a fitness problem — but it is exactly the signal that would look alarming
+without the correction above sitting next to it.</p>
+<p>Long runs average <strong>0.0%</strong> drift, which is genuinely strong
+aerobic durability for 53 mi/week.</p>
+<div class="card"><svg viewBox="0 0 760 290" width="100%" role="img" aria-label="HR drift per run over time"><rect x="48" y="111.5" width="694" height="48.6" fill="#E8E4DF" opacity="0.7"/><text x="54.0" y="106.5" font-family="var(--font-mono)" font-size="9" fill="#6B6560" text-anchor="start" font-weight="500" style="">AEROBICALLY STEADY  0–5%</text><line x1="48.0" y1="208.8" x2="742.0" y2="208.8" stroke="#E8E4E0" stroke-width="1"/><text x="40.0" y="211.8" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="end" font-weight="500" style="">-5%</text><line x1="48.0" y1="160.2" x2="742.0" y2="160.2" stroke="#E8E4E0" stroke-width="1"/><text x="40.0" y="163.2" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="end" font-weight="500" style="">0%</text><line x1="48.0" y1="111.5" x2="742.0" y2="111.5" stroke="#E8E4E0" stroke-width="1"/><text x="40.0" y="114.5" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="end" font-weight="500" style="">5%</text><line x1="48.0" y1="62.9" x2="742.0" y2="62.9" stroke="#E8E4E0" stroke-width="1"/><text x="40.0" y="65.9" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="end" font-weight="500" style="">10%</text><text x="85.4" y="254.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="middle" font-weight="500" style="">APR</text><text x="245.5" y="254.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="middle" font-weight="500" style="">MAY</text><text x="411.0" y="254.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="middle" font-weight="500" style="">JUN</text><text x="571.2" y="254.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="middle" font-weight="500" style="">JUL</text><text x="736.7" y="254.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="middle" font-weight="500" style="">AUG</text><circle cx="48.0" cy="169.2" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-03-25 · easy · drift -0.9%</title></circle><circle cx="64.0" cy="214.6" r="6" fill="#12294F" stroke="#F5F3F0" stroke-width="2"><title>2026-03-28 · long · drift -5.6%</title></circle><circle cx="69.4" cy="140.6" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-03-29 · easy · drift +2.0%</title></circle><circle cx="74.7" cy="159.8" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-03-30 · easy · drift +0.0%</title></circle><circle cx="80.0" cy="201.8" r="4.5" fill="#35678F" stroke="#F5F3F0" stroke-width="2"><title>2026-03-31 · quality · drift -4.3%</title></circle><circle cx="85.4" cy="157.4" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-04-01 · easy · drift +0.3%</title></circle><circle cx="90.7" cy="135.9" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-04-02 · easy · drift +2.5%</title></circle><circle cx="96.0" cy="142.1" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-04-03 · easy · drift +1.9%</title></circle><circle cx="101.4" cy="154.1" r="4.5" fill="#35678F" stroke="#F5F3F0" stroke-width="2"><title>2026-04-04 · quality · drift +0.6%</title></circle><circle cx="112.1" cy="122.6" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-04-06 · easy · drift +3.9%</title></circle><circle cx="122.7" cy="135.1" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-04-08 · easy · drift +2.6%</title></circle><circle cx="128.1" cy="166.4" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-04-09 · easy · drift -0.6%</title></circle><circle cx="144.1" cy="174.5" r="4.5" fill="#35678F" stroke="#F5F3F0" stroke-width="2"><title>2026-04-12 · quality · drift -1.5%</title></circle><circle cx="154.8" cy="125.3" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-04-14 · easy · drift +3.6%</title></circle><circle cx="160.1" cy="85.2" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-04-15 · easy · drift +7.7%</title></circle><circle cx="165.4" cy="153.1" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-04-16 · easy · drift +0.7%</title></circle><circle cx="176.1" cy="179.0" r="6" fill="#12294F" stroke="#F5F3F0" stroke-width="2"><title>2026-04-18 · long · drift -1.9%</title></circle><circle cx="181.5" cy="241.3" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-04-19 · easy · drift -8.3%</title></circle><circle cx="186.8" cy="168.4" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-04-20 · easy · drift -0.8%</title></circle><circle cx="202.8" cy="152.7" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-04-23 · easy · drift +0.8%</title></circle><circle cx="218.8" cy="118.5" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-04-26 · easy · drift +4.3%</title></circle><circle cx="261.5" cy="150.4" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-05-04 · easy · drift +1.0%</title></circle><circle cx="272.2" cy="119.4" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-05-06 · easy · drift +4.2%</title></circle><circle cx="282.9" cy="133.4" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-05-08 · easy · drift +2.8%</title></circle><circle cx="288.2" cy="149.8" r="6" fill="#12294F" stroke="#F5F3F0" stroke-width="2"><title>2026-05-09 · long · drift +1.1%</title></circle><circle cx="298.9" cy="159.9" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-05-11 · easy · drift +0.0%</title></circle><circle cx="309.6" cy="126.0" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-05-13 · easy · drift +3.5%</title></circle><circle cx="314.9" cy="151.0" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-05-14 · easy · drift +0.9%</title></circle><circle cx="325.6" cy="159.6" r="6" fill="#12294F" stroke="#F5F3F0" stroke-width="2"><title>2026-05-16 · long · drift +0.1%</title></circle><circle cx="330.9" cy="173.0" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-05-17 · easy · drift -1.3%</title></circle><circle cx="336.3" cy="144.9" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-05-18 · easy · drift +1.6%</title></circle><circle cx="341.6" cy="130.0" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-05-19 · easy · drift +3.1%</title></circle><circle cx="459.1" cy="147.5" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-06-10 · easy · drift +1.3%</title></circle><circle cx="464.4" cy="122.6" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-06-11 · easy · drift +3.9%</title></circle><circle cx="475.1" cy="164.8" r="6" fill="#12294F" stroke="#F5F3F0" stroke-width="2"><title>2026-06-13 · long · drift -0.5%</title></circle><circle cx="480.4" cy="87.4" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-06-14 · easy · drift +7.5%</title></circle><circle cx="485.8" cy="134.8" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-06-15 · easy · drift +2.6%</title></circle><circle cx="491.1" cy="110.1" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-06-16 · easy · drift +5.2%</title></circle><circle cx="677.9" cy="136.4" r="4.5" fill="#35678F" stroke="#F5F3F0" stroke-width="2"><title>2026-07-21 · quality · drift +2.5%</title></circle><circle cx="683.3" cy="159.6" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-07-22 · easy · drift +0.1%</title></circle><circle cx="688.6" cy="143.1" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-07-23 · easy · drift +1.8%</title></circle><circle cx="699.3" cy="136.0" r="6" fill="#12294F" stroke="#F5F3F0" stroke-width="2"><title>2026-07-25 · long · drift +2.5%</title></circle><circle cx="710.0" cy="89.9" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-07-27 · easy · drift +7.2%</title></circle><circle cx="720.6" cy="102.8" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-07-29 · easy · drift +5.9%</title></circle><circle cx="726.0" cy="147.6" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-07-30 · easy · drift +1.3%</title></circle><circle cx="736.7" cy="115.0" r="6" fill="#12294F" stroke="#F5F3F0" stroke-width="2"><title>2026-08-01 · long · drift +4.7%</title></circle><circle cx="742.0" cy="113.2" r="4.5" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="2"><title>2026-08-02 · easy · drift +4.8%</title></circle><text x="742.0" y="26.0" font-family="var(--font-mono)" font-size="9" fill="#12294F" text-anchor="end" font-weight="500" style="">● LONG</text><text x="742.0" y="40.0" font-family="var(--font-mono)" font-size="9" fill="#35678F" text-anchor="end" font-weight="500" style="">● QUALITY</text><text x="742.0" y="54.0" font-family="var(--font-mono)" font-size="9" fill="#6E9BC0" text-anchor="end" font-weight="500" style="">● EASY</text></svg>
+<div class="cap">One dot per run. Positive means the second half cost more heart rate for the same speed.</div></div>
+
+<div class="rule"><span></span></div>
+
+<div class="eyebrow">Finding three · aerobic drift over 10 miles</div>
+<h2>Every long run you have HR for.</h2>
+<p>Thirty-three runs of 10&nbsp;mi or longer sit in your logs. Sixteen have 1&nbsp;Hz streams —
+the rest are voice-log entries with no heart rate, all from before the Strava sync landed in
+March. Drift below is computed from the raw streams, not the mile laps: moving samples only,
+heart rate 80&ndash;205, and gradient held under &plusmn;4% so hills don't read as fatigue.</p>
+<p>Mean drift across all sixteen is <strong>+1.36%</strong>. Restricting to the
+8 runs where you actually held pace within 3% &mdash; the only runs where drift means
+what it claims to &mdash; it's <strong>+2.47%</strong>. Spring averaged
+<strong>-0.37%</strong>; June onward, <strong>+2.71%</strong>.
+Dew point over the same split went 65&deg; to 74&deg;, and drift tracks it at
+<strong>r&nbsp;=&nbsp;0.61</strong>.</p>
+<div class="card"><svg viewBox="0 0 760 300" width="100%" role="img" aria-label="Aerobic drift versus dew point on runs over ten miles"><rect x="54" y="81.0" width="586" height="68.8" fill="#E8E4DF" opacity="0.75"/><text x="60.0" y="76.0" font-family="var(--font-mono)" font-size="9" fill="#6B6560" text-anchor="start" font-weight="500" style="">AEROBICALLY STEADY  0–5%</text><line x1="54.0" y1="218.5" x2="640.0" y2="218.5" stroke="#E8E4E0" stroke-width="1"/><text x="46.0" y="221.5" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="end" font-weight="500" style="">-5%</text><line x1="54.0" y1="149.8" x2="640.0" y2="149.8" stroke="#E8E4E0" stroke-width="1"/><text x="46.0" y="152.8" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="end" font-weight="500" style="">+0%</text><line x1="54.0" y1="81.0" x2="640.0" y2="81.0" stroke="#E8E4E0" stroke-width="1"/><text x="46.0" y="84.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="end" font-weight="500" style="">+5%</text><line x1="54.0" y1="246.0" x2="640.0" y2="246.0" stroke="#9B9590" stroke-width="1"/><text x="137.7" y="262.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="middle" font-weight="500" style="">50°</text><text x="305.1" y="262.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="middle" font-weight="500" style="">60°</text><text x="472.6" y="262.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="middle" font-weight="500" style="">70°</text><text x="640.0" y="262.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="middle" font-weight="500" style="">80°</text><text x="347.0" y="280.0" font-family="var(--font-mono)" font-size="9" fill="#6B6560" text-anchor="middle" font-weight="500" style="">DEW POINT</text><circle cx="137.7" cy="228.5" r="6.5" fill="#12294F" fill-opacity="1" stroke="#F5F3F0" stroke-width="2"><title>2026-03-28 · 15.0 mi · drift -5.73% · dew 50° · pace change +1.7%</title></circle><circle cx="355.4" cy="139.0" r="5.7" fill="#12294F" fill-opacity="1" stroke="#F5F3F0" stroke-width="2"><title>2026-03-31 · 10.4 mi · drift +0.78% · dew 63° · pace change +1.8%</title></circle><circle cx="405.6" cy="184.1" r="6.1" fill="#6E9BC0" fill-opacity="0.85" stroke="#F5F3F0" stroke-width="2"><title>2026-04-18 · 12.4 mi · drift -2.50% · dew 66° · pace change +4.7%</title></circle><circle cx="472.6" cy="113.3" r="6.2" fill="#6E9BC0" fill-opacity="0.85" stroke="#F5F3F0" stroke-width="2"><title>2026-05-09 · 13.2 mi · drift +2.65% · dew 70° · pace change -3.3%</title></circle><circle cx="439.1" cy="147.1" r="6.2" fill="#6E9BC0" fill-opacity="0.85" stroke="#F5F3F0" stroke-width="2"><title>2026-05-16 · 13.1 mi · drift +0.19% · dew 68° · pace change +5.3%</title></circle><circle cx="422.3" cy="88.1" r="6.3" fill="#12294F" fill-opacity="1" stroke="#F5F3F0" stroke-width="2"><title>2026-05-24 · 14.0 mi · drift +4.48% · dew 67° · pace change +0.9%</title></circle><circle cx="439.1" cy="183.8" r="6.1" fill="#6E9BC0" fill-opacity="0.85" stroke="#F5F3F0" stroke-width="2"><title>2026-05-28 · 12.4 mi · drift -2.48% · dew 68° · pace change +6.9%</title></circle><circle cx="522.8" cy="47.3" r="7.0" fill="#12294F" fill-opacity="1" stroke="#F5F3F0" stroke-width="2"><title>2026-06-27 · 17.8 mi · drift +7.45% · dew 73° · pace change -2.2%</title></circle><circle cx="539.5" cy="123.3" r="6.1" fill="#6E9BC0" fill-opacity="0.85" stroke="#F5F3F0" stroke-width="2"><title>2026-07-04 · 12.4 mi · drift +1.92% · dew 74° · pace change +8.3%</title></circle><circle cx="539.5" cy="88.6" r="6.5" fill="#12294F" fill-opacity="1" stroke="#F5F3F0" stroke-width="2"><title>2026-07-11 · 15.0 mi · drift +4.45% · dew 74° · pace change +1.9%</title></circle><circle cx="573.0" cy="174.2" r="6.2" fill="#6E9BC0" fill-opacity="0.85" stroke="#F5F3F0" stroke-width="2"><title>2026-07-18 · 13.5 mi · drift -1.78% · dew 76° · pace change +5.5%</title></circle><circle cx="539.5" cy="120.6" r="6.2" fill="#12294F" fill-opacity="1" stroke="#F5F3F0" stroke-width="2"><title>2026-07-25 · 13.1 mi · drift +2.12% · dew 74° · pace change +0.8%</title></circle><circle cx="506.1" cy="75.5" r="6.8" fill="#6E9BC0" fill-opacity="0.85" stroke="#F5F3F0" stroke-width="2"><title>2026-08-01 · 17.0 mi · drift +5.40% · dew 72° · pace change +5.7%</title></circle><text x="137.7" y="215.5" font-family="var(--font-mono)" font-size="9" fill="#6B6560" text-anchor="middle" font-weight="500" style="">03-28 · 15.0 mi</text><text x="522.8" y="34.3" font-family="var(--font-mono)" font-size="9" fill="#6B6560" text-anchor="middle" font-weight="500" style="">06-27 · 17.8 mi</text><text x="654.0" y="30.0" font-family="var(--font-mono)" font-size="9" fill="#12294F" text-anchor="start" font-weight="500" style="">● STEADY PACE</text><text x="654.0" y="44.0" font-family="var(--font-mono)" font-size="9" fill="#6E9BC0" text-anchor="start" font-weight="500" style="">● PACE VARIED >3%</text><text x="654.0" y="66.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="start" font-weight="500" style="">circle size</text><text x="654.0" y="79.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="start" font-weight="500" style="">= distance</text></svg>
+<div class="cap">Only the dark circles are clean readings — on the pale ones your pace moved more than 3%, so drift and progression are tangled.</div></div>
+<div class="card"><table class="tight"><thead><tr><th>Date</th><th>Mi</th><th>Min</th>
+<th>HR 1st&rarr;2nd half</th><th>&Delta;Pace</th><th>Drift</th><th>Dew</th><th>Pacing</th></tr></thead>
+<tbody><tr><td class="mono">03-28</td><td class="mono">15.0</td>
+<td class="mono">111</td><td class="mono">150&nbsp;&rarr;&nbsp;144</td>
+<td class="mono">+1.7%</td>
+<td class="mono" style="color:#1A1815;font-weight:600">-5.73%</td>
+<td class="mono">50</td>
+<td class="mono" style="color:#9B9590">steady</td></tr>
+<tr><td class="mono">03-31</td><td class="mono">10.4</td>
+<td class="mono">97</td><td class="mono">151&nbsp;&rarr;&nbsp;155</td>
+<td class="mono">+1.8%</td>
+<td class="mono" style="color:#1A1815;font-weight:600">+0.78%</td>
+<td class="mono">63</td>
+<td class="mono" style="color:#9B9590">steady</td></tr>
+<tr><td class="mono">04-18</td><td class="mono">12.4</td>
+<td class="mono">94</td><td class="mono">148&nbsp;&rarr;&nbsp;151</td>
+<td class="mono">+4.7%</td>
+<td class="mono" style="color:#9B9590;font-weight:600">-2.50%</td>
+<td class="mono">66</td>
+<td class="mono" style="color:#9B9590">varied</td></tr>
+<tr><td class="mono">05-09</td><td class="mono">13.2</td>
+<td class="mono">100</td><td class="mono">152&nbsp;&rarr;&nbsp;150</td>
+<td class="mono">-3.3%</td>
+<td class="mono" style="color:#9B9590;font-weight:600">+2.65%</td>
+<td class="mono">70</td>
+<td class="mono" style="color:#9B9590">varied</td></tr>
+<tr><td class="mono">05-16</td><td class="mono">13.1</td>
+<td class="mono">94</td><td class="mono">151&nbsp;&rarr;&nbsp;159</td>
+<td class="mono">+5.3%</td>
+<td class="mono" style="color:#9B9590;font-weight:600">+0.19%</td>
+<td class="mono">68</td>
+<td class="mono" style="color:#9B9590">varied</td></tr>
+<tr><td class="mono">05-24</td><td class="mono">14.0</td>
+<td class="mono">102</td><td class="mono">155&nbsp;&rarr;&nbsp;164</td>
+<td class="mono">+0.9%</td>
+<td class="mono" style="color:#1A1815;font-weight:600">+4.48%</td>
+<td class="mono">67</td>
+<td class="mono" style="color:#9B9590">steady</td></tr>
+<tr><td class="mono">05-28</td><td class="mono">12.4</td>
+<td class="mono">83</td><td class="mono">154&nbsp;&rarr;&nbsp;160</td>
+<td class="mono">+6.9%</td>
+<td class="mono" style="color:#9B9590;font-weight:600">-2.48%</td>
+<td class="mono">68</td>
+<td class="mono" style="color:#9B9590">varied</td></tr>
+<tr><td class="mono">06-06</td><td class="mono">11.4</td>
+<td class="mono">87</td><td class="mono">158&nbsp;&rarr;&nbsp;166</td>
+<td class="mono">+0.9%</td>
+<td class="mono" style="color:#1A1815;font-weight:600">+4.01%</td>
+<td class="mono">&mdash;</td>
+<td class="mono" style="color:#9B9590">steady</td></tr>
+<tr><td class="mono">06-13</td><td class="mono">13.1</td>
+<td class="mono">95</td><td class="mono">159&nbsp;&rarr;&nbsp;164</td>
+<td class="mono">+4.7%</td>
+<td class="mono" style="color:#9B9590;font-weight:600">-1.42%</td>
+<td class="mono">&mdash;</td>
+<td class="mono" style="color:#9B9590">varied</td></tr>
+<tr><td class="mono">06-20</td><td class="mono">13.0</td>
+<td class="mono">100</td><td class="mono">148&nbsp;&rarr;&nbsp;152</td>
+<td class="mono">+0.3%</td>
+<td class="mono" style="color:#1A1815;font-weight:600">+2.23%</td>
+<td class="mono">&mdash;</td>
+<td class="mono" style="color:#9B9590">steady</td></tr>
+<tr><td class="mono">06-27</td><td class="mono">17.8</td>
+<td class="mono">129</td><td class="mono">154&nbsp;&rarr;&nbsp;162</td>
+<td class="mono">-2.2%</td>
+<td class="mono" style="color:#D4592A;font-weight:600">+7.45%</td>
+<td class="mono">73</td>
+<td class="mono" style="color:#9B9590">steady</td></tr>
+<tr><td class="mono">07-04</td><td class="mono">12.4</td>
+<td class="mono">89</td><td class="mono">154&nbsp;&rarr;&nbsp;170</td>
+<td class="mono">+8.3%</td>
+<td class="mono" style="color:#9B9590;font-weight:600">+1.92%</td>
+<td class="mono">74</td>
+<td class="mono" style="color:#9B9590">varied</td></tr>
+<tr><td class="mono">07-11</td><td class="mono">15.0</td>
+<td class="mono">116</td><td class="mono">153&nbsp;&rarr;&nbsp;163</td>
+<td class="mono">+1.9%</td>
+<td class="mono" style="color:#1A1815;font-weight:600">+4.45%</td>
+<td class="mono">74</td>
+<td class="mono" style="color:#9B9590">steady</td></tr>
+<tr><td class="mono">07-18</td><td class="mono">13.5</td>
+<td class="mono">104</td><td class="mono">153&nbsp;&rarr;&nbsp;158</td>
+<td class="mono">+5.5%</td>
+<td class="mono" style="color:#9B9590;font-weight:600">-1.78%</td>
+<td class="mono">76</td>
+<td class="mono" style="color:#9B9590">varied</td></tr>
+<tr><td class="mono">07-25</td><td class="mono">13.1</td>
+<td class="mono">96</td><td class="mono">149&nbsp;&rarr;&nbsp;153</td>
+<td class="mono">+0.8%</td>
+<td class="mono" style="color:#1A1815;font-weight:600">+2.12%</td>
+<td class="mono">74</td>
+<td class="mono" style="color:#9B9590">steady</td></tr>
+<tr><td class="mono">08-01</td><td class="mono">17.0</td>
+<td class="mono">126</td><td class="mono">147&nbsp;&rarr;&nbsp;165</td>
+<td class="mono">+5.7%</td>
+<td class="mono" style="color:#D4592A;font-weight:600">+5.40%</td>
+<td class="mono">72</td>
+<td class="mono" style="color:#9B9590">varied</td></tr></tbody></table></div>
+<p>One run clears 5%: <strong>Jun 27, 17.8&nbsp;mi at +7.45%</strong> &mdash; your longest run of the
+year, on a 73&deg; dew point, and also a session spike. Three separate signals landing on the
+same day is the pattern worth surfacing. Aug 1 reads +5.40%, but you ran the second half 5.7%
+faster, so that is a progression run behaving exactly as a progression run should.</p>
+<p>Mar 28 at <strong>&minus;5.73%</strong> is the outlier in the other direction: heart rate
+<em>fell</em> 150&rarr;144 while you sped up. That is a hot opening mile settling down, not
+efficiency improving mid-run. Worth a rule that ignores the first ten minutes.</p>
+
+<div class="rule"><span></span></div>
+
+<div class="eyebrow coral">Finding four · controlling for pace</div>
+<h2>You were right, and it matters more than I expected.</h2>
+<p>The drift numbers above use the efficiency ratio &mdash; speed divided by heart rate, second half
+against first. That <em>looks</em> like it controls for pace, but it assumes heart rate scales
+linearly with speed. It doesn't. The HR&ndash;speed curve steepens as you go faster, so on any run
+where the second half was quicker the ratio hands you credit for speed you actually paid for in
+heartbeats, and drift comes out too low.</p>
+<p>So I recomputed it without that assumption. Bin every second of every run into 0.1&nbsp;m/s speed
+buckets, then compare heart rate between halves <strong>only within the same bucket</strong> &mdash;
+like against like, no model, no functional form. On average 80% of the theoretically pairable
+samples match, so this isn't a thin slice.</p>
+
+<div class="kpis">
+<div class="kpi"><span class="v">+1.36%</span><span class="l">Ratio method</span></div>
+<div class="kpi"><span class="v">+2.91%</span><span class="l">Speed-matched</span></div>
+<div class="kpi"><span class="v">4</span><span class="l">Runs that flip sign</span></div>
+<div class="kpi"><span class="v">2&nbsp;&rarr;&nbsp;5</span><span class="l">Runs over 5%</span></div>
+</div>
+
+<div class="card"><svg viewBox="0 0 760 430" width="100%" role="img" aria-label="Ratio drift versus speed-matched drift for each run"><rect x="330.5" y="26" width="174.7" height="366.0" fill="#E8E4DF" opacity="0.6"/><text x="417.9" y="20.0" font-family="var(--font-mono)" font-size="9" fill="#6B6560" text-anchor="middle" font-weight="500" style="">AEROBICALLY STEADY 0–5%</text><line x1="155.9" y1="26.0" x2="155.9" y2="392.0" stroke="#E8E4E0" stroke-width="1"/><text x="155.9" y="406.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="middle" font-weight="500" style="">-5%</text><line x1="330.5" y1="26.0" x2="330.5" y2="392.0" stroke="#E8E4E0" stroke-width="1"/><text x="330.5" y="406.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="middle" font-weight="500" style="">+0%</text><line x1="505.2" y1="26.0" x2="505.2" y2="392.0" stroke="#E8E4E0" stroke-width="1"/><text x="505.2" y="406.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="middle" font-weight="500" style="">+5%</text><text x="76.0" y="48.0" font-family="var(--font-mono)" font-size="9" fill="#6B6560" text-anchor="end" font-weight="500" style="">03-28  15.0mi</text><line x1="130.4" y1="45.0" x2="167.7" y2="45.0" stroke="#E8E4E0" stroke-width="2.5"/><circle cx="130.4" cy="45.0" r="4" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="1.5"><title>2026-03-28 · efficiency-ratio -5.73%</title></circle><circle cx="167.7" cy="45.0" r="5" fill="#12294F" stroke="#F5F3F0" stroke-width="1.5"><title>2026-03-28 · speed-matched -4.66% · 92% coverage</title></circle><text x="622.0" y="48.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="start" font-weight="500" style="">92% matched</text><text x="76.0" y="70.0" font-family="var(--font-mono)" font-size="9" fill="#6B6560" text-anchor="end" font-weight="500" style="">03-31  10.4mi</text><line x1="357.8" y1="67.0" x2="407.7" y2="67.0" stroke="#E8E4E0" stroke-width="2.5"/><circle cx="357.8" cy="67.0" r="4" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="1.5"><title>2026-03-31 · efficiency-ratio +0.78%</title></circle><circle cx="407.7" cy="67.0" r="5" fill="#12294F" stroke="#F5F3F0" stroke-width="1.5"><title>2026-03-31 · speed-matched +2.21% · 63% coverage</title></circle><text x="622.0" y="70.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="start" font-weight="500" style="">63% matched</text><text x="76.0" y="92.0" font-family="var(--font-mono)" font-size="9" fill="#6B6560" text-anchor="end" font-weight="500" style="">04-18  12.4mi</text><line x1="243.2" y1="89.0" x2="306.1" y2="89.0" stroke="#E8E4E0" stroke-width="2.5"/><circle cx="243.2" cy="89.0" r="4" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="1.5"><title>2026-04-18 · efficiency-ratio -2.50%</title></circle><circle cx="306.1" cy="89.0" r="5" fill="#12294F" stroke="#F5F3F0" stroke-width="1.5"><title>2026-04-18 · speed-matched -0.70% · 84% coverage</title></circle><text x="622.0" y="92.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="start" font-weight="500" style="">84% matched</text><text x="76.0" y="114.0" font-family="var(--font-mono)" font-size="9" fill="#6B6560" text-anchor="end" font-weight="500" style="">05-09  13.2mi</text><line x1="423.1" y1="111.0" x2="324.6" y2="111.0" stroke="#E8E4E0" stroke-width="2.5"/><circle cx="423.1" cy="111.0" r="4" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="1.5"><title>2026-05-09 · efficiency-ratio +2.65%</title></circle><circle cx="324.6" cy="111.0" r="5" fill="#12294F" stroke="#F5F3F0" stroke-width="1.5"><title>2026-05-09 · speed-matched -0.17% · 88% coverage</title></circle><text x="622.0" y="114.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="start" font-weight="500" style="">88% matched</text><text x="702.0" y="114.0" font-family="var(--font-mono)" font-size="9" fill="#D4592A" text-anchor="start" font-weight="500" style="">flips</text><text x="76.0" y="136.0" font-family="var(--font-mono)" font-size="9" fill="#6B6560" text-anchor="end" font-weight="500" style="">05-16  13.1mi</text><line x1="337.2" y1="133.0" x2="472.4" y2="133.0" stroke="#E8E4E0" stroke-width="2.5"/><circle cx="337.2" cy="133.0" r="4" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="1.5"><title>2026-05-16 · efficiency-ratio +0.19%</title></circle><circle cx="472.4" cy="133.0" r="5" fill="#12294F" stroke="#F5F3F0" stroke-width="1.5"><title>2026-05-16 · speed-matched +4.06% · 72% coverage</title></circle><text x="622.0" y="136.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="start" font-weight="500" style="">72% matched</text><text x="76.0" y="158.0" font-family="var(--font-mono)" font-size="9" fill="#6B6560" text-anchor="end" font-weight="500" style="">05-24  14.0mi</text><line x1="487.0" y1="155.0" x2="505.9" y2="155.0" stroke="#E8E4E0" stroke-width="2.5"/><circle cx="487.0" cy="155.0" r="4" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="1.5"><title>2026-05-24 · efficiency-ratio +4.48%</title></circle><circle cx="505.9" cy="155.0" r="5" fill="#D4592A" stroke="#F5F3F0" stroke-width="1.5"><title>2026-05-24 · speed-matched +5.02% · 86% coverage</title></circle><text x="622.0" y="158.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="start" font-weight="500" style="">86% matched</text><text x="76.0" y="180.0" font-family="var(--font-mono)" font-size="9" fill="#6B6560" text-anchor="end" font-weight="500" style="">05-28  12.4mi</text><line x1="243.9" y1="177.0" x2="364.4" y2="177.0" stroke="#E8E4E0" stroke-width="2.5"/><circle cx="243.9" cy="177.0" r="4" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="1.5"><title>2026-05-28 · efficiency-ratio -2.48%</title></circle><circle cx="364.4" cy="177.0" r="5" fill="#12294F" stroke="#F5F3F0" stroke-width="1.5"><title>2026-05-28 · speed-matched +0.97% · 68% coverage</title></circle><text x="622.0" y="180.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="start" font-weight="500" style="">68% matched</text><text x="702.0" y="180.0" font-family="var(--font-mono)" font-size="9" fill="#D4592A" text-anchor="start" font-weight="500" style="">flips</text><text x="76.0" y="202.0" font-family="var(--font-mono)" font-size="9" fill="#6B6560" text-anchor="end" font-weight="500" style="">06-06  11.4mi</text><line x1="470.6" y1="199.0" x2="496.8" y2="199.0" stroke="#E8E4E0" stroke-width="2.5"/><circle cx="470.6" cy="199.0" r="4" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="1.5"><title>2026-06-06 · efficiency-ratio +4.01%</title></circle><circle cx="496.8" cy="199.0" r="5" fill="#12294F" stroke="#F5F3F0" stroke-width="1.5"><title>2026-06-06 · speed-matched +4.76% · 101% coverage</title></circle><text x="622.0" y="202.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="start" font-weight="500" style="">101% matched</text><text x="76.0" y="224.0" font-family="var(--font-mono)" font-size="9" fill="#6B6560" text-anchor="end" font-weight="500" style="">06-13  13.1mi</text><line x1="280.9" y1="221.0" x2="417.5" y2="221.0" stroke="#E8E4E0" stroke-width="2.5"/><circle cx="280.9" cy="221.0" r="4" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="1.5"><title>2026-06-13 · efficiency-ratio -1.42%</title></circle><circle cx="417.5" cy="221.0" r="5" fill="#12294F" stroke="#F5F3F0" stroke-width="1.5"><title>2026-06-13 · speed-matched +2.49% · 80% coverage</title></circle><text x="622.0" y="224.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="start" font-weight="500" style="">80% matched</text><text x="702.0" y="224.0" font-family="var(--font-mono)" font-size="9" fill="#D4592A" text-anchor="start" font-weight="500" style="">flips</text><text x="76.0" y="246.0" font-family="var(--font-mono)" font-size="9" fill="#6B6560" text-anchor="end" font-weight="500" style="">06-20  13.0mi</text><line x1="408.4" y1="243.0" x2="406.0" y2="243.0" stroke="#E8E4E0" stroke-width="2.5"/><circle cx="408.4" cy="243.0" r="4" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="1.5"><title>2026-06-20 · efficiency-ratio +2.23%</title></circle><circle cx="406.0" cy="243.0" r="5" fill="#12294F" stroke="#F5F3F0" stroke-width="1.5"><title>2026-06-20 · speed-matched +2.16% · 93% coverage</title></circle><text x="622.0" y="246.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="start" font-weight="500" style="">93% matched</text><text x="76.0" y="268.0" font-family="var(--font-mono)" font-size="9" fill="#6B6560" text-anchor="end" font-weight="500" style="">06-27  17.8mi</text><line x1="590.8" y1="265.0" x2="541.9" y2="265.0" stroke="#E8E4E0" stroke-width="2.5"/><circle cx="590.8" cy="265.0" r="4" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="1.5"><title>2026-06-27 · efficiency-ratio +7.45%</title></circle><circle cx="541.9" cy="265.0" r="5" fill="#D4592A" stroke="#F5F3F0" stroke-width="1.5"><title>2026-06-27 · speed-matched +6.05% · 88% coverage</title></circle><text x="622.0" y="268.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="start" font-weight="500" style="">88% matched</text><text x="76.0" y="290.0" font-family="var(--font-mono)" font-size="9" fill="#6B6560" text-anchor="end" font-weight="500" style="">07-04  12.4mi</text><line x1="397.6" y1="287.0" x2="550.6" y2="287.0" stroke="#E8E4E0" stroke-width="2.5"/><circle cx="397.6" cy="287.0" r="4" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="1.5"><title>2026-07-04 · efficiency-ratio +1.92%</title></circle><circle cx="550.6" cy="287.0" r="5" fill="#D4592A" stroke="#F5F3F0" stroke-width="1.5"><title>2026-07-04 · speed-matched +6.30% · 62% coverage</title></circle><text x="622.0" y="290.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="start" font-weight="500" style="">62% matched</text><text x="76.0" y="312.0" font-family="var(--font-mono)" font-size="9" fill="#6B6560" text-anchor="end" font-weight="500" style="">07-11  15.0mi</text><line x1="486.0" y1="309.0" x2="518.1" y2="309.0" stroke="#E8E4E0" stroke-width="2.5"/><circle cx="486.0" cy="309.0" r="4" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="1.5"><title>2026-07-11 · efficiency-ratio +4.45%</title></circle><circle cx="518.1" cy="309.0" r="5" fill="#D4592A" stroke="#F5F3F0" stroke-width="1.5"><title>2026-07-11 · speed-matched +5.37% · 90% coverage</title></circle><text x="622.0" y="312.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="start" font-weight="500" style="">90% matched</text><text x="76.0" y="334.0" font-family="var(--font-mono)" font-size="9" fill="#6B6560" text-anchor="end" font-weight="500" style="">07-18  13.5mi</text><line x1="268.4" y1="331.0" x2="440.6" y2="331.0" stroke="#E8E4E0" stroke-width="2.5"/><circle cx="268.4" cy="331.0" r="4" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="1.5"><title>2026-07-18 · efficiency-ratio -1.78%</title></circle><circle cx="440.6" cy="331.0" r="5" fill="#12294F" stroke="#F5F3F0" stroke-width="1.5"><title>2026-07-18 · speed-matched +3.15% · 57% coverage</title></circle><text x="622.0" y="334.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="start" font-weight="500" style="">57% matched</text><text x="702.0" y="334.0" font-family="var(--font-mono)" font-size="9" fill="#D4592A" text-anchor="start" font-weight="500" style="">flips</text><text x="76.0" y="356.0" font-family="var(--font-mono)" font-size="9" fill="#6B6560" text-anchor="end" font-weight="500" style="">07-25  13.1mi</text><line x1="404.6" y1="353.0" x2="424.5" y2="353.0" stroke="#E8E4E0" stroke-width="2.5"/><circle cx="404.6" cy="353.0" r="4" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="1.5"><title>2026-07-25 · efficiency-ratio +2.12%</title></circle><circle cx="424.5" cy="353.0" r="5" fill="#12294F" stroke="#F5F3F0" stroke-width="1.5"><title>2026-07-25 · speed-matched +2.69% · 97% coverage</title></circle><text x="622.0" y="356.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="start" font-weight="500" style="">97% matched</text><text x="76.0" y="378.0" font-family="var(--font-mono)" font-size="9" fill="#6B6560" text-anchor="end" font-weight="500" style="">08-01  17.0mi</text><line x1="519.2" y1="375.0" x2="572.6" y2="375.0" stroke="#E8E4E0" stroke-width="2.5"/><circle cx="519.2" cy="375.0" r="4" fill="#6E9BC0" stroke="#F5F3F0" stroke-width="1.5"><title>2026-08-01 · efficiency-ratio +5.40%</title></circle><circle cx="572.6" cy="375.0" r="5" fill="#D4592A" stroke="#F5F3F0" stroke-width="1.5"><title>2026-08-01 · speed-matched +6.93% · 67% coverage</title></circle><text x="622.0" y="378.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="start" font-weight="500" style="">67% matched</text><text x="76.0" y="20.0" font-family="var(--font-mono)" font-size="9" fill="#6B6560" text-anchor="end" font-weight="500" style="">RUN</text><circle cx="628" cy="16" r="4" fill="#6E9BC0"/><text x="636.0" y="19.0" font-family="var(--font-mono)" font-size="9" fill="#6E9BC0" text-anchor="start" font-weight="500" style="">RATIO</text><circle cx="690" cy="16" r="5" fill="#12294F"/><text x="698.0" y="19.0" font-family="var(--font-mono)" font-size="9" fill="#12294F" text-anchor="start" font-weight="500" style="">MATCHED</text></svg>
+<div class="cap">Pale dot is the ratio reading, dark dot is the same run compared at matched speeds. The line is the correction.</div></div>
+
+<p><strong>Jul 4 is the case in point.</strong> The ratio said +1.92% &mdash; unremarkable. Matched
+at equal speeds it's <strong>+6.30%</strong>, the second-highest of the year. You ran the closing
+miles 8.3% faster, and the ratio quietly forgave the heart rate that cost. Same story on Jul 18
+(&minus;1.78% becomes +3.15%) and May 28 (&minus;2.48% becomes +0.97%). Four runs cross from
+"improving" to "drifting" once pace is held constant.</p>
+<p>Only two readings survive as genuinely negative: <strong>Mar 28</strong> and
+<strong>May 9</strong>. Those are real &mdash; heart rate fell at matched speeds, which on Mar 28
+is the hot opening mile settling, and on May 9 looks like a true even-effort day.</p>
+
+<div class="card"><table class="tight"><thead><tr><th>Date</th><th>Mi</th><th>Ratio</th>
+<th>Speed-matched</th><th>Regression</th><th>bpm/hr</th><th>Coverage</th><th></th></tr></thead>
+<tbody><tr><td class="mono">03-28</td><td class="mono">15.0</td>
+<td class="mono" style="color:#9B9590">-5.73%</td>
+<td class="mono" style="color:#1A1815;font-weight:600">-4.66%</td>
+<td class="mono" style="color:#9B9590">-6.54%</td>
+<td class="mono" style="color:#9B9590">-4.8</td>
+<td class="mono" style="color:#9B9590">92%</td>
+<td class="mono" style="color:#9B9590">&mdash;</td></tr>
+<tr><td class="mono">03-31</td><td class="mono">10.4</td>
+<td class="mono" style="color:#9B9590">+0.78%</td>
+<td class="mono" style="color:#1A1815;font-weight:600">+2.21%</td>
+<td class="mono" style="color:#9B9590">-1.00%</td>
+<td class="mono" style="color:#9B9590">-0.9</td>
+<td class="mono" style="color:#9B9590">63%</td>
+<td class="mono" style="color:#9B9590">&mdash;</td></tr>
+<tr><td class="mono">04-18</td><td class="mono">12.4</td>
+<td class="mono" style="color:#9B9590">-2.50%</td>
+<td class="mono" style="color:#1A1815;font-weight:600">-0.70%</td>
+<td class="mono" style="color:#9B9590">+1.68%</td>
+<td class="mono" style="color:#9B9590">+1.4</td>
+<td class="mono" style="color:#9B9590">84%</td>
+<td class="mono" style="color:#9B9590">&mdash;</td></tr>
+<tr><td class="mono">05-09</td><td class="mono">13.2</td>
+<td class="mono" style="color:#9B9590">+2.65%</td>
+<td class="mono" style="color:#1A1815;font-weight:600">-0.17%</td>
+<td class="mono" style="color:#9B9590">-1.53%</td>
+<td class="mono" style="color:#9B9590">-1.2</td>
+<td class="mono" style="color:#9B9590">88%</td>
+<td class="mono" style="color:#D4592A">sign flip</td></tr>
+<tr><td class="mono">05-16</td><td class="mono">13.1</td>
+<td class="mono" style="color:#9B9590">+0.19%</td>
+<td class="mono" style="color:#1A1815;font-weight:600">+4.06%</td>
+<td class="mono" style="color:#9B9590">+9.42%</td>
+<td class="mono" style="color:#9B9590">+8.7</td>
+<td class="mono" style="color:#9B9590">72%</td>
+<td class="mono" style="color:#9B9590">&mdash;</td></tr>
+<tr><td class="mono">05-24</td><td class="mono">14.0</td>
+<td class="mono" style="color:#9B9590">+4.48%</td>
+<td class="mono" style="color:#D4592A;font-weight:600">+5.02%</td>
+<td class="mono" style="color:#9B9590">+9.29%</td>
+<td class="mono" style="color:#9B9590">+8.2</td>
+<td class="mono" style="color:#9B9590">86%</td>
+<td class="mono" style="color:#9B9590">&mdash;</td></tr>
+<tr><td class="mono">05-28</td><td class="mono">12.4</td>
+<td class="mono" style="color:#9B9590">-2.48%</td>
+<td class="mono" style="color:#1A1815;font-weight:600">+0.97%</td>
+<td class="mono" style="color:#9B9590">+6.83%</td>
+<td class="mono" style="color:#9B9590">+7.0</td>
+<td class="mono" style="color:#9B9590">68%</td>
+<td class="mono" style="color:#D4592A">sign flip</td></tr>
+<tr><td class="mono">06-06</td><td class="mono">11.4</td>
+<td class="mono" style="color:#9B9590">+4.01%</td>
+<td class="mono" style="color:#1A1815;font-weight:600">+4.76%</td>
+<td class="mono" style="color:#9B9590">+8.49%</td>
+<td class="mono" style="color:#9B9590">+8.4</td>
+<td class="mono" style="color:#9B9590">101%</td>
+<td class="mono" style="color:#9B9590">&mdash;</td></tr>
+<tr><td class="mono">06-13</td><td class="mono">13.1</td>
+<td class="mono" style="color:#9B9590">-1.42%</td>
+<td class="mono" style="color:#1A1815;font-weight:600">+2.49%</td>
+<td class="mono" style="color:#9B9590">+4.47%</td>
+<td class="mono" style="color:#9B9590">+4.0</td>
+<td class="mono" style="color:#9B9590">80%</td>
+<td class="mono" style="color:#D4592A">sign flip</td></tr>
+<tr><td class="mono">06-20</td><td class="mono">13.0</td>
+<td class="mono" style="color:#9B9590">+2.23%</td>
+<td class="mono" style="color:#1A1815;font-weight:600">+2.16%</td>
+<td class="mono" style="color:#9B9590">+7.42%</td>
+<td class="mono" style="color:#9B9590">+6.0</td>
+<td class="mono" style="color:#9B9590">93%</td>
+<td class="mono" style="color:#9B9590">&mdash;</td></tr>
+<tr><td class="mono">06-27</td><td class="mono">17.8</td>
+<td class="mono" style="color:#9B9590">+7.45%</td>
+<td class="mono" style="color:#D4592A;font-weight:600">+6.05%</td>
+<td class="mono" style="color:#9B9590">+8.44%</td>
+<td class="mono" style="color:#9B9590">+6.1</td>
+<td class="mono" style="color:#9B9590">88%</td>
+<td class="mono" style="color:#9B9590">&mdash;</td></tr>
+<tr><td class="mono">07-04</td><td class="mono">12.4</td>
+<td class="mono" style="color:#9B9590">+1.92%</td>
+<td class="mono" style="color:#D4592A;font-weight:600">+6.30%</td>
+<td class="mono" style="color:#9B9590">+10.05%</td>
+<td class="mono" style="color:#9B9590">+10.3</td>
+<td class="mono" style="color:#9B9590">62%</td>
+<td class="mono" style="color:#9B9590">&mdash;</td></tr>
+<tr><td class="mono">07-11</td><td class="mono">15.0</td>
+<td class="mono" style="color:#9B9590">+4.45%</td>
+<td class="mono" style="color:#D4592A;font-weight:600">+5.37%</td>
+<td class="mono" style="color:#9B9590">+11.21%</td>
+<td class="mono" style="color:#9B9590">+8.3</td>
+<td class="mono" style="color:#9B9590">90%</td>
+<td class="mono" style="color:#9B9590">&mdash;</td></tr>
+<tr><td class="mono">07-18</td><td class="mono">13.5</td>
+<td class="mono" style="color:#9B9590">-1.78%</td>
+<td class="mono" style="color:#1A1815;font-weight:600">+3.15%</td>
+<td class="mono" style="color:#9B9590">+6.57%</td>
+<td class="mono" style="color:#9B9590">+5.4</td>
+<td class="mono" style="color:#9B9590">57%</td>
+<td class="mono" style="color:#D4592A">sign flip</td></tr>
+<tr><td class="mono">07-25</td><td class="mono">13.1</td>
+<td class="mono" style="color:#9B9590">+2.12%</td>
+<td class="mono" style="color:#1A1815;font-weight:600">+2.69%</td>
+<td class="mono" style="color:#9B9590">+6.92%</td>
+<td class="mono" style="color:#9B9590">+6.0</td>
+<td class="mono" style="color:#9B9590">97%</td>
+<td class="mono" style="color:#9B9590">&mdash;</td></tr>
+<tr><td class="mono">08-01</td><td class="mono">17.0</td>
+<td class="mono" style="color:#9B9590">+5.40%</td>
+<td class="mono" style="color:#D4592A;font-weight:600">+6.93%</td>
+<td class="mono" style="color:#9B9590">+20.44%</td>
+<td class="mono" style="color:#9B9590">+14.0</td>
+<td class="mono" style="color:#9B9590">67%</td>
+<td class="mono" style="color:#9B9590">&mdash;</td></tr></tbody></table></div>
+
+<p>The third column is a fuller model &mdash; heart rate regressed on speed, speed squared, elapsed
+time and gradient, per run, where the elapsed-time coefficient <em>is</em> pace-controlled drift in
+bpm per hour. It agrees on direction everywhere but reads higher (+6.38% mean, 5.4&nbsp;bpm/hr).
+It's an upper bound, not the answer: a single linear time term absorbs late-run curvature and then
+extrapolates it across the whole duration. Aug 1 at +20% is that failure mode, not a real reading.
+Speed and time are only weakly correlated within your runs (|r|&nbsp;&lt;&nbsp;0.35 on all sixteen),
+so collinearity isn't what's driving the gap.</p>
+<p class="quote">Ship the speed-matched number. It makes no assumption about the shape of the
+HR&ndash;pace curve, and it degrades honestly &mdash; when a run has too little speed overlap to
+compare, coverage drops and you can say so instead of guessing.</p>
+<p>Revised seasonal read: <strong>+0.96%</strong> spring, <strong>+4.43%</strong> June onward. The
+summer rise is bigger than the ratio method suggested, though dew point still explains most of it.</p>
+
+<div class="rule"><span></span></div>
+
+<div class="eyebrow coral">Finding five · load</div>
+<h2>Three session spikes this year.</h2>
+<p>The rule, stated precisely: a session counts as a spike when its distance exceeds 110% of the
+<em>longest single run</em> in the preceding 30 days. Three runs since January clear it &mdash;
+Jan 24 (18.8&nbsp;mi, +88%), Jun 27 (17.8&nbsp;mi, +36%), and Aug 1 (17.0&nbsp;mi, +13%). The most
+recent is by far the mildest.</p>
+<p class="corr"><strong>Correction.</strong> An earlier pass reported four spikes including Mar 11
+and Mar 28. That query only looked at <code>source in ('strava','auto_sync')</code>, which dropped
+your voice-logged 13.8 and 14.0&nbsp;mi runs from February out of the 30-day window and understated
+the prior maximum. Both were false positives. The pool has to be every run regardless of source,
+deduplicated where Strava and a voice log describe the same session.</p>
+<p>Your long run averages <strong>25%</strong> of weekly volume, which is a
+healthy ratio, and your easy share is <strong>78%</strong> — almost exactly the
+polarized target.</p>
+<div class="card"><svg viewBox="0 0 760 250" width="100%" role="img" aria-label="Longest run per week with 10 percent ceiling and spikes"><line x1="54.0" y1="153.5" x2="714.0" y2="153.5" stroke="#E8E4E0" stroke-width="1"/><text x="46.0" y="156.5" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="end" font-weight="500" style="">5</text><line x1="54.0" y1="111.0" x2="714.0" y2="111.0" stroke="#E8E4E0" stroke-width="1"/><text x="46.0" y="114.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="end" font-weight="500" style="">10</text><line x1="54.0" y1="68.5" x2="714.0" y2="68.5" stroke="#E8E4E0" stroke-width="1"/><text x="46.0" y="71.5" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="end" font-weight="500" style="">15</text><line x1="54.0" y1="26.0" x2="714.0" y2="26.0" stroke="#E8E4E0" stroke-width="1"/><text x="46.0" y="29.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="end" font-weight="500" style="">20</text><text x="46.0" y="199.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="end" font-weight="500" style="">0</text><line x1="54.0" y1="196.0" x2="714.0" y2="196.0" stroke="#9B9590" stroke-width="1"/><rect x="45.4" y="111.0" width="17.3" height="85.0" rx="4" fill="#6E9BC0"><title>week of 2026-03-09 · longest 10.0 mi · 31% of week</title></rect><rect x="78.4" y="125.4" width="17.3" height="70.6" rx="4" fill="#6E9BC0"><title>week of 2026-03-16 · longest 8.3 mi · 37% of week</title></rect><rect x="111.4" y="68.5" width="17.3" height="127.5" rx="4" fill="#6E9BC0"><title>week of 2026-03-23 · longest 15.0 mi · 22% of week</title></rect><rect x="144.4" y="107.6" width="17.3" height="88.4" rx="4" fill="#6E9BC0"><title>week of 2026-03-30 · longest 10.4 mi · 17% of week</title></rect><rect x="177.4" y="126.3" width="17.3" height="69.7" rx="4" fill="#6E9BC0"><title>week of 2026-04-06 · longest 8.2 mi · 15% of week</title></rect><rect x="210.4" y="90.6" width="17.3" height="105.4" rx="4" fill="#6E9BC0"><title>week of 2026-04-13 · longest 12.4 mi · 26% of week</title></rect><rect x="243.4" y="117.8" width="17.3" height="78.2" rx="4" fill="#6E9BC0"><title>week of 2026-04-20 · longest 9.2 mi · 27% of week</title></rect><rect x="276.4" y="119.5" width="17.3" height="76.5" rx="4" fill="#6E9BC0"><title>week of 2026-04-27 · longest 9.0 mi · 42% of week</title></rect><rect x="309.4" y="83.8" width="17.3" height="112.2" rx="4" fill="#6E9BC0"><title>week of 2026-05-04 · longest 13.2 mi · 26% of week</title></rect><rect x="342.4" y="84.7" width="17.3" height="111.3" rx="4" fill="#6E9BC0"><title>week of 2026-05-11 · longest 13.1 mi · 18% of week</title></rect><rect x="375.4" y="77.0" width="17.3" height="119.0" rx="4" fill="#6E9BC0"><title>week of 2026-05-18 · longest 14.0 mi · 24% of week</title></rect><rect x="408.4" y="90.6" width="17.3" height="105.4" rx="4" fill="#6E9BC0"><title>week of 2026-05-25 · longest 12.4 mi · 26% of week</title></rect><rect x="441.4" y="99.1" width="17.3" height="96.9" rx="4" fill="#6E9BC0"><title>week of 2026-06-01 · longest 11.4 mi · 21% of week</title></rect><rect x="474.4" y="84.7" width="17.3" height="111.3" rx="4" fill="#6E9BC0"><title>week of 2026-06-08 · longest 13.1 mi · 23% of week</title></rect><rect x="507.4" y="85.5" width="17.3" height="110.5" rx="4" fill="#6E9BC0"><title>week of 2026-06-15 · longest 13.0 mi · 21% of week</title></rect><rect x="540.4" y="44.7" width="17.3" height="151.3" rx="4" fill="#6E9BC0"><title>week of 2026-06-22 · longest 17.8 mi · 34% of week</title></rect><rect x="573.4" y="90.6" width="17.3" height="105.4" rx="4" fill="#6E9BC0"><title>week of 2026-06-29 · longest 12.4 mi · 19% of week</title></rect><rect x="606.4" y="68.5" width="17.3" height="127.5" rx="4" fill="#6E9BC0"><title>week of 2026-07-06 · longest 15.0 mi · 26% of week</title></rect><rect x="639.4" y="81.2" width="17.3" height="114.8" rx="4" fill="#6E9BC0"><title>week of 2026-07-13 · longest 13.5 mi · 23% of week</title></rect><rect x="672.4" y="84.7" width="17.3" height="111.3" rx="4" fill="#6E9BC0"><title>week of 2026-07-20 · longest 13.1 mi · 22% of week</title></rect><rect x="705.4" y="51.5" width="17.3" height="144.5" rx="4" fill="#6E9BC0"><title>week of 2026-07-27 · longest 17.0 mi · 27% of week</title></rect><circle cx="572.6" cy="44.7" r="5.5" fill="#D4592A" stroke="#F5F3F0" stroke-width="2"><title>2026-06-27 · 17.8 mi · 36% over 30-day max of 13.1 mi</title></circle><text x="572.6" y="32.7" font-family="var(--font-mono)" font-size="9" fill="#D4592A" text-anchor="middle" font-weight="500" style="">+36%</text><circle cx="737.6" cy="51.5" r="5.5" fill="#D4592A" stroke="#F5F3F0" stroke-width="2"><title>2026-08-01 · 17.0 mi · 13% over 30-day max of 15.0 mi</title></circle><text x="737.6" y="39.5" font-family="var(--font-mono)" font-size="9" fill="#D4592A" text-anchor="middle" font-weight="500" style="">+13%</text><text x="186.0" y="212.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="middle" font-weight="500" style="">APR</text><text x="318.0" y="212.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="middle" font-weight="500" style="">MAY</text><text x="450.0" y="212.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="middle" font-weight="500" style="">JUN</text><text x="615.0" y="212.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="middle" font-weight="500" style="">JUL</text><text x="714.0" y="212.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="middle" font-weight="500" style="">AUG</text><text x="384.0" y="230.0" font-family="var(--font-mono)" font-size="9" fill="#6B6560" text-anchor="middle" font-weight="500" style="">LONGEST RUN PER WEEK (MI) · CORAL = SESSION SPIKE OVER 10% RULE</text></svg>
+<div class="cap">Bars are the longest run each week. Coral marks sessions over the 10% line.</div></div>
+<div class="card"><svg viewBox="0 0 760 260" width="100%" role="img" aria-label="Weekly mileage split easy versus quality"><line x1="48.0" y1="160.5" x2="730.0" y2="160.5" stroke="#E8E4E0" stroke-width="1"/><text x="40.0" y="163.5" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="end" font-weight="500" style="">20</text><line x1="48.0" y1="115.0" x2="730.0" y2="115.0" stroke="#E8E4E0" stroke-width="1"/><text x="40.0" y="118.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="end" font-weight="500" style="">40</text><line x1="48.0" y1="69.5" x2="730.0" y2="69.5" stroke="#E8E4E0" stroke-width="1"/><text x="40.0" y="72.5" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="end" font-weight="500" style="">60</text><line x1="48.0" y1="24.0" x2="730.0" y2="24.0" stroke="#E8E4E0" stroke-width="1"/><text x="40.0" y="27.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="end" font-weight="500" style="">80</text><line x1="48.0" y1="206.0" x2="730.0" y2="206.0" stroke="#9B9590" stroke-width="1"/><rect x="53.8" y="138.9" width="20.8" height="65.1" rx="3" fill="#6E9BC0"><title>week of 2026-03-09 · easy 29.5 mi of 32.1 total</title></rect><rect x="53.8" y="133.0" width="20.8" height="3.9" rx="3" fill="#12294F"><title>week of 2026-03-09 · quality 2.6 mi of 32.1 total</title></rect><rect x="53.8" y="133.0" width="20.8" height="1.0" rx="3" fill="#9B9590"><title>week of 2026-03-09 · unclassified 0.0 mi of 32.1 total</title></rect><text x="64.2" y="222.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="middle" font-weight="500" style="">03-09</text><rect x="86.3" y="189.6" width="20.8" height="14.4" rx="3" fill="#6E9BC0"><title>week of 2026-03-16 · easy 7.2 mi of 22.7 total</title></rect><rect x="86.3" y="154.6" width="20.8" height="33.0" rx="3" fill="#12294F"><title>week of 2026-03-16 · quality 15.4 mi of 22.7 total</title></rect><rect x="86.3" y="154.4" width="20.8" height="1.0" rx="3" fill="#9B9590"><title>week of 2026-03-16 · unclassified 0.1 mi of 22.7 total</title></rect><rect x="118.8" y="82.2" width="20.8" height="121.8" rx="3" fill="#6E9BC0"><title>week of 2026-03-23 · easy 54.4 mi of 68.4 total</title></rect><rect x="118.8" y="50.2" width="20.8" height="30.1" rx="3" fill="#12294F"><title>week of 2026-03-23 · quality 14.1 mi of 68.4 total</title></rect><rect x="151.3" y="102.0" width="20.8" height="102.0" rx="3" fill="#6E9BC0"><title>week of 2026-03-30 · easy 45.7 mi of 63.0 total</title></rect><rect x="151.3" y="62.7" width="20.8" height="37.4" rx="3" fill="#12294F"><title>week of 2026-03-30 · quality 17.3 mi of 63.0 total</title></rect><text x="161.7" y="222.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="middle" font-weight="500" style="">03-30</text><rect x="183.8" y="123.0" width="20.8" height="81.0" rx="3" fill="#6E9BC0"><title>week of 2026-04-06 · easy 36.5 mi of 55.3 total</title></rect><rect x="183.8" y="80.2" width="20.8" height="40.8" rx="3" fill="#12294F"><title>week of 2026-04-06 · quality 18.8 mi of 55.3 total</title></rect><rect x="216.2" y="95.7" width="20.8" height="108.3" rx="3" fill="#6E9BC0"><title>week of 2026-04-13 · easy 48.5 mi of 48.5 total</title></rect><rect x="248.7" y="147.5" width="20.8" height="56.5" rx="3" fill="#6E9BC0"><title>week of 2026-04-20 · easy 25.7 mi of 34.4 total</title></rect><rect x="248.7" y="127.7" width="20.8" height="17.8" rx="3" fill="#12294F"><title>week of 2026-04-20 · quality 8.7 mi of 34.4 total</title></rect><text x="259.1" y="222.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="middle" font-weight="500" style="">04-20</text><rect x="281.2" y="177.6" width="20.8" height="26.4" rx="3" fill="#6E9BC0"><title>week of 2026-04-27 · easy 12.5 mi of 21.5 total</title></rect><rect x="281.2" y="157.1" width="20.8" height="18.5" rx="3" fill="#12294F"><title>week of 2026-04-27 · quality 9.0 mi of 21.5 total</title></rect><rect x="313.7" y="102.5" width="20.8" height="101.5" rx="3" fill="#6E9BC0"><title>week of 2026-05-04 · easy 45.5 mi of 51.4 total</title></rect><rect x="313.7" y="89.1" width="20.8" height="11.4" rx="3" fill="#12294F"><title>week of 2026-05-04 · quality 5.9 mi of 51.4 total</title></rect><rect x="346.1" y="75.4" width="20.8" height="128.6" rx="3" fill="#6E9BC0"><title>week of 2026-05-11 · easy 57.4 mi of 72.2 total</title></rect><rect x="346.1" y="41.7" width="20.8" height="31.7" rx="3" fill="#12294F"><title>week of 2026-05-11 · quality 14.8 mi of 72.2 total</title></rect><rect x="346.1" y="41.7" width="20.8" height="1.0" rx="3" fill="#9B9590"><title>week of 2026-05-11 · unclassified 0.0 mi of 72.2 total</title></rect><text x="356.5" y="222.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="middle" font-weight="500" style="">05-11</text><rect x="378.6" y="89.7" width="20.8" height="114.3" rx="3" fill="#6E9BC0"><title>week of 2026-05-18 · easy 51.1 mi of 57.3 total</title></rect><rect x="378.6" y="75.6" width="20.8" height="12.1" rx="3" fill="#12294F"><title>week of 2026-05-18 · quality 6.2 mi of 57.3 total</title></rect><rect x="411.1" y="143.4" width="20.8" height="60.6" rx="3" fill="#6E9BC0"><title>week of 2026-05-25 · easy 27.5 mi of 48.1 total</title></rect><rect x="411.1" y="96.6" width="20.8" height="44.9" rx="3" fill="#12294F"><title>week of 2026-05-25 · quality 20.6 mi of 48.1 total</title></rect><rect x="443.6" y="121.8" width="20.8" height="82.2" rx="3" fill="#6E9BC0"><title>week of 2026-06-01 · easy 37.0 mi of 55.0 total</title></rect><rect x="443.6" y="80.6" width="20.8" height="39.2" rx="3" fill="#12294F"><title>week of 2026-06-01 · quality 18.1 mi of 55.0 total</title></rect><text x="454.0" y="222.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="middle" font-weight="500" style="">06-01</text><rect x="476.0" y="90.2" width="20.8" height="113.8" rx="3" fill="#6E9BC0"><title>week of 2026-06-08 · easy 50.9 mi of 58.3 total</title></rect><rect x="476.0" y="73.4" width="20.8" height="14.8" rx="3" fill="#12294F"><title>week of 2026-06-08 · quality 7.4 mi of 58.3 total</title></rect><rect x="508.5" y="84.1" width="20.8" height="119.9" rx="3" fill="#6E9BC0"><title>week of 2026-06-15 · easy 53.6 mi of 61.5 total</title></rect><rect x="508.5" y="66.1" width="20.8" height="16.0" rx="3" fill="#12294F"><title>week of 2026-06-15 · quality 7.9 mi of 61.5 total</title></rect><rect x="541.0" y="100.9" width="20.8" height="103.1" rx="3" fill="#6E9BC0"><title>week of 2026-06-22 · easy 46.2 mi of 52.3 total</title></rect><rect x="541.0" y="87.2" width="20.8" height="11.6" rx="3" fill="#12294F"><title>week of 2026-06-22 · quality 6.0 mi of 52.3 total</title></rect><rect x="541.0" y="87.0" width="20.8" height="1.0" rx="3" fill="#9B9590"><title>week of 2026-06-22 · unclassified 0.1 mi of 52.3 total</title></rect><text x="551.4" y="222.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="middle" font-weight="500" style="">06-22</text><rect x="573.5" y="54.5" width="20.8" height="149.5" rx="3" fill="#6E9BC0"><title>week of 2026-06-29 · easy 66.6 mi of 66.6 total</title></rect><rect x="605.9" y="91.3" width="20.8" height="112.7" rx="3" fill="#6E9BC0"><title>week of 2026-07-06 · easy 50.4 mi of 56.8 total</title></rect><rect x="605.9" y="76.8" width="20.8" height="12.6" rx="3" fill="#12294F"><title>week of 2026-07-06 · quality 6.4 mi of 56.8 total</title></rect><rect x="638.4" y="83.6" width="20.8" height="120.4" rx="3" fill="#6E9BC0"><title>week of 2026-07-13 · easy 53.8 mi of 59.2 total</title></rect><rect x="638.4" y="71.5" width="20.8" height="10.1" rx="3" fill="#12294F"><title>week of 2026-07-13 · quality 5.3 mi of 59.2 total</title></rect><rect x="638.4" y="71.3" width="20.8" height="1.0" rx="3" fill="#9B9590"><title>week of 2026-07-13 · unclassified 0.1 mi of 59.2 total</title></rect><text x="648.8" y="222.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="middle" font-weight="500" style="">07-13</text><rect x="670.9" y="99.3" width="20.8" height="104.7" rx="3" fill="#6E9BC0"><title>week of 2026-07-20 · easy 46.9 mi of 60.2 total</title></rect><rect x="670.9" y="69.0" width="20.8" height="28.3" rx="3" fill="#12294F"><title>week of 2026-07-20 · quality 13.3 mi of 60.2 total</title></rect><rect x="670.9" y="69.0" width="20.8" height="1.0" rx="3" fill="#9B9590"><title>week of 2026-07-20 · unclassified 0.0 mi of 60.2 total</title></rect><rect x="703.4" y="178.9" width="20.8" height="25.1" rx="3" fill="#6E9BC0"><title>week of 2026-07-27 · easy 11.9 mi of 63.0 total</title></rect><rect x="703.4" y="166.9" width="20.8" height="10.1" rx="3" fill="#12294F"><title>week of 2026-07-27 · quality 5.3 mi of 63.0 total</title></rect><rect x="703.4" y="62.7" width="20.8" height="102.2" rx="3" fill="#9B9590"><title>week of 2026-07-27 · unclassified 45.8 mi of 63.0 total</title></rect><text x="730.0" y="26.0" font-family="var(--font-mono)" font-size="9" fill="#12294F" text-anchor="end" font-weight="500" style="">■ QUALITY</text><text x="730.0" y="40.0" font-family="var(--font-mono)" font-size="9" fill="#6E9BC0" text-anchor="end" font-weight="500" style="">■ EASY</text><text x="730.0" y="54.0" font-family="var(--font-mono)" font-size="9" fill="#9B9590" text-anchor="end" font-weight="500" style="">■ UNCLASSIFIED</text><text x="389.0" y="240.0" font-family="var(--font-mono)" font-size="9" fill="#6B6560" text-anchor="middle" font-weight="500" style="">WEEKLY MILES BY INTENSITY</text></svg>
+<div class="cap">The grey band from Jul 29 is unclassified — the workout-type labeller stopped writing.</div></div>
+
+<div class="rule"><span></span></div>
+
+<div class="eyebrow">The audit</div>
+<h2>What each of the fourteen needs.</h2>
+<table><thead><tr><th></th><th>Metric</th><th>State</th><th>What the data says</th></tr></thead>
+<tbody>
+<tr><td class="num">2</td><td class="nm">Session spike vs 30-day longest</td>
+<td><span class="pill" style="color:#12294F;border-color:#12294F">READY</span></td>
+<td class="note">Distance + date only. 274 runs back to Aug 2024. Four spikes over the 10% line in 2026; the most recent was Aug 1 at +13%.</td></tr>
+<tr><td class="num">5</td><td class="nm">Heat &amp; dew-point correction</td>
+<td><span class="pill" style="color:#12294F;border-color:#12294F">READY</span></td>
+<td class="note"><code>weather_cache</code> 171 rows, <code>heat_adjusted_pace_sec_per_mile</code> already computed on 846 laps. Working today.</td></tr>
+<tr><td class="num">1</td><td class="nm">HR drift on long runs</td>
+<td><span class="pill" style="color:#12294F;border-color:#12294F">READY</span></td>
+<td class="note">1,346 of 1,348 laps carry HR. 47 runs have 6+ clean mile-laps. Forerunner 265 wrist HR — flag confidence.</td></tr>
+<tr><td class="num">8</td><td class="nm">Durability (Q4 vs Q1)</td>
+<td><span class="pill" style="color:#12294F;border-color:#12294F">READY</span></td>
+<td class="note">Same lap data. Only long runs qualify — 7 in the window, thin but real.</td></tr>
+<tr><td class="num">13</td><td class="nm">Consistency &amp; long-run ratio</td>
+<td><span class="pill" style="color:#12294F;border-color:#12294F">READY</span></td>
+<td class="note">Date + distance. 21 weeks clean. Long run averages 25% of weekly volume.</td></tr>
+<tr><td class="num">14</td><td class="nm">Cadence drift under fatigue</td>
+<td><span class="pill" style="color:#12294F;border-color:#12294F">READY</span></td>
+<td class="note">1,346 laps with cadence. Currently flat (0.0 spm mean drift) — no fatigue collapse to report.</td></tr>
+<tr><td class="num">6</td><td class="nm">Easy vs quality split</td>
+<td><span class="pill" style="color:#6B6560;border-color:#6B6560">PARTIAL</span></td>
+<td class="note">Works on <code>workout_type</code>, but classification went null on Jul 29 — last 5 runs are unlabelled. Fix the labeller first.</td></tr>
+<tr><td class="num">3</td><td class="nm">HR at pace zones</td>
+<td><span class="pill" style="color:#6B6560;border-color:#6B6560">PARTIAL</span></td>
+<td class="note"><code>pace_zone</code> on all 1,348 laps, but zones 1–10 aren't yet mapped to the canonical Easy/MP/HMP/LT taxonomy.</td></tr>
+<tr><td class="num">10</td><td class="nm">Easy-run discipline</td>
+<td><span class="pill" style="color:#6B6560;border-color:#6B6560">PARTIAL</span></td>
+<td class="note">Needs planned-vs-actual. <code>scheduled_workouts</code> is empty (0 rows), so there is no 'intended easy' to compare against.</td></tr>
+<tr><td class="num">11</td><td class="nm">Key-session rep decay</td>
+<td><span class="pill" style="color:#6B6560;border-color:#6B6560">PARTIAL</span></td>
+<td class="note"><code>is_rest</code> and <code>lap_index</code> exist, but only 5 workout templates and 0 quality-session templates to match reps against.</td></tr>
+<tr><td class="num">9</td><td class="nm">Speed-vs-endurance profile</td>
+<td><span class="pill" style="color:#D4592A;border-color:#D4592A">BLOCKED</span></td>
+<td class="note"><code>race_intel</code> 0 rows, <code>confirmed_races</code> doesn't exist. Only 5 runs carry <code>race_result</code>. Needs race anchoring shipped first.</td></tr>
+<tr><td class="num">7</td><td class="nm">Felt vs measured</td>
+<td><span class="pill" style="color:#D4592A;border-color:#D4592A">BLOCKED</span></td>
+<td class="note"><code>felt_rpe</code> is 0 of 274. <code>rpe_pull_quote</code> 0 of 274. The columns exist; nothing writes to them. Mood is there on 103 runs — that's the half you have.</td></tr>
+<tr><td class="num">4</td><td class="nm">Niggle × load timeline</td>
+<td><span class="pill" style="color:#D4592A;border-color:#D4592A">BLOCKED</span></td>
+<td class="note"><code>body_mentions</code> has 4 rows. The pipeline works; there's just no volume yet.</td></tr>
+<tr><td class="num">12</td><td class="nm">RHR / HRV / sleep vs load</td>
+<td><span class="pill" style="color:#D4592A;border-color:#D4592A">BLOCKED</span></td>
+<td class="note">No recovery table in the schema. HealthKit gives it; nothing ingests it.</td></tr>
+</tbody></table>
+
+<div class="eyebrow">Three things to fix first</div>
+<div class="card">
+<p><strong>1 · The workout-type labeller stopped.</strong> Every run since Jul 29 has
+<code>workout_type</code> null. That silently breaks the easy-vs-quality split and anything
+downstream of it.</p>
+<p><strong>2 · Nothing writes <code>felt_rpe</code>.</strong> The column, the pull-quote field, the
+tags array and the timestamp all exist on <code>training_logs</code> and all 274 rows are empty.
+The felt-vs-measured metric — the one nobody else can build — is one extraction step away from
+working, because the voice memos are already there.</p>
+<p><strong>3 · Lap coverage has holes.</strong> Laps only exist from Mar 25 onward, with gaps
+May 19–Jun 10 and Jun 16–Jul 21. Any drift or durability chart needs to show its own coverage
+rather than imply continuity.</p>
+</div>
+
+<p class="cap">Built from Supabase project RunningAppMVP2 · 02 Aug 2026</p>
+</div></body></html>

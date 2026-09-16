@@ -1,0 +1,168 @@
+<!doctype html>
+<!-- @dsCard group="Foundations" name="Summary serif options" subtitle="The memo paragraph set in every candidate serif, at the real 19px/1.5" viewport="1330x1010" -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Post Run Drip · Summary serif options</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500;600&family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;1,7..72,400&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=Spectral:ital,wght@0,400;0,600;1,400&family=Crimson+Pro:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Serif:ital,wght@0,400;0,600;1,400&family=Instrument+Serif:ital@0;1&family=Petrona:ital,wght@0,400;0,600;1,400&family=Zilla+Slab:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+<style>
+:root{--paper:#FFFFFF;--ink:#111111;--ink-2:#6B6B6B;--ink-3:#9A9A9A;--rule:#E9E9E7;--red:#EE2B24;--red-text:#D31F19;
+--grot:"Akzidenz-Grotesk Pro","Akzidenz-Grotesk","Neue Haas Grotesk Display Pro","Helvetica Neue",Helvetica,Arial,sans-serif;
+--haas:"Neue Haas Grotesk Display Pro","Neue Haas Grotesk Display","Helvetica Neue",Helvetica,Arial,sans-serif;
+--ui:"Inter","Helvetica Neue",Helvetica,Arial,sans-serif}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:#EDEDEA;color:var(--ink);font-family:var(--grot);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+a{color:var(--ink)}a:hover{color:var(--red-text)}
+.page{padding:44px 40px 64px;max-width:1330px;margin:0 auto}
+.head{border-top:2px solid var(--ink);padding-top:12px;display:flex;align-items:baseline;justify-content:space-between;gap:20px}
+.head b{font-family:var(--grot);font-size:12px;font-weight:600;letter-spacing:.2em;text-transform:uppercase}
+.head span{font-family:var(--ui);font-size:11px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+h1{font-family:var(--haas);font-size:40px;font-weight:700;letter-spacing:-.035em;line-height:1;margin:22px 0 6px}
+.sub{font-family:var(--ui);font-size:13px;line-height:1.6;color:var(--ink-2);margin:0;max-width:64ch}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;margin-top:34px}
+.card{background:var(--paper);padding:22px 22px 24px;display:flex;flex-direction:column;gap:14px;box-shadow:0 1px 0 rgba(0,0,0,.05)}
+.card.lic{background:#FBFBF9;border:1px dashed #DCDCD6;box-shadow:none}
+.chd{display:flex;align-items:baseline;justify-content:space-between;gap:10px;border-bottom:1px solid var(--rule);padding-bottom:9px}
+.chd b{font-family:var(--grot);font-size:11px;font-weight:600;letter-spacing:.17em;text-transform:uppercase;white-space:nowrap}
+.chd span{font-family:var(--ui);font-size:9px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3);white-space:nowrap}
+.chd span.free{color:var(--red-text)}
+.memo{font-size:19px;line-height:1.5;margin:0;text-wrap:pretty}
+.memo em{font-style:italic}
+.note{font-family:var(--ui);font-size:11px;line-height:1.55;color:var(--ink-2);margin:0;padding-top:2px;border-top:1px solid var(--rule)}
+.pair{font-size:15px;line-height:1.45;color:var(--ink-2);margin:0}
+.pair b{font-family:var(--haas);font-size:22px;font-weight:700;font-style:normal;letter-spacing:-.035em;color:var(--ink);display:block;margin-bottom:5px}
+
+.f-sabon .memo,.f-sabon .pair{font-family:"Sabon LT Pro","Sabon",Georgia,"Times New Roman",Times,serif}
+.f-news .memo,.f-news .pair{font-family:"Newsreader",Georgia,serif}
+.f-source .memo,.f-source .pair{font-family:"Source Serif 4",Georgia,serif}
+.f-garamond .memo,.f-garamond .pair{font-family:"EB Garamond",Georgia,serif}
+.f-literata .memo,.f-literata .pair{font-family:"Literata",Georgia,serif}
+.f-spectral .memo,.f-spectral .pair{font-family:"Spectral",Georgia,serif}
+.f-crimson .memo,.f-crimson .pair{font-family:"Crimson Pro",Georgia,serif}
+.f-plex .memo,.f-plex .pair{font-family:"IBM Plex Serif",Georgia,serif}
+.f-instrument .memo,.f-instrument .pair{font-family:"Instrument Serif",Georgia,serif}
+.f-petrona .memo,.f-petrona .pair{font-family:"Petrona",Georgia,serif}
+.f-zilla .memo,.f-zilla .pair{font-family:"Zilla Slab",Georgia,serif}
+.f-mono .memo,.f-mono .pair{font-family:"JetBrains Mono",ui-monospace,Menlo,monospace;font-style:italic}
+.f-mono .memo{font-size:15px;line-height:1.62}
+.f-instrument .memo{font-size:21px;line-height:1.42}
+.f-tiempos .memo,.f-tiempos .pair{font-family:"Tiempos Text","Tiempos Headline",Georgia,serif}
+.f-freight .memo,.f-freight .pair{font-family:"Freight Text Pro","FreightText Pro",Georgia,serif}
+.f-lyon .memo,.f-lyon .pair{font-family:"Lyon Text","LyonText",Georgia,serif}
+.sect{font-family:var(--grot);font-size:11px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-2);margin:40px 0 -10px;border-top:1px solid #D8D8D3;padding-top:12px}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="head"><b>Post Run Drip</b><span>Summary serif &middot; Fig. 12</span></div>
+  <h1>Nine ways to read the memo.</h1>
+  <p class="sub">The same paragraph at the real setting — 19px, 1.5 line-height, 393px measure — against Neue Haas Grotesk bold for the pairing. Top row is what ships today; the dashed cards are licensed faces that need files.</p>
+
+  <div class="sect">Free &middot; real webfonts</div>
+  <div class="grid">
+    <div class="card f-news">
+      <div class="chd"><b>Newsreader</b><span class="free">Google</span></div>
+      <p class="memo">I&rsquo;m still feeling a bit sick, but managed an easy run. My left ankle felt a little stiff, but my knee, which had been a concern, felt good today.</p>
+      <p class="pair"><b>Recovery.</b><em>Editorial, screen-tuned, best italics of the set.</em></p>
+      <p class="note">My pick. Optical sizing means it holds shape from 11px captions to a 40px headline, and the italic is strong enough to carry a whole dek.</p>
+    </div>
+    <div class="card f-source">
+      <div class="chd"><b>Source Serif 4</b><span class="free">Google</span></div>
+      <p class="memo">I&rsquo;m still feeling a bit sick, but managed an easy run. My left ankle felt a little stiff, but my knee, which had been a concern, felt good today.</p>
+      <p class="pair"><b>Recovery.</b><em>Humanist, sturdy, quietly neutral.</em></p>
+      <p class="note">The safest choice next to a grotesk — no voice of its own, never gets in the way. Slightly wide, so long memos run longer.</p>
+    </div>
+    <div class="card f-garamond">
+      <div class="chd"><b>EB Garamond</b><span class="free">Google</span></div>
+      <p class="memo">I&rsquo;m still feeling a bit sick, but managed an easy run. My left ankle felt a little stiff, but my knee, which had been a concern, felt good today.</p>
+      <p class="pair"><b>Recovery.</b><em>Same lineage as Sabon.</em></p>
+      <p class="note">Closest to what you have now, since both descend from Garamond. Delicate at 19px on a bright screen — needs a size bump or darker ink.</p>
+    </div>
+    <div class="card f-literata">
+      <div class="chd"><b>Literata</b><span class="free">Google</span></div>
+      <p class="memo">I&rsquo;m still feeling a bit sick, but managed an easy run. My left ankle felt a little stiff, but my knee, which had been a concern, felt good today.</p>
+      <p class="pair"><b>Recovery.</b><em>Warm, chunky, built for long reads.</em></p>
+      <p class="note">Made for e-readers, so it is the most forgiving at small sizes. Reads friendly rather than editorial — good if the memo should feel like a diary.</p>
+    </div>
+    <div class="card f-spectral">
+      <div class="chd"><b>Spectral</b><span class="free">Google</span></div>
+      <p class="memo">I&rsquo;m still feeling a bit sick, but managed an easy run. My left ankle felt a little stiff, but my knee, which had been a concern, felt good today.</p>
+      <p class="pair"><b>Recovery.</b><em>Low contrast, slightly technical.</em></p>
+      <p class="note">Holds up at 13px better than anything else here, which matters if memo text ever appears in the feed. Cooler, more engineered tone.</p>
+    </div>
+    <div class="card f-sabon">
+      <div class="chd"><b>Sabon</b><span>Current</span></div>
+      <p class="memo">I&rsquo;m still feeling a bit sick, but managed an easy run. My left ankle felt a little stiff, but my knee, which had been a concern, felt good today.</p>
+      <p class="pair"><b>Recovery.</b><em>Print classic, fragile on screen.</em></p>
+      <p class="note">What the sheet uses now, rendering from a local copy or falling back to Georgia. Lovely in print; thin strokes go patchy at body size.</p>
+    </div>
+  </div>
+
+
+  <div class="sect">Different directions</div>
+  <div class="grid">
+    <div class="card f-crimson">
+      <div class="chd"><b>Crimson Pro</b><span class="free">Google</span></div>
+      <p class="memo">I&rsquo;m still feeling a bit sick, but managed an easy run. My left ankle felt a little stiff, but my knee, which had been a concern, felt good today.</p>
+      <p class="pair"><b>Recovery.</b><em>Already in your iOS build.</em></p>
+      <p class="note">The face your buttons use today, so choosing it makes the system consistent for free. Old-style, bookish, narrower than the rest — more words per line.</p>
+    </div>
+    <div class="card f-plex">
+      <div class="chd"><b>IBM Plex Serif</b><span class="free">Google</span></div>
+      <p class="memo">I&rsquo;m still feeling a bit sick, but managed an easy run. My left ankle felt a little stiff, but my knee, which had been a concern, felt good today.</p>
+      <p class="pair"><b>Recovery.</b><em>Serif sibling of your mono.</em></p>
+      <p class="note">Shares skeleton with Plex Mono, so numerals and prose feel related — a real argument if you ever swap JetBrains for Plex Mono. Reads instrumental, not literary.</p>
+    </div>
+    <div class="card f-instrument">
+      <div class="chd"><b>Instrument Serif</b><span class="free">Google</span></div>
+      <p class="memo">I&rsquo;m still feeling a bit sick, but managed an easy run. My left ankle felt a little stiff, but my knee, which had been a concern, felt good today.</p>
+      <p class="pair"><b>Recovery.</b><em>High contrast, display energy.</em></p>
+      <p class="note">The boldest swing here — tight, sharp, fashion-editorial. One weight only, so it wants to stay at memo size and headlines, nothing small.</p>
+    </div>
+    <div class="card f-petrona">
+      <div class="chd"><b>Petrona</b><span class="free">Google</span></div>
+      <p class="memo">I&rsquo;m still feeling a bit sick, but managed an easy run. My left ankle felt a little stiff, but my knee, which had been a concern, felt good today.</p>
+      <p class="pair"><b>Recovery.</b><em>Odd, warm, a bit handmade.</em></p>
+      <p class="note">Slightly irregular shapes give the memo a spoken quality — closest to sounding like a voice note on the page. Variable weight, so captions stay in family.</p>
+    </div>
+    <div class="card f-zilla">
+      <div class="chd"><b>Zilla Slab</b><span class="free">Google</span></div>
+      <p class="memo">I&rsquo;m still feeling a bit sick, but managed an easy run. My left ankle felt a little stiff, but my knee, which had been a concern, felt good today.</p>
+      <p class="pair"><b>Recovery.</b><em>Slab, blunt, sporty.</em></p>
+      <p class="note">Leaves the literary register entirely — reads like race numbers and split sheets. Pairs oddly well with a grotesk because both are geometric.</p>
+    </div>
+    <div class="card f-mono">
+      <div class="chd"><b>JetBrains Mono italic</b><span class="free">In system</span></div>
+      <p class="memo">I&rsquo;m still feeling a bit sick, but managed an easy run. My left ankle felt a little stiff, but my knee, which had been a concern, felt good today.</p>
+      <p class="pair"><b>Recovery.</b><em>No serif at all — transcript voice.</em></p>
+      <p class="note">The contrarian option, and it is already in the system: set the memo as machine transcript rather than prose. Honest about what it is, and needs 15px to breathe.</p>
+    </div>
+  </div>
+
+  <div class="sect">Licensed &middot; needs font files</div>
+  <div class="grid">
+    <div class="card lic f-tiempos">
+      <div class="chd"><b>Tiempos Text</b><span>Klim</span></div>
+      <p class="memo">I&rsquo;m still feeling a bit sick, but managed an easy run. My left ankle felt a little stiff, but my knee, which had been a concern, felt good today.</p>
+      <p class="pair"><b>Recovery.</b><em>The editorial-app default.</em></p>
+      <p class="note">If the budget exists, this is the answer — drawn for screen news text, pairs with Haas without argument. Shown in fallback until files land.</p>
+    </div>
+    <div class="card lic f-freight">
+      <div class="chd"><b>Freight Text Pro</b><span>Darden</span></div>
+      <p class="memo">I&rsquo;m still feeling a bit sick, but managed an easy run. My left ankle felt a little stiff, but my knee, which had been a concern, felt good today.</p>
+      <p class="pair"><b>Recovery.</b><em>Warmer, more voice.</em></p>
+      <p class="note">More personality than Tiempos — the memo starts sounding like a person. Huge family, so captions and pull quotes stay in family.</p>
+    </div>
+    <div class="card lic f-lyon">
+      <div class="chd"><b>Lyon Text</b><span>Commercial</span></div>
+      <p class="memo">I&rsquo;m still feeling a bit sick, but managed an easy run. My left ankle felt a little stiff, but my knee, which had been a concern, felt good today.</p>
+      <p class="pair"><b>Recovery.</b><em>Literary, high contrast.</em></p>
+      <p class="note">The most magazine of the three. Beautiful at 19px, but its contrast wants a slightly heavier ink than #6B6B6B for secondary text.</p>
+    </div>
+  </div>
+</div>
+</body>
+</html>

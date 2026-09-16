@@ -3,6 +3,11 @@ import CoreLocation
 import Foundation
 import HealthKit
 import os
+// PostgREST + Supabase are required by `fetchStravaRunningWorkouts` below.
+// This target builds with SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY, so
+// calling members of a type means importing the module that declares them.
+import PostgREST
+import Supabase
 import SwiftUI
 
 // MARK: - HealthKitManager
@@ -14,6 +19,26 @@ class HealthKitManager: ObservableObject {
 
     @Published var isAuthorized = false
     @Published var recentWorkouts: [RunningWorkout] = []
+
+    /// How much we can actually SEE — honestly. HealthKit hides read-denial
+    /// by design: `requestAuthorization` returns success on "Don't Allow"
+    /// too, and queries for read-denied types return EMPTY results with NO
+    /// error. So the app can never know "denied" for certain. What it CAN
+    /// know is (a) whether the permission sheet has ever been handled
+    /// (`statusForAuthorizationRequest` — reliable) and (b) whether any
+    /// probe data is visible afterwards. UI copy must stay honest to that:
+    /// "no data visible" + how to fix — never a false "CONNECTED ✓".
+    /// (Beta-audit item #7: denying Health used to show CONNECTED and an
+    /// empty app forever, with no explanation.)
+    enum HealthReadState: Equatable {
+        case unknown        // not evaluated yet this launch
+        case unavailable    // device has no Health data (e.g. iPad)
+        case notDetermined  // permission sheet never handled
+        case visibleData    // probe found data — reads definitely work
+        case noVisibleData  // sheet handled but nothing visible: denied OR truly empty
+    }
+
+    @Published var readState: HealthReadState = .unknown
 
     /// Types we want to read from HealthKit
     private var typesToRead: Set<HKObjectType> {
@@ -30,57 +55,165 @@ class HealthKitManager: ObservableObject {
         if let energy = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) {
             types.insert(energy)
         }
+        // Steps: the denial probe. Virtually every iPhone records steps by
+        // itself, so a runner with zero workouts still probes `visibleData`
+        // after granting — which is what lets us tell "granted but no runs
+        // yet" apart from "denied everything" in the common case.
+        if let steps = HKQuantityType.quantityType(forIdentifier: .stepCount) {
+            types.insert(steps)
+        }
+        // Overnight recovery trio, read by `HealthBiometricsSync` and pushed to
+        // `daily_biometrics` (source 'healthkit'). Watch-only in practice — a
+        // phone-only athlete grants these and simply has no samples, which the
+        // sync reports honestly rather than fabricating.
+        //
+        // NOTE: `.heartRateVariabilitySDNN` is Apple's ONLY HRV type, and SDNN
+        // is not the RMSSD that Garmin-via-Junction reports. They must never be
+        // pooled — see the header of `ingest-biometrics/index.ts`.
+        if let hrv = HKQuantityType.quantityType(forIdentifier: .heartRateVariabilitySDNN) {
+            types.insert(hrv)
+        }
+        if let restingHR = HKQuantityType.quantityType(forIdentifier: .restingHeartRate) {
+            types.insert(restingHR)
+        }
+        if let sleep = HKCategoryType.categoryType(forIdentifier: .sleepAnalysis) {
+            types.insert(sleep)
+        }
         return types
     }
 
-    /// Check if we have authorization to read workouts
-    /// HealthKit doesn't expose read authorization status directly, so we try a test query
+    /// Re-evaluate what we can see. Sets `readState` (the honest probe) and
+    /// `isAuthorized` (= the permission sheet has been handled and queries
+    /// are safe to run — NOT a guarantee that data is visible).
     func checkAuthorizationStatus() async {
         guard HKHealthStore.isHealthDataAvailable() else {
-            await MainActor.run { isAuthorized = false }
+            await MainActor.run {
+                isAuthorized = false
+                readState = .unavailable
+            }
             return
         }
 
-        // Try to fetch one workout to check if we have access
-        let workoutType = HKObjectType.workoutType()
-        let predicate = HKQuery.predicateForWorkouts(with: .running)
-
-        let hasAccess = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
-            let query = HKSampleQuery(
-                sampleType: workoutType,
-                predicate: predicate,
-                limit: 1,
-                sortDescriptors: nil
-            ) { _, _, error in
-                // If we get samples back (even empty), we have access
-                // If we get an authorization error, we don't
-                if error != nil {
-                    continuation.resume(returning: false)
-                } else {
-                    continuation.resume(returning: true)
-                }
+        // "Never asked" vs "asked" — this API is reliable, unlike read
+        // authorization status (which HealthKit deliberately hides).
+        // NOTE: it reports .shouldRequest whenever ANY type in the set was
+        // never requested — including for EXISTING users after we add a new
+        // type (like stepCount). So probe first: if data is already visible,
+        // the user granted the core types long ago and must stay authorized;
+        // only an empty probe + .shouldRequest means a genuinely fresh user.
+        let visible = await probeAnyVisibleData()
+        if visible {
+            await MainActor.run {
+                isAuthorized = true
+                readState = .visibleData
             }
-            healthStore.execute(query)
+            return
+        }
+
+        let requestStatus = (try? await healthStore.statusForAuthorizationRequest(
+            toShare: [], read: typesToRead
+        )) ?? .unknown
+
+        if requestStatus == .shouldRequest {
+            await MainActor.run {
+                isAuthorized = false
+                readState = .notDetermined
+            }
+            return
         }
 
         await MainActor.run {
-            isAuthorized = hasAccess
+            isAuthorized = true
+            readState = .noVisibleData
+        }
+    }
+
+    /// True if ANY probe data is visible: any workout (any activity type),
+    /// otherwise any step sample in the last 30 days.
+    private func probeAnyVisibleData() async -> Bool {
+        if await sampleExists(HKObjectType.workoutType(), predicate: nil) {
+            return true
+        }
+        if let steps = HKQuantityType.quantityType(forIdentifier: .stepCount) {
+            let from = Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? Date()
+            let predicate = HKQuery.predicateForSamples(withStart: from, end: nil)
+            return await sampleExists(steps, predicate: predicate)
+        }
+        return false
+    }
+
+    private func sampleExists(_ type: HKSampleType, predicate: NSPredicate?) async -> Bool {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+            let query = HKSampleQuery(
+                sampleType: type,
+                predicate: predicate,
+                limit: 1,
+                sortDescriptors: nil
+            ) { _, samples, _ in
+                continuation.resume(returning: (samples?.isEmpty == false))
+            }
+            healthStore.execute(query)
+        }
+    }
+
+    /// Bump whenever `typesToRead` GAINS a type.
+    /// v2 (2026-08-06): added sleepAnalysis + restingHeartRate + HRV SDNN.
+    private static let readTypesVersion = 2
+    private static let readTypesVersionKey = "healthKitReadTypesVersion"
+
+    /// Re-present the permission sheet once after `typesToRead` grows.
+    ///
+    /// Necessary because `checkAuthorizationStatus()` probes for visible data
+    /// FIRST and returns `.visibleData` early — deliberately, so that adding a
+    /// type doesn't demote an existing user to "not authorized". The side
+    /// effect is that an existing user is never re-asked, so a newly added
+    /// type stays permanently unrequested and its queries return empty with no
+    /// error. That is indistinguishable from "this athlete has no watch", and
+    /// it is exactly how a recovery feature ships to zero users and looks fine.
+    ///
+    /// HealthKit only lists types the user hasn't handled yet, so an existing
+    /// athlete sees a short sheet (Sleep, Resting HR, HRV) and someone who has
+    /// already handled them sees nothing at all.
+    ///
+    /// Deliberately does nothing when the FIRST sheet was never handled —
+    /// onboarding owns that moment and shouldn't be pre-empted on launch.
+    func ensureAuthorizationCoversCurrentTypes() async {
+        guard HKHealthStore.isHealthDataAvailable() else { return }
+        let defaults = UserDefaults.standard
+        guard defaults.integer(forKey: Self.readTypesVersionKey) < Self.readTypesVersion else { return }
+        if readState == .unknown { await checkAuthorizationStatus() }
+        guard readState != .notDetermined, readState != .unavailable else { return }
+
+        do {
+            try await healthStore.requestAuthorization(toShare: [], read: typesToRead)
+            defaults.set(Self.readTypesVersion, forKey: Self.readTypesVersionKey)
+            await checkAuthorizationStatus()
+        } catch {
+            // Leave the version unset so the next launch retries.
+            Log.health.error("HealthKit re-authorization failed: \(error.localizedDescription)")
         }
     }
 
     func requestAuthorization() async -> Bool {
         guard HKHealthStore.isHealthDataAvailable() else {
             Log.health.warning("HealthKit not available on this device")
-            await MainActor.run { ErrorReporter.shared.report(.healthKit("HealthKit is not available on this device.")) }
+            await MainActor.run {
+                readState = .unavailable
+                ErrorReporter.shared.report(.healthKit("HealthKit is not available on this device."))
+            }
             return false
         }
 
         do {
             try await healthStore.requestAuthorization(toShare: [], read: typesToRead)
-            await MainActor.run {
-                self.isAuthorized = true
-            }
-            return true
+            // The sheet has now covered the current type set — record it so
+            // `ensureAuthorizationCoversCurrentTypes` doesn't ask again.
+            UserDefaults.standard.set(Self.readTypesVersion, forKey: Self.readTypesVersionKey)
+            // A non-throwing return does NOT mean granted — HealthKit
+            // reports success on "Don't Allow" too. Probe what's actually
+            // visible instead of assuming.
+            await checkAuthorizationStatus()
+            return await MainActor.run { isAuthorized }
         } catch {
             Log.health.error("HealthKit authorization failed: \(error)")
             await MainActor.run { ErrorReporter.shared.report(.healthKit("HealthKit access was denied. Enable it in Settings > Privacy > Health.")) }
@@ -476,7 +609,7 @@ class HealthKitManager: ObservableObject {
                     if let error {
                         Log.health.error("Route location query error: \(error.localizedDescription)")
                         if done {
-                            continuation.resume(returning: locations)
+                            continuation.resume(returning: RouteSanitizer.clean(locations))
                         }
                         return
                     }
@@ -486,8 +619,9 @@ class HealthKitManager: ObservableObject {
                     }
 
                     if done {
-                        Log.health.info("Fetched \(locations.count) GPS points from workout route")
-                        continuation.resume(returning: locations)
+                        let cleaned = RouteSanitizer.clean(locations)
+                        Log.health.info("Fetched \(locations.count) GPS points from workout route (\(cleaned.count) after cleaning)")
+                        continuation.resume(returning: cleaned)
                     }
                 }
 
@@ -712,6 +846,171 @@ class HealthKitManager: ObservableObject {
         // If we get here, return the last time
         return points.last?.time ?? 0
     }
+
+    // MARK: - Recent runs (merged across every source)
+
+    /// The athlete's recent runs, merged and deduped across EVERY source:
+    /// HealthKit, Vital, and Strava-imported `training_logs`.
+    ///
+    /// **Athlete-facing surfaces should read this, not `recentWorkouts`.**
+    /// `recentWorkouts` is the raw HealthKit list and is a strict SUBSET — a
+    /// Strava-only run (Strava → Apple Health sync off or lagging) never
+    /// appears in it.
+    ///
+    /// That subset was a real bug, found 2026-08-24: the Log tab's linked-run
+    /// block read `recentWorkouts` while the link picker built this merged
+    /// list and kept it private, so the two surfaces disagreed about which run
+    /// was "latest" — and showed different durations for the SAME run (53:51
+    /// from HealthKit's copy, 53:50 from Strava's). The merge lives here now,
+    /// in one place, and both surfaces read the result.
+    ///
+    /// Reach for `recentWorkouts` only when you need HealthKit-native samples
+    /// (route data, heart-rate series) that no other source carries.
+    @Published var recentRuns: [RunningWorkout] = []
+
+    /// True while `refreshRecentRuns` is in flight — for pickers that show a
+    /// syncing row.
+    @Published var isRefreshingRecentRuns = false
+
+    /// When `recentRuns` was last published, so callers can skip a refetch.
+    @Published private(set) var recentRunsUpdatedAt: Date?
+
+    /// Fetch all three sources in parallel, merge, dedup, publish.
+    ///
+    /// Garmin often syncs to more than one service, so a run counts as a
+    /// duplicate when it starts within 5 minutes AND lasts within 2 minutes of
+    /// one already kept.
+    ///
+    /// **Source order is load-bearing — do not reorder.** Whichever source
+    /// lands first wins the row, and Vital and Strava carry `vital_workout_id`
+    /// where HealthKit does not. That ID is what `VoiceLogViewModel`'s
+    /// attach-to-existing-row branch keys on; lose it and every memo silently
+    /// becomes a NEW duplicate `training_logs` row instead of attaching to the
+    /// run it describes. Vital, then Strava, then HealthKit.
+    @discardableResult
+    func refreshRecentRuns(limit: Int = 30) async -> [RunningWorkout] {
+        await MainActor.run { self.isRefreshingRecentRuns = true }
+
+        // Ask HealthKit only when it can actually answer. `fetchRecent-
+        // RunningWorkouts` reports an ErrorReporter banner when it is not
+        // authorized, and this method now runs on every foreground and every
+        // Log-tab appear — so for a Strava-only athlete who never granted
+        // Health, the unguarded call would put a red banner on screen several
+        // times a session while the merge below was working perfectly.
+        await checkAuthorizationStatus()
+        let healthKitCanAnswer = await MainActor.run { self.isAuthorized }
+
+        async let hkTask = healthKitCanAnswer
+            ? fetchRecentRunningWorkouts(limit: 20)
+            : HealthKitManager.noRuns()
+        async let vitalTask = VitalManager.shared.fetchRecentRunningWorkouts(limit: limit)
+        async let stravaTask = HealthKitManager.fetchStravaRunningWorkouts(limit: limit)
+
+        let hk = await hkTask
+        let vital = await vitalTask
+        let strava = await stravaTask
+
+        var merged: [RunningWorkout] = []
+        let appendIfUnique: (RunningWorkout) -> Void = { w in
+            let isDuplicate = merged.contains { existing in
+                abs(existing.startDate.timeIntervalSince(w.startDate)) < 300
+                    && abs(existing.durationMinutes - w.durationMinutes) < 2.0
+            }
+            if !isDuplicate { merged.append(w) }
+        }
+        for w in vital { appendIfUnique(w) }
+        for w in strava { appendIfUnique(w) }
+        for w in hk { appendIfUnique(w) }
+
+        merged.sort { $0.startDate > $1.startDate }
+
+        await MainActor.run {
+            // Both are published, and `recentWorkouts` stays HealthKit-only on
+            // purpose: `WorkoutSyncService.syncUnloggedWorkouts` writes its
+            // input into `training_logs`, so handing it merged rows would
+            // re-insert runs that are already there.
+            self.recentWorkouts = hk
+            self.recentRuns = merged
+            self.recentRunsUpdatedAt = Date()
+            self.isRefreshingRecentRuns = false
+        }
+        return merged
+    }
+
+    /// The empty-list branch for the `async let` above — `async let` needs an
+    /// awaitable expression on both sides of the ternary.
+    private static func noRuns() async -> [RunningWorkout] { [] }
+
+    /// Refresh only when the list is missing or older than `maxAge`.
+    ///
+    /// This is the `onAppear` entry point: cheap on a tab switch, but still
+    /// correct when a run lands mid-session.
+    @discardableResult
+    func refreshRecentRunsIfStale(maxAge: TimeInterval = 60,
+                                  limit: Int = 30) async -> [RunningWorkout] {
+        let last = await MainActor.run { self.recentRunsUpdatedAt }
+        let cached = await MainActor.run { self.recentRuns }
+        if let last, !cached.isEmpty, Date().timeIntervalSince(last) < maxAge {
+            return cached
+        }
+        return await refreshRecentRuns(limit: limit)
+    }
+
+    /// Fetch Strava-sourced `training_logs` and map them to `RunningWorkout`.
+    ///
+    /// Moved here from `WorkoutPickerSheet` (2026-08-24) so the merge above
+    /// owns every source. The source list below is the single rule every
+    /// surface obeys — see the comment on `.in("source", …)`.
+    static func fetchStravaRunningWorkouts(limit: Int) async -> [RunningWorkout] {
+        struct Row: Decodable {
+            let id: String
+            let workout_date: Date?
+            let workout_distance_miles: Double?
+            let workout_duration_minutes: Double?
+            let vital_workout_id: String?
+            let cleaned_notes: String?
+            let source: String?
+        }
+        do {
+            let userId = AuthManager.shared.userId
+            let rows: [Row] = try await supabase
+                .from("training_logs")
+                .select("id, workout_date, workout_distance_miles, workout_duration_minutes, vital_workout_id, cleaned_notes, source")
+                .eq("user_id", value: userId)
+                // MUST include "strava". This list is the ONLY way a synced run
+                // reaches the link picker, and the picker is the ONLY way
+                // VoiceLogViewModel learns a run's vital_workout_id — which is
+                // what its attach-to-existing-row branch keys on. Omitting a
+                // source here silently downgrades every memo for that source
+                // into a NEW duplicate training_logs row.
+                .in("source", values: ["garmin", "vital", "strava", "auto_sync", "strava_backfill"])
+                .order("workout_date", ascending: false, nullsFirst: false)
+                .limit(limit)
+                .execute()
+                .value
+
+            return rows.compactMap { r -> RunningWorkout? in
+                guard let start = r.workout_date,
+                      let dist = r.workout_distance_miles, dist > 0,
+                      let dur = r.workout_duration_minutes, dur > 0,
+                      let uuid = UUID(uuidString: r.id) else { return nil }
+                return RunningWorkout(
+                    id: uuid,
+                    startDate: start,
+                    endDate: start.addingTimeInterval(dur * 60),
+                    distanceMiles: dist,
+                    durationMinutes: dur,
+                    pacePerMile: dur / dist,
+                    calories: 0,
+                    sourceApp: (r.source ?? "").lowercased() == "strava" ? "Strava" : "Garmin",
+                    vitalWorkoutId: r.vital_workout_id
+                )
+            }
+        } catch {
+            Log.app.error("Strava workout fetch failed: \(error)")
+            return []
+        }
+    }
 }
 
 // MARK: - MileSplit
@@ -929,5 +1228,21 @@ extension HealthKitManager: WorkoutDataSource {
 
     func fetchRunningMilesByDate(startDate: Date, endDate: Date) async -> [String: Double] {
         await fetchRunningMilesByDate(from: startDate, to: endDate)
+    }
+}
+
+// MARK: - Display formatting (moved from WorkoutDetailSheet.swift, 2026-07-03)
+
+extension RunningWorkout {
+    var dayOfWeek: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEE"
+        return formatter.string(from: startDate)
+    }
+
+    var shortDate: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d, h:mm a"
+        return formatter.string(from: startDate)
     }
 }

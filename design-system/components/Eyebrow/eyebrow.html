@@ -1,0 +1,27 @@
+<!doctype html>
+<!-- @dsCard group="Components" name="Eyebrow" subtitle="Tracked mono section label — default and coral" viewport="700x220" -->
+<html lang="en"><head><meta charset="utf-8"><title>Eyebrow</title>
+<link rel="stylesheet" href="../../styles.css">
+<style>
+*{box-sizing:border-box}html,body{margin:0;padding:0;background:var(--paper);color:var(--ink);font-family:var(--font-body);-webkit-font-smoothing:antialiased}
+.card{padding:28px 32px}
+.lbl{font-family:var(--font-mono);font-size:9px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.note{font-family:var(--font-body);font-style:italic;font-size:11px;color:var(--ink-3);line-height:1.45;margin:0}
+.stack{display:flex;flex-direction:column;gap:22px}.pair{display:flex;flex-direction:column;gap:8px}
+</style></head>
+<body><div class="card"><div id="root"></div></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<script>
+var NS = window.PostRunDripDesignSystem_019e23;
+var h = React.createElement;
+var view = h("div", { className: "stack" },
+  h("div", { className: "pair" }, h("span", { className: "lbl" }, "Default · ink-2"), h(NS.Eyebrow, null, "From your coach"),
+    h("p", { className: "note" }, "Every uppercase label in the app is this component. Mono, tracked +0.12em.")),
+  h("div", { className: "pair" }, h("span", { className: "lbl" }, "Coral · the active section"), h(NS.Eyebrow, { coral: true }, "Tuesday · LT Session"),
+    h("p", { className: "note" }, "One per screen. If two would compete, drop one back to ink-2."))
+);
+ReactDOM.createRoot(document.getElementById("root")).render(view);
+</script>
+</body></html>

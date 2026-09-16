@@ -1,0 +1,95 @@
+<!doctype html>
+<!-- @dsCard group="Screens" name="Fitness Predictor iOS" subtitle="Main + 3 variations on canvas" -->
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Post Run Drip · iOS · Fitness Predictor</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="ui_kits/ios_app/tokens.css">
+  <style>
+    html, body { margin: 0; padding: 0; min-height: 100vh; background: #f0eee9; }
+    #root { width: 100%; min-height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <!-- kit -->
+  <script type="text/babel" src="ui_kits/ios_app/ios-frame.jsx"></script>
+  <script type="text/babel" src="ui_kits/ios_app/Primitives.jsx"></script>
+  <script type="text/babel" src="ui_kits/ios_app/design-canvas.jsx"></script>
+
+  <!-- predictor -->
+  <script type="text/babel" src="fitness-predictor-ios.jsx"></script>
+  <script type="text/babel" src="fitness-predictor-ios-fixtures.jsx"></script>
+  <script type="text/babel" src="fitness-predictor-ios-screen.jsx"></script>
+
+  <script type="text/babel" data-presets="env,react">
+    const { useState } = React;
+
+    /* One iOS frame holding the screen + a faked active "Trends" tab bar.
+       The TabBar's active tab signals "this lives behind Trends" — the
+       same place Today's race-prediction strip routes to. */
+    function PredictorFrame({ data }) {
+      return (
+        <IOSDevice width={390} height={844}>
+          <div style={{
+            paddingTop: 62, paddingBottom: 34,
+            height: "100%", boxSizing: "border-box",
+            display: "flex", flexDirection: "column",
+            background: "var(--paper)",
+          }}>
+            <div style={{ flex: 1, overflow: "hidden" }}>
+              <FitnessPredictorScreen data={data} />
+            </div>
+            <TabBar active="trends" onChange={() => {}} />
+          </div>
+        </IOSDevice>
+      );
+    }
+
+    function Canvas() {
+      const F = window.FP_FIXTURES;
+      return (
+        <DesignCanvas
+          title="Fitness Predictor · iOS"
+          subtitle="A coach that admits what it can and can't see. Tap any prediction card to open evidence."
+        >
+          <DCSection
+            id="main"
+            title="Main"
+            subtitle="Scenario 5 · depth 3 · Sarah · sub-3:15 build · 10K race anchor · MP work · happy path"
+          >
+            <DCArtboard id="main-default" label="A · Default · marathon expanded" width={414} height={874}>
+              <PredictorFrame data={F.main} />
+            </DCArtboard>
+          </DCSection>
+
+          <DCSection
+            id="variations"
+            title="Variations"
+            subtitle="Same screen, different data state — proves the design covers the spread"
+          >
+            <DCArtboard id="var-empty" label="B · Depth 0 · empty" width={414} height={874}>
+              <PredictorFrame data={F.empty} />
+            </DCArtboard>
+            <DCArtboard id="var-injured" label="C · Returning from injury" width={414} height={874}>
+              <PredictorFrame data={F.injured} />
+            </DCArtboard>
+            <DCArtboard id="var-goal" label="D · Goal faster than fitness" width={414} height={874}>
+              <PredictorFrame data={F.goalGap} />
+            </DCArtboard>
+          </DCSection>
+        </DesignCanvas>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<Canvas />);
+  </script>
+</body>
+</html>

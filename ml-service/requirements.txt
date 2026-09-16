@@ -1,12 +1,15 @@
-fastapi==0.115.0
+fastapi==0.116.1
 uvicorn[standard]==0.30.6
 supabase==2.10.0
-python-dotenv==1.0.1
+python-dotenv==1.2.2
 scikit-learn==1.5.2
 numpy==2.0.2
 pandas==2.2.3
 xgboost==2.1.1
 joblib==1.4.2
-PyJWT==2.9.0
+PyJWT==2.13.0
 sentry-sdk[fastapi]==2.16.0
 slowapi==0.1.9
+# starlette is fastapi's dep; pinned explicitly so the 2026 advisories
+# (PYSEC-2026-1941/1943) can't resolve back below the fixed release.
+starlette>=0.47.2,<0.48

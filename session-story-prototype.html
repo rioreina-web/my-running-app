@@ -1,0 +1,466 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session Story — one screen per key session</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;600;700&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF; --paper-deep:#E8E4DF; --rule:#E8E4E0;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-deep:#B84420; --coral-wash:rgba(212,89,42,.12);
+  --pace:#27549B; --pace-soft:#3F7CB5; --ghost:#C9C2B9;
+  --mood-energized:#2D8A4E; --mood-positive:#4A9E6B; --mood-neutral:#9B9590;
+  --mood-tired:#C4873A; --mood-struggling:#C45A3A; --mood-injured:#B83A4A;
+  --font-display:"Crimson Pro",Georgia,serif; --font-body:"PT Serif",Georgia,serif;
+  --font-mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --shadow-card:0 2px 8px rgba(0,0,0,.06);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#E4E0DA;color:var(--ink);font-family:var(--font-body);-webkit-font-smoothing:antialiased;padding:36px 20px 90px}
+.masthead{max-width:1200px;margin:0 auto 30px;text-align:center}
+.masthead .eyebrow{font-family:var(--font-mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--coral)}
+.masthead h1{font-family:var(--font-display);font-weight:700;font-size:38px;line-height:1.05;letter-spacing:-.01em;margin-top:8px}
+.masthead p{font-size:14px;color:#5c574f;max-width:660px;margin:12px auto 0;line-height:1.6}
+.stage{display:flex;justify-content:center;gap:40px;flex-wrap:wrap;align-items:flex-start;max-width:1200px;margin:0 auto}
+
+.phone{width:392px;height:846px;background:var(--paper);border-radius:44px;border:11px solid #14110E;box-shadow:0 24px 60px rgba(0,0,0,.28);overflow:hidden;position:relative;flex:none}
+.notch{position:absolute;top:0;left:50%;transform:translateX(-50%);width:150px;height:30px;background:#14110E;border-radius:0 0 18px 18px;z-index:40}
+.statusbar{position:relative;z-index:30;display:flex;justify-content:space-between;align-items:center;padding:14px 26px 6px;font-family:var(--font-mono);font-size:11.5px;font-weight:600}
+.screen{height:calc(846px - 46px - 64px);overflow-y:auto;padding:6px 18px 30px;scrollbar-width:none}
+.screen::-webkit-scrollbar{width:0}
+.tabbar{position:absolute;bottom:0;left:0;right:0;height:64px;background:var(--paper);border-top:1px solid var(--rule);display:flex;z-index:30}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px}
+.tab .tdot{width:5px;height:5px;border-radius:999px;background:transparent}
+.tab.active .tdot{background:var(--coral)}
+.tab span{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.tab.active span{color:var(--coral)}
+
+.eyebrow{font-family:var(--font-mono);font-size:10.5px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2)}
+.eyebrow.coral{color:var(--coral)}
+.display{font-family:var(--font-display);font-weight:700;font-size:27px;line-height:1.05;letter-spacing:-.01em;margin-top:6px}
+.subhead{font-size:12.5px;color:var(--ink-2);margin-top:6px;line-height:1.45}
+.sect{font-family:var(--font-mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2);margin-top:22px}
+.sect .est{font-family:var(--font-mono);font-size:7.5px;letter-spacing:.08em;color:var(--ink-3);border:1px solid var(--rule);border-radius:3px;padding:1px 3px;vertical-align:2px;margin-left:4px}
+.hr{display:flex;align-items:center;gap:8px;margin:20px 0 4px}
+.hr::before,.hr::after{content:"";flex:1;height:1px;background:var(--rule)}
+.hr i{width:3px;height:3px;border-radius:999px;background:var(--rule)}
+.foot{text-align:center;font-family:var(--font-mono);font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-top:8px;line-height:1.8}
+
+/* session strip */
+.strip{display:flex;gap:6px;overflow-x:auto;margin:14px -18px 0;padding:2px 18px 6px;scrollbar-width:none}
+.strip::-webkit-scrollbar{height:0}
+.sesscard{flex:none;width:86px;background:var(--card);border:1px solid var(--rule);border-radius:10px;padding:8px 8px 7px;cursor:pointer}
+.sesscard.sel{border-color:var(--ink);background:var(--paper-elevated)}
+.sesscard .d{font-family:var(--font-mono);font-size:7.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.sesscard .l{font-family:var(--font-display);font-weight:700;font-size:12.5px;line-height:1.15;margin-top:3px;min-height:28px}
+.sesscard .g{font-family:var(--font-mono);font-size:7px;letter-spacing:.05em;text-transform:uppercase;margin-top:4px}
+.g.strong{color:#2D6A44}.g.good{color:var(--ink-2)}.g.watch{color:#8A6420}.g.alert{color:var(--coral-deep)}
+
+.hero{margin-top:16px}
+.hero .rowline{display:flex;justify-content:space-between;align-items:flex-end;gap:10px}
+.hero .big{font-family:var(--font-mono);font-weight:600;font-size:34px;font-variant-numeric:tabular-nums;line-height:1}
+.hero .big small{font-size:11px;color:var(--ink-3);font-weight:500;margin-left:2px}
+.hero .hn{font-family:var(--font-mono);font-size:10px;color:var(--ink-2);margin-top:6px;font-variant-numeric:tabular-nums}
+.hero .hn b{color:var(--pace);font-weight:600}
+.pills{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;align-items:center}
+.pill{font-family:var(--font-mono);font-size:8.5px;letter-spacing:.06em;text-transform:uppercase;border-radius:999px;padding:3px 8px;border:1px solid var(--rule);color:var(--ink-2);background:var(--paper-elevated)}
+.pill.strong{border-color:#bcd0c2;color:#2D6A44;background:#F0F6F1}
+.pill.watch{border-color:#e5d5bd;color:#8A6420;background:#FBF5EA}
+.pill.alert{border-color:#EBC5B6;color:var(--coral-deep);background:var(--coral-wash)}
+.pill.mood{border-color:transparent;color:#fff}
+.pill.niggle{border-color:#E3C3C9;color:var(--mood-injured);background:#F9EEF0}
+
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:14px}
+.tile{background:var(--card);border:1px solid var(--rule);border-radius:11px;padding:10px}
+.tile .l{font-family:var(--font-mono);font-size:8px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+.tile .v{font-family:var(--font-mono);font-weight:600;font-size:17px;margin-top:6px;font-variant-numeric:tabular-nums;line-height:1}
+.tile .v .u{font-size:9.5px;color:var(--ink-3);margin-left:2px}
+.tile .s{font-size:9.5px;color:var(--ink-2);margin-top:5px;line-height:1.3}
+
+svg.chart{width:100%;display:block;overflow:visible;margin-top:10px}
+.cap{font-size:10.5px;color:var(--ink-2);margin-top:7px;line-height:1.45}
+.legend{display:flex;gap:14px;margin-top:10px;flex-wrap:wrap}
+.legend .it{display:flex;align-items:center;gap:5px;font-family:var(--font-mono);font-size:8.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2)}
+.legend .sw{width:10px;height:10px;border-radius:3px;background:var(--pace)}
+.legend .sw.ghost{background:transparent;border:1.5px dashed var(--ink-3);border-radius:2px}
+.legend .sw.hrline{background:transparent;border-top:2px solid var(--coral);height:0;border-radius:0;width:12px}
+
+.cmp{background:var(--card);border:1px solid var(--rule);border-radius:11px;padding:12px 13px;margin-top:10px}
+.cmp .hd{display:flex;justify-content:space-between;align-items:baseline}
+.cmp .hd .who{font-family:var(--font-display);font-weight:700;font-size:14px}
+.cmp .hd .when{font-family:var(--font-mono);font-size:8.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.cmpr{display:flex;justify-content:space-between;align-items:baseline;font-family:var(--font-mono);font-size:10.5px;padding:5px 0;border-bottom:1px dotted var(--rule)}
+.cmpr:last-child{border-bottom:none}
+.cmpr .lab{color:var(--ink-2);font-size:8.5px;letter-spacing:.06em;text-transform:uppercase}
+.cmpr .vals{display:flex;gap:10px;font-variant-numeric:tabular-nums}
+.cmpr .then{color:var(--ink-3)}
+.cmpr .delta{font-weight:600;min-width:52px;text-align:right}
+.delta.up{color:var(--coral-deep)} .delta.dn{color:#2D6A44} .delta.flat{color:var(--ink-3)}
+
+.memo{background:var(--paper-elevated);border:1px solid var(--rule);border-left:2px solid var(--mood-tired);border-radius:10px;padding:13px 14px;margin-top:10px}
+.memo .q{font-family:var(--font-body);font-style:italic;font-size:13px;line-height:1.6}
+.memo .src{font-family:var(--font-mono);font-size:8px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-top:9px}
+.memo.none{border-left-color:var(--rule)}
+.memo.none .q{color:var(--ink-3)}
+
+.read{background:var(--paper-elevated);border:1px solid var(--rule);border-left:2px solid var(--coral);border-radius:10px;padding:13px 14px;margin-top:10px}
+.read .body{font-size:12.5px;line-height:1.6;margin-top:7px}
+.read .q{font-style:italic;font-size:12px;color:var(--ink-2);margin-top:9px;line-height:1.5}
+.read b{font-weight:700}
+
+.aside{width:392px;flex:none;display:flex;flex-direction:column;gap:18px}
+.acard{background:#efeae3;border:1px solid #ddd6cd;border-radius:12px;padding:16px 18px;color:#4a463f}
+.acard h4{font-family:var(--font-mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#7a746c;margin-bottom:8px}
+.acard p{font-size:12.5px;line-height:1.6;margin-bottom:8px}
+.acard p:last-child{margin-bottom:0}
+.acard code{font-family:var(--font-mono);font-size:11px;background:#e3ddd4;padding:1px 4px;border-radius:3px}
+.acard ul{margin:0 0 8px 16px;font-size:12.5px;line-height:1.6}
+
+.drift{background:var(--card);border:1px solid var(--rule);border-radius:11px;padding:12px 13px;margin-top:10px}
+.drift .top{display:flex;align-items:baseline;gap:10px}
+.drift .num{font-family:var(--font-mono);font-weight:600;font-size:24px;font-variant-numeric:tabular-nums;line-height:1}
+.drift .num .u{font-size:11px;color:var(--ink-3)}
+.drift .zone{font-family:var(--font-mono);font-size:8.5px;letter-spacing:.06em;text-transform:uppercase;border-radius:999px;padding:3px 8px;border:1px solid var(--rule);color:var(--ink-2);background:var(--paper-elevated)}
+.drift .zone.strong{border-color:#bcd0c2;color:#2D6A44;background:#F0F6F1}
+.drift .zone.watch{border-color:#e5d5bd;color:#8A6420;background:#FBF5EA}
+.drift .zone.alert{border-color:#EBC5B6;color:var(--coral-deep);background:var(--coral-wash)}
+.drift .txt{font-size:11px;color:var(--ink-2);line-height:1.5;margin-top:8px}
+.tip{position:fixed;pointer-events:none;background:var(--ink);color:var(--paper);font-family:var(--font-mono);font-size:10px;padding:5px 8px;border-radius:6px;z-index:99;display:none;white-space:nowrap;font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+<div class="masthead">
+  <div class="eyebrow">Post Run Drip · prototype · 27 July 2026</div>
+  <h1>Session Story</h1>
+  <p>One screen per key session: the fast segments with heart rate, the ghost of the last comparable workout behind them, the conditions that shaped the day, and your own voice memo woven in. Real Strava data, real journal notes from Supabase.</p>
+</div>
+<div class="stage">
+  <div class="phone">
+    <div class="notch"></div>
+    <div class="statusbar"><span>9:41</span><span>SESSION&nbsp;STORY</span><span>&#9679;&#9679;&#9679;</span></div>
+    <div class="screen" id="screen">
+      <div style="margin-top:4px">
+        <div class="eyebrow coral">TRENDS · SESSION STORY</div>
+        <div class="display" id="title"></div>
+        <div class="subhead" id="subtitle"></div>
+      </div>
+      <div class="strip" id="strip"></div>
+      <div class="hero">
+        <div class="rowline">
+          <div>
+            <div class="eyebrow">KEY PACE</div>
+            <div class="big" id="heroPace"></div>
+            <div class="hn" id="heroHeat"></div>
+          </div>
+          <div style="text-align:right">
+            <div class="eyebrow">EFFORT HR</div>
+            <div class="big" id="heroHr" style="font-size:26px"></div>
+            <div class="hn" id="heroHrSub"></div>
+          </div>
+        </div>
+        <div class="pills" id="pills"></div>
+      </div>
+      <div class="sect" id="chartTitle"></div>
+      <svg id="paceChart" class="chart" viewBox="0 0 340 168" preserveAspectRatio="xMidYMid meet"></svg>
+      <div class="legend" id="legend"></div>
+      <div class="sect">HEART RATE · SAME SEGMENTS</div>
+      <svg id="hrChart" class="chart" viewBox="0 0 340 84" preserveAspectRatio="xMidYMid meet"></svg>
+      <div class="cap" id="hrCap"></div>
+      <div class="sect">DRIFT · THE COST OF HOLDING PACE</div>
+      <div class="drift" id="driftCard"></div>
+      <div class="sect" id="cmpTitle"></div>
+      <div class="cmp" id="cmpCard"></div>
+      <div class="sect">THE DAY ITSELF <span class="est">EST</span></div>
+      <div class="tiles" id="condTiles"></div>
+      <div class="sect">IN YOUR WORDS</div>
+      <div class="memo" id="memo"></div>
+      <div class="read">
+        <div class="eyebrow coral">THE READ</div>
+        <div class="body" id="readBody"></div>
+        <div class="q" id="readQ"></div>
+      </div>
+      <div class="hr"><i></i></div>
+      <div class="foot">Prototype · real Strava data · real journal notes<br>heat estimated · AI advises, never acts</div>
+    </div>
+    <div class="tabbar">
+      <div class="tab"><div class="tdot"></div><span>Log</span></div>
+      <div class="tab active"><div class="tdot"></div><span>Trends</span></div>
+      <div class="tab"><div class="tdot"></div><span>Train</span></div>
+      <div class="tab"><div class="tdot"></div><span>Coach</span></div>
+    </div>
+  </div>
+
+  <div class="aside">
+    <div class="acard">
+      <h4>What this is</h4>
+      <p>The fourth direction: instead of a list (Ledger), a 12-week trend (Fitness Signal), or a grade (Execution &amp; Load), this is <b>one key session told as a story</b> — what you ran, what your heart said, what the day cost you, what you said into the phone afterward, and how it sits against the last workout of the same kind.</p>
+      <p>Swipe the strip to move between the 21 sessions. Everything below the strip re-renders per session.</p>
+    </div>
+    <div class="acard">
+      <h4>The ghost</h4>
+      <p>The dashed line behind the rep bars is the <b>previous comparable session</b> — last intervals for intervals, last long/tempo for sustained work — aligned segment by segment. It answers "was that better than last time?" without a single extra number.</p>
+      <p>The comparison card beneath makes it explicit: raw pace, heat-neutral pace, effort HR, fade, drift — this time vs then, with the delta doing the talking.</p>
+    </div>
+    <div class="acard">
+      <h4>The words are real</h4>
+      <p>10 of the 21 sessions have actual voice-memo notes pulled from <code>training_logs</code> (cleaned_notes + mood), and the knee mentions on 24 May and 18 July come from <code>body_mentions</code> — shown as a NIGGLE pill. Sessions without a memo show an honest empty state, which itself is the nudge to record one.</p>
+    </div>
+    <div class="acard">
+      <h4>How the variables show up</h4>
+      <ul>
+        <li><b>Heat</b> — key pace is shown raw, with heat-neutral pace directly beneath it and the estimated cost in sec/mi in The Day Itself.</li>
+        <li><b>Elevation</b> — climb and hilliness (m/km) sit next to heat, and a rolling-terrain hill cost (≈0.33 s/mi per m/mi of climb, net of descents) feeds the flat + cool pace so hills get the same honest treatment heat does. Estimated; production would use grade-adjusted pace from the streams.</li>
+      <li><b>HR drift</b> — its own card under the HR track: decoupling for sustained runs, first-to-last-rep HR rise for intervals, against the &lt;5% durable zone. Not scored on short reps, where drift is meaningless.</li>
+        <li><b>HR at the fast segments</b> — the coral track under the pace bars, same x-axis, own scale (never a dual axis).</li>
+      </ul>
+    </div>
+    <div class="acard">
+      <h4>Where this lands</h4>
+      <p>Tap-through from the Ledger row or from a workout card. Engine is a pure function next to <code>pace-heat-adjustment.ts</code> in <code>supabase/functions/_shared/</code>; SwiftUI view in <code>RunningLog/Trends/</code>. The Read follows Coach voice: observation, numbers, soft question — no prescriptions.</p>
+    </div>
+  </div>
+</div>
+<div class="tip" id="tip"></div>
+<script>
+const DATA={"zones":{"heart_rate_zones":[{"min":0,"max":120},{"min":121,"max":150},{"min":151,"max":165},{"min":166,"max":179},{"min":180,"max":null}],"heart_rate_zone_source":"MaxHeartRate","run_zones_ms":[{"min":0,"max":3.963},{"min":3.963,"max":4.604},{"min":4.604,"max":5.128},{"min":5.128,"max":5.478},{"min":5.478,"max":5.828},{"min":5.828,"max":null}],"run_zone_source":"RacePace","sample_race_pace":{"type":"FastestHalfMarathon","time":"1h 8m"}},"weeks":[{"weekStart":"2026-05-04","km":82.6,"runs":8,"keySessionIds":["18384520874","18439421005"],"qualityKm":15.5,"keyCount":2,"sessions":["18384520874","18439421005"],"acwr":1.0,"qualityPct":18.8},{"weekStart":"2026-05-11","km":116.1,"runs":11,"keySessionIds":["18530188852"],"qualityKm":7.4,"keyCount":1,"sessions":["18530188852"],"acwr":1.17,"qualityPct":6.4},{"weekStart":"2026-05-18","km":95.5,"runs":11,"keySessionIds":["18581432805","18638037142"],"qualityKm":16.9,"keyCount":2,"sessions":["18581432805","18638037142"],"acwr":0.97,"qualityPct":17.7},{"weekStart":"2026-05-25","km":64.3,"runs":5,"keySessionIds":["18689850984"],"qualityKm":7.0,"keyCount":1,"sessions":["18689850984"],"acwr":0.72,"qualityPct":10.9},{"weekStart":"2026-06-01","km":88.6,"runs":10,"keySessionIds":["18809987015"],"qualityKm":6.4,"keyCount":1,"sessions":["18809987015"],"acwr":0.97,"qualityPct":7.2},{"weekStart":"2026-06-08","km":93.7,"runs":9,"keySessionIds":["18904696920"],"qualityKm":7.4,"keyCount":1,"sessions":["18904696920"],"acwr":1.1,"qualityPct":7.9},{"weekStart":"2026-06-15","km":99.4,"runs":11,"keySessionIds":["18956889343","19000018348"],"qualityKm":15.5,"keyCount":2,"sessions":["18956889343","19000018348"],"acwr":1.15,"qualityPct":15.6},{"weekStart":"2026-06-22","km":84.1,"runs":8,"keySessionIds":["19035729944","19087453621"],"qualityKm":16.8,"keyCount":2,"sessions":["19035729944","19087453621"],"acwr":0.92,"qualityPct":20.0},{"weekStart":"2026-06-29","km":107.2,"runs":10,"keySessionIds":["19127352055","19176659405"],"qualityKm":23.5,"keyCount":2,"sessions":["19127352055","19176659405"],"acwr":1.12,"qualityPct":21.9},{"weekStart":"2026-07-06","km":91.4,"runs":9,"keySessionIds":["19229242469","19269767324"],"qualityKm":18.1,"keyCount":2,"sessions":["19229242469","19269767324"],"acwr":0.96,"qualityPct":19.8},{"weekStart":"2026-07-13","km":95.2,"runs":10,"keySessionIds":["19308651644","19363488404"],"qualityKm":14.8,"keyCount":2,"sessions":["19308651644","19363488404"],"acwr":1.01,"qualityPct":15.5},{"weekStart":"2026-07-20","km":96.9,"runs":10,"keySessionIds":["19404031188","19445335217","19459862815"],"qualityKm":18.6,"keyCount":3,"sessions":["19404031188","19445335217","19459862815"],"acwr":0.99,"qualityPct":19.2}],"sessions":[{"id":"18384520874","date":"2026-05-05","startLocal":"06:27","name":"Morning Run","kind":"intervals","label":"5x1mi","distanceKm":9.54,"movingTimeS":2056,"elevGainM":46,"location":{"lat":30.344,"lon":-97.751},"weather":{"tempF":69.0,"dewF":64,"rh":84,"est":true},"heatAdjPaceSecMi":306.7,"avgHr":165.2,"maxHr":180,"metrics":{"repSpeedThresholdMs":4.6,"numReps":5,"avgFastPaceSecPerMi":317.2,"fastDistanceM":8047.0,"avgHrReps":171.0,"maxHrReps":180,"avgRestS":243.0,"workRestRatio":6.53,"fadeSecPerMi":5.0,"firstToLastRepHrDelta":14.6,"hrDriftPct":2.45},"reps":[{"dist":1609.0,"time":316,"paceSecPerMi":316.0,"hr":164.0},{"dist":1609.0,"time":321,"paceSecPerMi":321.0,"hr":173.0},{"dist":1609.0,"time":326,"paceSecPerMi":326.0,"hr":168.0},{"dist":1609.0,"time":302,"paceSecPerMi":302.0,"hr":175.0},{"dist":1609.0,"time":321,"paceSecPerMi":321.0,"hr":178.0}],"heatAdjPct":3.3,"keyPaceSecMi":317.2,"mPerBeat":1.78,"qualityKm":8.05,"hilliness":4.8,"fade":5.0,"drift":2.45,"shortReps":false,"trendEligible":true,"gradeLabel":"EASED","gradeTier":"watch","moodSample":"positive"},{"id":"18439421005","date":"2026-05-09","startLocal":"07:06","name":"Morning Run","kind":"long","label":"21K long","distanceKm":21.22,"movingTimeS":5394,"elevGainM":178,"location":{"lat":30.264,"lon":-97.771},"weather":{"tempF":69.2,"dewF":64,"rh":84,"est":true},"heatAdjPaceSecMi":398.4,"avgHr":152.0,"maxHr":164,"metrics":{"pace1SecPerMi":394.6,"pace2SecPerMi":431.6,"hr1":155.0,"hr2":149.0,"decouplingPct":4.98,"hrDriftPct":-4.03,"fadeSecPerMi":37.0,"avgPaceSecPerMi":412.1,"last2miPaceSecPerMi":418.2,"last2miVsOverallSecPerMi":6.1,"avgHr":152.0,"maxHr":164,"elevGainStreamM":135.0},"heatAdjPct":3.32,"keyPaceSecMi":412.1,"mPerBeat":1.54,"qualityKm":7.43,"hilliness":8.4,"fade":37.0,"drift":4.98,"shortReps":false,"trendEligible":true,"gradeLabel":"FADED","gradeTier":"alert","moodSample":"neutral"},{"id":"18530188852","date":"2026-05-16","startLocal":"07:08","name":"Morning Run","kind":"long","label":"21K long","distanceKm":21.09,"movingTimeS":5241,"elevGainM":101,"location":{"lat":30.265,"lon":-97.771},"weather":{"tempF":69.2,"dewF":64,"rh":84,"est":true},"heatAdjPaceSecMi":389.4,"avgHr":156.0,"maxHr":172,"metrics":{"pace1SecPerMi":406.4,"pace2SecPerMi":398.9,"hr1":153.0,"hr2":159.0,"decouplingPct":2.21,"hrDriftPct":4.14,"fadeSecPerMi":-7.6,"avgPaceSecPerMi":402.8,"last2miPaceSecPerMi":414.9,"last2miVsOverallSecPerMi":12.1,"avgHr":156.0,"maxHr":172,"elevGainStreamM":66.0},"heatAdjPct":3.32,"keyPaceSecMi":402.8,"mPerBeat":1.54,"qualityKm":7.38,"hilliness":4.8,"fade":-7.6,"drift":2.21,"shortReps":false,"trendEligible":true,"gradeLabel":"NEGATIVE SPLIT","gradeTier":"strong","moodSample":"energized"},{"id":"18581432805","date":"2026-05-20","startLocal":"06:29","name":"Morning Run","kind":"intervals","label":"10x1K","distanceKm":9.98,"movingTimeS":2442,"elevGainM":30,"location":{"lat":30.269,"lon":-97.768},"weather":{"tempF":69.0,"dewF":64,"rh":84,"est":true},"heatAdjPaceSecMi":297.4,"avgHr":167.1,"maxHr":176,"metrics":{"repSpeedThresholdMs":4.6,"numReps":9,"avgFastPaceSecPerMi":307.6,"fastDistanceM":9000,"avgHrReps":168.0,"maxHrReps":176,"avgRestS":75.8,"workRestRatio":2.52,"fadeSecPerMi":0.0,"firstToLastRepHrDelta":6.8,"hrDriftPct":2.07},"reps":[{"dist":1000,"time":191,"paceSecPerMi":307.4,"hr":162.0},{"dist":1000,"time":192,"paceSecPerMi":309.0,"hr":168.0},{"dist":1000,"time":190,"paceSecPerMi":305.8,"hr":166.0},{"dist":1000,"time":191,"paceSecPerMi":307.4,"hr":168.0},{"dist":1000,"time":192,"paceSecPerMi":309.0,"hr":169.0},{"dist":1000,"time":191,"paceSecPerMi":307.4,"hr":169.0},{"dist":1000,"time":192,"paceSecPerMi":309.0,"hr":169.0},{"dist":1000,"time":191,"paceSecPerMi":307.4,"hr":169.0},{"dist":1000,"time":190,"paceSecPerMi":305.8,"hr":169.0}],"heatAdjPct":3.3,"keyPaceSecMi":307.6,"mPerBeat":1.87,"qualityKm":9.0,"hilliness":3.0,"fade":0.0,"drift":2.07,"shortReps":false,"trendEligible":true,"gradeLabel":"HELD","gradeTier":"good","moodSample":"positive"},{"id":"18638037142","date":"2026-05-24","startLocal":"10:06","name":"Morning Run","kind":"long","label":"22.5K long","distanceKm":22.52,"movingTimeS":5669,"elevGainM":134,"location":{"lat":30.28,"lon":-97.71},"weather":{"tempF":74.6,"dewF":64,"rh":70,"est":true},"heatAdjPaceSecMi":393.0,"avgHr":161.0,"maxHr":179,"metrics":{"pace1SecPerMi":407.4,"pace2SecPerMi":410.2,"hr1":159.0,"hr2":164.0,"decouplingPct":3.87,"hrDriftPct":3.18,"fadeSecPerMi":2.7,"avgPaceSecPerMi":408.8,"last2miPaceSecPerMi":406.5,"last2miVsOverallSecPerMi":-2.3,"avgHr":161.0,"maxHr":179,"elevGainStreamM":50.0},"heatAdjPct":3.86,"keyPaceSecMi":408.8,"mPerBeat":1.47,"qualityKm":7.88,"hilliness":6.0,"fade":2.7,"drift":3.87,"shortReps":false,"trendEligible":true,"gradeLabel":"HELD","gradeTier":"good","moodSample":"tired"},{"id":"18689850984","date":"2026-05-28","startLocal":"08:02","name":"Morning Run","kind":"long","label":"20K steady","distanceKm":20.02,"movingTimeS":4821,"elevGainM":127,"location":{"lat":36.115,"lon":-94.148},"weather":{"tempF":67.9,"dewF":60,"rh":76,"est":true},"heatAdjPaceSecMi":376.1,"avgHr":159.0,"maxHr":174,"metrics":{"pace1SecPerMi":401.0,"pace2SecPerMi":374.3,"hr1":157.0,"hr2":162.0,"decouplingPct":-3.45,"hrDriftPct":3.41,"fadeSecPerMi":-26.6,"avgPaceSecPerMi":386.9,"last2miPaceSecPerMi":387.5,"last2miVsOverallSecPerMi":0.6,"avgHr":159.0,"maxHr":174,"elevGainStreamM":70.0},"heatAdjPct":2.79,"keyPaceSecMi":386.9,"mPerBeat":1.57,"qualityKm":7.01,"hilliness":6.3,"fade":-26.6,"drift":-3.45,"shortReps":false,"trendEligible":true,"gradeLabel":"NEGATIVE SPLIT","gradeTier":"strong","moodSample":"positive"},{"id":"18809987015","date":"2026-06-06","startLocal":"06:40","name":"Loop x PD","kind":"long","label":"Loop x PD 18K","distanceKm":18.4,"movingTimeS":4343,"elevGainM":121,"location":{"lat":30.307,"lon":-97.73},"weather":{"tempF":75.0,"dewF":70,"rh":84,"est":true},"heatAdjPaceSecMi":362.3,"avgHr":164.0,"maxHr":176,"metrics":{"pace1SecPerMi":374.6,"pace2SecPerMi":383.3,"hr1":160.0,"hr2":166.0,"decouplingPct":6.24,"hrDriftPct":3.84,"fadeSecPerMi":8.7,"avgPaceSecPerMi":379.4,"last2miPaceSecPerMi":396.0,"last2miVsOverallSecPerMi":16.5,"avgHr":164.0,"maxHr":176,"elevGainStreamM":71.0},"heatAdjPct":4.5,"keyPaceSecMi":379.4,"mPerBeat":1.55,"qualityKm":6.44,"hilliness":6.6,"fade":8.7,"drift":6.24,"shortReps":false,"trendEligible":true,"gradeLabel":"EASED","gradeTier":"watch","moodSample":"energized"},{"id":"18904696920","date":"2026-06-13","startLocal":"06:34","name":"Morning Run","kind":"long","label":"21K long","distanceKm":21.09,"movingTimeS":5171,"elevGainM":225,"location":{"lat":30.264,"lon":-97.771},"weather":{"tempF":75.0,"dewF":70,"rh":84,"est":true},"heatAdjPaceSecMi":374.6,"avgHr":162.0,"maxHr":173,"metrics":{"pace1SecPerMi":397.7,"pace2SecPerMi":386.7,"hr1":161.0,"hr2":163.0,"decouplingPct":-1.35,"hrDriftPct":1.45,"fadeSecPerMi":-11.0,"avgPaceSecPerMi":392.2,"last2miPaceSecPerMi":376.7,"last2miVsOverallSecPerMi":-15.5,"avgHr":162.0,"maxHr":173,"elevGainStreamM":122.0},"heatAdjPct":4.5,"keyPaceSecMi":392.2,"mPerBeat":1.52,"qualityKm":7.38,"hilliness":10.7,"fade":-11.0,"drift":-1.35,"shortReps":false,"trendEligible":true,"gradeLabel":"NEGATIVE SPLIT","gradeTier":"strong","moodSample":"neutral"},{"id":"18956889343","date":"2026-06-17","startLocal":"06:30","name":"Morning Run","kind":"intervals","label":"8x1K","distanceKm":8.51,"movingTimeS":1849,"elevGainM":37,"location":{"lat":30.269,"lon":-97.768},"weather":{"tempF":75.0,"dewF":70,"rh":84,"est":true},"heatAdjPaceSecMi":299.9,"avgHr":167.0,"maxHr":178,"metrics":{"repSpeedThresholdMs":4.6,"numReps":8,"avgFastPaceSecPerMi":314.0,"fastDistanceM":8000,"avgHrReps":170.0,"maxHrReps":178,"avgRestS":94.6,"workRestRatio":3.3,"fadeSecPerMi":-6.4,"firstToLastRepHrDelta":10.5,"hrDriftPct":1.22},"reps":[{"dist":1000,"time":199,"paceSecPerMi":320.3,"hr":160.0},{"dist":1000,"time":195,"paceSecPerMi":313.8,"hr":171.0},{"dist":1000,"time":192,"paceSecPerMi":309.0,"hr":169.0},{"dist":1000,"time":192,"paceSecPerMi":309.0,"hr":169.0},{"dist":1000,"time":197,"paceSecPerMi":317.0,"hr":170.0},{"dist":1000,"time":200,"paceSecPerMi":321.9,"hr":174.0},{"dist":1000,"time":192,"paceSecPerMi":309.0,"hr":170.0},{"dist":1000,"time":194,"paceSecPerMi":312.2,"hr":171.0}],"heatAdjPct":4.5,"keyPaceSecMi":314.0,"mPerBeat":1.81,"qualityKm":8.0,"hilliness":4.3,"fade":-6.4,"drift":1.22,"shortReps":false,"trendEligible":true,"gradeLabel":"NEGATIVE SPLIT","gradeTier":"strong","moodSample":"positive"},{"id":"19000018348","date":"2026-06-20","startLocal":"06:36","name":"Morning Run","kind":"long","label":"21K long","distanceKm":21.33,"movingTimeS":5547,"elevGainM":195,"location":{"lat":30.264,"lon":-97.771},"weather":{"tempF":75.0,"dewF":70,"rh":84,"est":true},"heatAdjPaceSecMi":398.7,"avgHr":151.0,"maxHr":170,"metrics":{"pace1SecPerMi":413.5,"pace2SecPerMi":421.7,"hr1":150.0,"hr2":152.0,"decouplingPct":2.97,"hrDriftPct":0.99,"fadeSecPerMi":8.1,"avgPaceSecPerMi":417.5,"last2miPaceSecPerMi":414.6,"last2miVsOverallSecPerMi":-2.9,"avgHr":151.0,"maxHr":170,"elevGainStreamM":97.0},"heatAdjPct":4.5,"keyPaceSecMi":417.5,"mPerBeat":1.53,"qualityKm":7.47,"hilliness":9.1,"fade":8.1,"drift":2.97,"shortReps":false,"trendEligible":true,"gradeLabel":"EASED","gradeTier":"watch","moodSample":"tired"},{"id":"19035729944","date":"2026-06-23","startLocal":"06:27","name":"Morning Run","kind":"intervals","label":"mile/1K/600 set","distanceKm":9.68,"movingTimeS":2926,"elevGainM":60,"location":{"lat":30.294,"lon":-97.691},"weather":{"tempF":75.0,"dewF":70,"rh":84,"est":true},"heatAdjPaceSecMi":295.3,"avgHr":154.3,"maxHr":183,"metrics":{"repSpeedThresholdMs":4.6,"numReps":8,"avgFastPaceSecPerMi":309.2,"fastDistanceM":6802.0,"avgHrReps":165.0,"maxHrReps":183,"avgRestS":167.9,"workRestRatio":1.11,"fadeSecPerMi":-38.1,"firstToLastRepHrDelta":22.0,"hrDriftPct":6.74},"reps":[{"dist":1000,"time":201,"paceSecPerMi":323.5,"hr":147.0},{"dist":1000,"time":211,"paceSecPerMi":339.6,"hr":166.0},{"dist":1000,"time":192,"paceSecPerMi":309.0,"hr":164.0},{"dist":599.0,"time":112,"paceSecPerMi":300.8,"hr":167.0},{"dist":1000,"time":188,"paceSecPerMi":302.6,"hr":170.0},{"dist":601.0,"time":111,"paceSecPerMi":297.3,"hr":170.0},{"dist":1000,"time":188,"paceSecPerMi":302.6,"hr":170.0},{"dist":602.0,"time":104,"paceSecPerMi":278.2,"hr":169}],"heatAdjPct":4.5,"keyPaceSecMi":309.2,"mPerBeat":1.89,"qualityKm":6.8,"hilliness":6.2,"fade":-38.1,"drift":6.74,"shortReps":false,"trendEligible":true,"gradeLabel":"NEGATIVE SPLIT","gradeTier":"strong","moodSample":"energized"},{"id":"19087453621","date":"2026-06-27","startLocal":"06:37","name":"2hr long run","kind":"long","label":"2hr / 28.6K","distanceKm":28.6,"movingTimeS":7245,"elevGainM":160,"location":{"lat":30.264,"lon":-97.771},"weather":{"tempF":75.0,"dewF":70,"rh":84,"est":true},"heatAdjPaceSecMi":387.2,"avgHr":160.0,"maxHr":170,"metrics":{"pace1SecPerMi":396.0,"pace2SecPerMi":415.0,"hr1":159.0,"hr2":162.0,"decouplingPct":7.25,"hrDriftPct":2.33,"fadeSecPerMi":19.0,"avgPaceSecPerMi":405.4,"last2miPaceSecPerMi":438.2,"last2miVsOverallSecPerMi":32.8,"avgHr":160.0,"maxHr":170,"elevGainStreamM":57.0},"heatAdjPct":4.5,"keyPaceSecMi":405.4,"mPerBeat":1.49,"qualityKm":10.01,"hilliness":5.6,"fade":19.0,"drift":7.25,"shortReps":false,"trendEligible":true,"gradeLabel":"FADED","gradeTier":"alert","moodSample":"struggling"},{"id":"19127352055","date":"2026-06-30","startLocal":"06:18","name":"7 mi fartlek","kind":"fartlek","label":"7mi fartlek 4'/2'","distanceKm":11.27,"movingTimeS":2400,"elevGainM":0,"location":{"lat":30.27,"lon":-97.77},"weather":{"tempF":75.0,"dewF":70,"rh":84,"est":true},"heatAdjPaceSecMi":327.5,"avgHr":null,"maxHr":null,"manual":true,"description":"4' @ 5:20s / 2' easy","metrics":{"avgPaceSecPerMi":342.9,"note":"manual entry; no laps, streams, or HR"},"heatAdjPct":4.5,"keyPaceSecMi":342.9,"mPerBeat":null,"qualityKm":8.45,"hilliness":0.0,"fade":0,"drift":0,"shortReps":false,"trendEligible":false,"gradeLabel":"HELD","gradeTier":"good","moodSample":"positive"},{"id":"19176659405","date":"2026-07-04","startLocal":"06:34","name":"Cooked (20K tempo)","kind":"tempo","label":"20K tempo","distanceKm":20.01,"movingTimeS":4732,"elevGainM":208,"location":{"lat":30.264,"lon":-97.773},"weather":{"tempF":78.0,"dewF":72,"rh":82,"est":true},"heatAdjPaceSecMi":356.7,"avgHr":167.0,"maxHr":181,"metrics":{"pace1SecPerMi":382.5,"pace2SecPerMi":368.0,"hr1":164.0,"hr2":171.0,"decouplingPct":0.38,"hrDriftPct":4.33,"fadeSecPerMi":-14.5,"avgPaceSecPerMi":375.5,"last2miPaceSecPerMi":399.7,"last2miVsOverallSecPerMi":24.2,"avgHr":167.0,"maxHr":181,"elevGainStreamM":101.0},"heatAdjPct":5.0,"keyPaceSecMi":375.5,"mPerBeat":1.54,"qualityKm":15.01,"hilliness":10.4,"fade":-14.5,"drift":0.38,"shortReps":false,"trendEligible":true,"gradeLabel":"NEGATIVE SPLIT","gradeTier":"strong","moodSample":"tired"},{"id":"19229242469","date":"2026-07-08","startLocal":"06:28","name":"Morning Run","kind":"intervals","label":"10x1K/800","distanceKm":10.31,"movingTimeS":2264,"elevGainM":44,"location":{"lat":30.269,"lon":-97.768},"weather":{"tempF":78.0,"dewF":72,"rh":82,"est":true},"heatAdjPaceSecMi":299.3,"avgHr":164.5,"maxHr":176,"metrics":{"repSpeedThresholdMs":4.6,"numReps":10,"avgFastPaceSecPerMi":315.1,"fastDistanceM":9678.0,"avgHrReps":166.0,"maxHrReps":176,"avgRestS":65.9,"workRestRatio":3.2,"fadeSecPerMi":6.1,"firstToLastRepHrDelta":11.7,"hrDriftPct":1.89},"reps":[{"dist":1000,"time":198,"paceSecPerMi":318.6,"hr":157.0},{"dist":1000,"time":194,"paceSecPerMi":312.2,"hr":166.0},{"dist":1000,"time":194,"paceSecPerMi":312.2,"hr":166.0},{"dist":1000,"time":194,"paceSecPerMi":312.2,"hr":168.0},{"dist":1000,"time":192,"paceSecPerMi":309.0,"hr":168.0},{"dist":1000,"time":190,"paceSecPerMi":305.8,"hr":170.0},{"dist":825.0,"time":165,"paceSecPerMi":321.8,"hr":165.0},{"dist":853.0,"time":168,"paceSecPerMi":317.1,"hr":168.0},{"dist":1000,"time":204,"paceSecPerMi":328.3,"hr":165},{"dist":1000,"time":196,"paceSecPerMi":315.4,"hr":168.0}],"heatAdjPct":5.0,"keyPaceSecMi":315.1,"mPerBeat":1.85,"qualityKm":9.68,"hilliness":4.3,"fade":6.1,"drift":1.89,"shortReps":false,"trendEligible":true,"gradeLabel":"EASED","gradeTier":"watch","moodSample":"positive"},{"id":"19269767324","date":"2026-07-11","startLocal":"06:35","name":"Morning Run","kind":"long","label":"24K long","distanceKm":24.12,"movingTimeS":6154,"elevGainM":251,"location":{"lat":30.265,"lon":-97.77},"weather":{"tempF":78.0,"dewF":72,"rh":82,"est":true},"heatAdjPaceSecMi":389.5,"avgHr":161.0,"maxHr":174,"metrics":{"pace1SecPerMi":410.2,"pace2SecPerMi":409.8,"hr1":157.0,"hr2":164.0,"decouplingPct":4.23,"hrDriftPct":4.32,"fadeSecPerMi":-0.3,"avgPaceSecPerMi":410.0,"last2miPaceSecPerMi":419.4,"last2miVsOverallSecPerMi":9.4,"avgHr":161.0,"maxHr":174,"elevGainStreamM":122.0},"heatAdjPct":5.0,"keyPaceSecMi":410.0,"mPerBeat":1.46,"qualityKm":8.44,"hilliness":10.4,"fade":-0.3,"drift":4.23,"shortReps":false,"trendEligible":true,"gradeLabel":"HELD","gradeTier":"good","moodSample":"neutral"},{"id":"19308651644","date":"2026-07-14","startLocal":"06:31","name":"Morning Run","kind":"intervals","label":"1200/800/400 x3","distanceKm":8.57,"movingTimeS":1965,"elevGainM":31,"location":{"lat":30.295,"lon":-97.694},"weather":{"tempF":78.0,"dewF":72,"rh":82,"est":true},"heatAdjPaceSecMi":286.0,"avgHr":165.3,"maxHr":184,"metrics":{"repSpeedThresholdMs":4.6,"numReps":9,"avgFastPaceSecPerMi":301.1,"fastDistanceM":7237.0,"avgHrReps":170.0,"maxHrReps":184,"avgRestS":85.1,"workRestRatio":1.99,"fadeSecPerMi":-11.7,"firstToLastRepHrDelta":-7.6,"hrDriftPct":1.36},"reps":[{"dist":1203.0,"time":236,"paceSecPerMi":315.8,"hr":162.0},{"dist":804.0,"time":154,"paceSecPerMi":308.4,"hr":167.0},{"dist":406.0,"time":74,"paceSecPerMi":293.4,"hr":164.0},{"dist":1211.0,"time":223,"paceSecPerMi":296.3,"hr":178.0},{"dist":807.0,"time":149,"paceSecPerMi":297.0,"hr":175.0},{"dist":402.0,"time":73,"paceSecPerMi":292.1,"hr":158.0},{"dist":1200.0,"time":228,"paceSecPerMi":305.7,"hr":177.0},{"dist":804.0,"time":146,"paceSecPerMi":292.1,"hr":172.0},{"dist":399.0,"time":71,"paceSecPerMi":286.0,"hr":154.0}],"heatAdjPct":5.0,"keyPaceSecMi":301.1,"mPerBeat":1.89,"qualityKm":7.24,"hilliness":3.6,"fade":-11.7,"drift":1.36,"shortReps":false,"trendEligible":true,"gradeLabel":"NEGATIVE SPLIT","gradeTier":"strong","moodSample":"energized"},{"id":"19363488404","date":"2026-07-18","startLocal":"06:38","name":"Morning Run","kind":"long","label":"21.7K long","distanceKm":21.7,"movingTimeS":5489,"elevGainM":175,"location":{"lat":30.266,"lon":-97.773},"weather":{"tempF":78.0,"dewF":72,"rh":82,"est":true},"heatAdjPaceSecMi":381.7,"avgHr":158.0,"maxHr":170,"metrics":{"pace1SecPerMi":408.2,"pace2SecPerMi":394.9,"hr1":156.0,"hr2":159.0,"decouplingPct":-1.35,"hrDriftPct":1.97,"fadeSecPerMi":-13.3,"avgPaceSecPerMi":401.8,"last2miPaceSecPerMi":391.2,"last2miVsOverallSecPerMi":-10.6,"avgHr":158.0,"maxHr":170,"elevGainStreamM":107.0},"heatAdjPct":5.0,"keyPaceSecMi":401.8,"mPerBeat":1.52,"qualityKm":7.59,"hilliness":8.1,"fade":-13.3,"drift":-1.35,"shortReps":false,"trendEligible":true,"gradeLabel":"NEGATIVE SPLIT","gradeTier":"strong","moodSample":"positive"},{"id":"19404031188","date":"2026-07-21","startLocal":"06:28","name":"Morning Run","kind":"intervals","label":"6x1mi","distanceKm":12.07,"movingTimeS":2590,"elevGainM":48,"location":{"lat":30.344,"lon":-97.751},"weather":{"tempF":78.0,"dewF":72,"rh":82,"est":true},"heatAdjPaceSecMi":311.4,"avgHr":164.2,"maxHr":173,"metrics":{"repSpeedThresholdMs":4.6,"numReps":6,"avgFastPaceSecPerMi":327.8,"fastDistanceM":9656.0,"avgHrReps":166.0,"maxHrReps":173,"avgRestS":102.2,"workRestRatio":3.85,"fadeSecPerMi":-3.0,"firstToLastRepHrDelta":8.5,"hrDriftPct":2.53},"reps":[{"dist":1609.0,"time":328,"paceSecPerMi":328.0,"hr":160.0},{"dist":1609.0,"time":325,"paceSecPerMi":325.0,"hr":165.0},{"dist":1609.0,"time":333,"paceSecPerMi":333.0,"hr":166.0},{"dist":1609.0,"time":334,"paceSecPerMi":334.0,"hr":167.0},{"dist":1609.0,"time":316,"paceSecPerMi":316.0,"hr":170.0},{"dist":1609.0,"time":331,"paceSecPerMi":331.0,"hr":169.0}],"heatAdjPct":5.0,"keyPaceSecMi":327.8,"mPerBeat":1.77,"qualityKm":9.66,"hilliness":4.0,"fade":-3.0,"drift":2.53,"shortReps":false,"trendEligible":true,"gradeLabel":"HELD","gradeTier":"good","moodSample":"positive"},{"id":"19445335217","date":"2026-07-24","startLocal":"06:25","name":"200s","kind":"intervals","label":"8x200","distanceKm":9.26,"movingTimeS":4136,"elevGainM":51,"location":{"lat":30.296,"lon":-97.694},"weather":{"tempF":78.0,"dewF":72,"rh":82,"est":true},"heatAdjPaceSecMi":241.4,"avgHr":132.6,"maxHr":173,"metrics":{"repSpeedThresholdMs":4.6,"numReps":8,"avgFastPaceSecPerMi":254.1,"fastDistanceM":1602.0,"avgHrReps":136.0,"maxHrReps":165,"avgRestS":60.6,"workRestRatio":0.6,"fadeSecPerMi":-8.0,"firstToLastRepHrDelta":51.7,"hrDriftPct":27.56},"reps":[{"dist":197.0,"time":32,"paceSecPerMi":260.9,"hr":94.0},{"dist":196.0,"time":32,"paceSecPerMi":262.2,"hr":130.0},{"dist":200.0,"time":32,"paceSecPerMi":256.9,"hr":133.0},{"dist":202.0,"time":32,"paceSecPerMi":255.2,"hr":145.0},{"dist":203.0,"time":30,"paceSecPerMi":238.0,"hr":148.0},{"dist":204.0,"time":32,"paceSecPerMi":253.0,"hr":148.0},{"dist":200.0,"time":31,"paceSecPerMi":249.0,"hr":145.0},{"dist":200.0,"time":32,"paceSecPerMi":258.0,"hr":145.0}],"heatAdjPct":5.0,"keyPaceSecMi":254.1,"mPerBeat":2.79,"qualityKm":1.6,"hilliness":5.5,"fade":-8.0,"drift":27.56,"shortReps":true,"trendEligible":false,"gradeLabel":"NEGATIVE SPLIT","gradeTier":"strong","moodSample":"energized"},{"id":"19459862815","date":"2026-07-25","startLocal":"06:36","name":"Morning Run","kind":"long","label":"21K long","distanceKm":21.11,"movingTimeS":5355,"elevGainM":109,"location":{"lat":30.285,"lon":-97.712},"weather":{"tempF":78.0,"dewF":72,"rh":82,"est":true},"heatAdjPaceSecMi":390.7,"avgHr":152.0,"maxHr":163,"metrics":{"pace1SecPerMi":408.6,"pace2SecPerMi":414.1,"hr1":151.0,"hr2":154.0,"decouplingPct":3.06,"hrDriftPct":1.68,"fadeSecPerMi":5.5,"avgPaceSecPerMi":411.3,"last2miPaceSecPerMi":427.7,"last2miVsOverallSecPerMi":16.4,"avgHr":152.0,"maxHr":163,"elevGainStreamM":60.0},"heatAdjPct":5.0,"keyPaceSecMi":411.3,"mPerBeat":1.54,"qualityKm":7.39,"hilliness":5.2,"fade":5.5,"drift":3.06,"shortReps":false,"trendEligible":true,"gradeLabel":"EASED","gradeTier":"watch","moodSample":"neutral"}],"weatherNote":"Heat values are estimated from station climatology for the session date + start hour (Austin TX; 05-28 in Fayetteville AR). Live per-session weather wires in via the existing fetch-workout-weather edge function.","trends":{"intervals":{"rawPace":0.97,"heatAdj":-1.35,"effic":0.01,"drift":-0.03,"n":7},"long":{"rawPace":2.68,"heatAdj":-0.36,"effic":-0.01,"drift":-0.13,"n":11},"threshold":{"rawPace":null,"heatAdj":null,"effic":null,"drift":null,"n":2}},"generated":"2026-07-27"};
+
+/* real journal notes pulled from Supabase training_logs + body_mentions, 27 Jul 2026 */
+const NOTES={
+ "18638037142":{mood:"tired",text:"I felt heavily fatigued today, and the run was really hard. It was a bit warm, but I pushed through to try and hit my target pace for most of it. I also noticed some light tightness in my left knee during the run.",niggle:"left knee · tight"},
+ "18956889343":{mood:"positive",text:"I completed a threshold session at Zilker Park today. It was a bit warm, but I adjusted well and made the best of the conditions. My effort felt like a 7 or 8 out of 10, and I didn't push myself to my absolute limit."},
+ "19000018348":{mood:"tired",text:"I completed a moderate long run today. My legs felt a bit fatigued initially, so I didn't push too hard. I wanted to go farther, but decided to cut the run a little short at 13 miles, prioritizing just getting the mileage in."},
+ "19035729944":{mood:"struggling",text:"I completed a tough workout today, but the heat and humidity made it incredibly challenging. I struggled throughout the session and never really felt great. The conditions significantly impacted my performance."},
+ "19087453621":{mood:null,text:"Forgot to turn it off Ks again"},
+ "19229242469":{mood:"struggling",text:"I was really struggling today, with the heat and humidity being intense. I felt overheated and fell off pace towards the end, and it definitely didn't feel like the threshold workout it was supposed to be."},
+ "19269767324":{mood:"struggling",text:"I had an extremely warm run on a hilly loop and felt like I was dying, despite trying to pace myself. I cut my planned 2 hour 15 minute run short as it wasn't a good run at all."},
+ "19308651644":{mood:"positive",text:"I completed three sets of a complex interval workout, running much faster than the prescribed paces, though I had aimed for four. Despite feeling a bit sick this morning, I felt surprisingly good during the workout, and it turned out to be a solid session."},
+ "19363488404":{mood:null,text:"Good long run, had been feeling banged up with a sore left knee and slightly sick but felt ok.",niggle:"left knee · sore"},
+ "19404031188":{mood:"positive",text:"I completed an interval workout of six miles, starting at marathon pace and dropping to half marathon pace, with .25 mile recoveries. Despite my legs feeling good, the workout felt harder and the pace tougher than I expected, likely due to the humidity and hills. Overall, I finished strong and felt it was a solid session."}
+};
+const MOODC={energized:"var(--mood-energized)",positive:"var(--mood-positive)",neutral:"var(--mood-neutral)",tired:"var(--mood-tired)",struggling:"var(--mood-struggling)"};
+
+const S=DATA.sessions;
+const fmtPace=s=>{if(s==null||!isFinite(s))return"—";const m=Math.floor(s/60),ss=Math.round(s%60);return m+":"+String(ss).padStart(2,"0")};
+const fmtD=d=>{const dt=new Date(d+"T12:00:00");return dt.toLocaleDateString("en-US",{month:"short",day:"numeric"})};
+const fmtDL=d=>{const dt=new Date(d+"T12:00:00");return dt.toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})};
+const isReps=s=>s.kind==="intervals";
+/* rolling-terrain hill cost: ≈0.33 s/mi per m/mi of climb (uphill cost net of descent give-back). EST. */
+const hillCost=s=>s.hilliness?Math.round(s.hilliness*1.609*0.33):0;
+const flatCool=s=>s.heatAdjPaceSecMi!=null?s.heatAdjPaceSecMi-hillCost(s):null;
+const group=s=>isReps(s)?"reps":"sustained";
+function prevComparable(i){const g=group(S[i]);for(let j=i-1;j>=0;j--){if(group(S[j])===g&&S[j].trendEligible)return S[j]}return null}
+function segs(s){ /* comparable segment list: reps for intervals, thirds-of-effort for sustained */
+  if(isReps(s)&&s.reps){return s.reps.map((r,k)=>({label:"R"+(k+1),pace:r.paceSecPerMi,hr:r.hr,dist:r.dist}))}
+  const m=s.metrics;if(!m||m.pace1SecPerMi==null)return null;
+  return[{label:"1ST HALF",pace:m.pace1SecPerMi,hr:m.hr1},{label:"2ND HALF",pace:m.pace2SecPerMi,hr:m.hr2},{label:"LAST 2MI",pace:m.last2miPaceSecPerMi,hr:m.avgHr}]}
+
+const tip=document.getElementById("tip");
+function showTip(e,t){tip.style.display="block";tip.textContent=t;tip.style.left=(e.clientX+12)+"px";tip.style.top=(e.clientY-10)+"px"}
+function hideTip(){tip.style.display="none"}
+
+let sel=S.length-3; /* default: 6x1mi on Jul 21 — real note + ghost */
+function el(t,c,h){const n=document.createElement(t);if(c)n.className=c;if(h!=null)n.innerHTML=h;return n}
+
+function renderStrip(){
+  const strip=document.getElementById("strip");strip.innerHTML="";
+  S.forEach((s,i)=>{
+    const c=el("div","sesscard"+(i===sel?" sel":""));
+    c.innerHTML=`<div class="d">${fmtD(s.date)}</div><div class="l">${s.label}</div><div class="g ${s.gradeTier}">${s.gradeLabel}</div>`;
+    c.onclick=()=>{sel=i;render();};
+    strip.appendChild(c);
+  });
+  const selEl=strip.children[sel];if(selEl)selEl.scrollIntoView({inline:"center",block:"nearest"});
+}
+
+function bars(svg,cur,ghost,W,H){
+  svg.innerHTML="";
+  const padL=30,padR=6,padT=10,padB=20,iw=W-padL-padR,ih=H-padT-padB;
+  const all=[...cur.map(d=>d.pace),...(ghost?ghost.map(d=>d.pace):[])].filter(v=>v!=null&&isFinite(v));
+  let lo=Math.min(...all),hi=Math.max(...all);const pad=(hi-lo)*0.25||10;lo-=pad;hi+=pad;
+  const y=v=>padT+ (v-lo)/(hi-lo)*ih; /* pace axis: faster (smaller) = higher */
+  const n=cur.length,bw=Math.min(30,iw/n*0.62),step=iw/n;
+  const NS="http://www.w3.org/2000/svg";
+  const mk=(t,a)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e};
+  /* gridlines at 2 pace values */
+  [lo+(hi-lo)*0.25,lo+(hi-lo)*0.75].forEach(v=>{
+    svg.appendChild(mk("line",{x1:padL,x2:W-padR,y1:y(v),y2:y(v),stroke:"var(--rule)","stroke-width":1}));
+    const t=mk("text",{x:padL-4,y:y(v)+3,"text-anchor":"end","font-size":8,fill:"var(--ink-3)","font-family":"var(--font-mono)"});t.textContent=fmtPace(v);svg.appendChild(t);
+  });
+  /* ghost dashed line */
+  if(ghost&&ghost.length){
+    const gstep=iw/ghost.length; /* ghost spans the same width on its own step, so it never overflows */
+    const pts=ghost.map((d,k)=>{const x=padL+gstep*(k+0.5);return[x,y(d.pace)]}).filter(p=>isFinite(p[1]));
+    if(pts.length>1){svg.appendChild(mk("polyline",{points:pts.map(p=>p.join(",")).join(" "),fill:"none",stroke:"var(--ink-3)","stroke-width":1.6,"stroke-dasharray":"4 4","stroke-linecap":"round"}))}
+    pts.forEach((p,k)=>{const c=mk("circle",{cx:p[0],cy:p[1],r:2.4,fill:"var(--paper)",stroke:"var(--ink-3)","stroke-width":1.4});
+      c.addEventListener("mousemove",e=>showTip(e,`then · ${fmtPace(ghost[k].pace)}/mi`));c.addEventListener("mouseleave",hideTip);svg.appendChild(c)});
+  }
+  /* current bars — anchored to bottom, rounded data end */
+  const base=padT+ih;
+  cur.forEach((d,k)=>{
+    if(d.pace==null)return;
+    const x=padL+step*k+(step-bw)/2, yy=y(d.pace), h=Math.max(4,base-yy);
+    const r=mk("path",{d:`M${x},${base} L${x},${yy+4} Q${x},${yy} ${x+4},${yy} L${x+bw-4},${yy} Q${x+bw},${yy} ${x+bw},${yy+4} L${x+bw},${base} Z`,fill:"var(--pace)"});
+    r.addEventListener("mousemove",e=>showTip(e,`${d.label} · ${fmtPace(d.pace)}/mi${d.hr?` · ${Math.round(d.hr)} bpm`:""}`));
+    r.addEventListener("mouseleave",hideTip);
+    svg.appendChild(r);
+    const t=mk("text",{x:x+bw/2,y:base+12,"text-anchor":"middle","font-size":7.5,fill:"var(--ink-3)","font-family":"var(--font-mono)","letter-spacing":".04em"});t.textContent=d.label;svg.appendChild(t);
+    if(k===0||k===n-1||d.pace===Math.min(...cur.map(c=>c.pace??1e9))){
+      const tv=mk("text",{x:x+bw/2,y:yy-4,"text-anchor":"middle","font-size":8,fill:"var(--ink)","font-weight":600,"font-family":"var(--font-mono)"});tv.textContent=fmtPace(d.pace);svg.appendChild(tv);
+    }
+  });
+}
+
+function hrTrack(svg,cur,W,H){
+  svg.innerHTML="";
+  const padL=30,padR=6,padT=8,padB=16,iw=W-padL-padR,ih=H-padT-padB;
+  const vals=cur.map(d=>d.hr).filter(v=>v!=null);
+  if(!vals.length){const NS="http://www.w3.org/2000/svg";const t=document.createElementNS(NS,"text");t.setAttribute("x",W/2);t.setAttribute("y",H/2);t.setAttribute("text-anchor","middle");t.setAttribute("font-size","9");t.setAttribute("fill","var(--ink-3)");t.setAttribute("font-family","var(--font-mono)");t.textContent="NO HEART-RATE DATA · MANUAL ENTRY";svg.appendChild(t);return}
+  let lo=Math.min(...vals),hi=Math.max(...vals);const pad=Math.max(4,(hi-lo)*0.3);lo-=pad;hi+=pad;
+  const y=v=>padT+(1-(v-lo)/(hi-lo))*ih;
+  const n=cur.length,step=iw/n;
+  const NS="http://www.w3.org/2000/svg";
+  const mk=(t,a)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e};
+  [lo+(hi-lo)*0.5].forEach(v=>{svg.appendChild(mk("line",{x1:padL,x2:W-padR,y1:y(v),y2:y(v),stroke:"var(--rule)","stroke-width":1}));
+    const t=mk("text",{x:padL-4,y:y(v)+3,"text-anchor":"end","font-size":8,fill:"var(--ink-3)","font-family":"var(--font-mono)"});t.textContent=Math.round(v);svg.appendChild(t)});
+  const pts=cur.map((d,k)=>d.hr!=null?[padL+step*(k+0.5),y(d.hr)]:null);
+  const line=pts.filter(Boolean);
+  if(line.length>1)svg.appendChild(mk("polyline",{points:line.map(p=>p.join(",")).join(" "),fill:"none",stroke:"var(--coral)","stroke-width":2,"stroke-linecap":"round","stroke-linejoin":"round"}));
+  pts.forEach((p,k)=>{if(!p)return;const c=mk("circle",{cx:p[0],cy:p[1],r:3,fill:"var(--coral)",stroke:"var(--paper)","stroke-width":1.5});
+    c.addEventListener("mousemove",e=>showTip(e,`${cur[k].label} · ${Math.round(cur[k].hr)} bpm`));c.addEventListener("mouseleave",hideTip);svg.appendChild(c)});
+  const first=cur.find(d=>d.hr!=null),last=[...cur].reverse().find(d=>d.hr!=null);
+  [[first,0],[last,n-1]].forEach(([d,k])=>{if(!d)return;const idx=cur.indexOf(d);
+    const t=mk("text",{x:padL+step*(idx+0.5),y:y(d.hr)-6,"text-anchor":"middle","font-size":8,"font-weight":600,fill:"var(--ink)","font-family":"var(--font-mono)"});t.textContent=Math.round(d.hr);svg.appendChild(t)});
+}
+
+function renderDrift(s){
+  const card=document.getElementById("driftCard");
+  if(s.manual||s.shortReps||s.drift==null||!isFinite(s.drift)){
+    card.innerHTML=`<div class="txt" style="margin-top:0">${s.manual?"Manual entry — no heart-rate stream to read drift from.":"Short reps with full recoveries — HR swings with the rest, not the effort. Drift isn't a meaningful read here."}</div>`;
+    return;
+  }
+  const d=s.drift;
+  const tier=d<5?"strong":(d<8?"watch":"alert");
+  const zoneLabel=d<5?"DURABLE ZONE":(d<8?"CREEPING":"HIGH");
+  /* gauge: 0–12% band, durable zone 0–5 in neutral gray, marker in ink */
+  const W=314,H=26,max=12,x=v=>Math.min(v,max)/max*W;
+  const gauge=`<svg width="100%" viewBox="0 0 ${W} ${H}" style="margin-top:9px;display:block;overflow:visible">
+    <rect x="0" y="9" width="${W}" height="6" rx="3" fill="var(--paper-deep)"/>
+    <rect x="0" y="9" width="${x(5)}" height="6" rx="3" fill="#D6D0C8"/>
+    <line x1="${x(5)}" x2="${x(5)}" y1="6" y2="18" stroke="var(--ink-3)" stroke-width="1"/>
+    <circle cx="${x(d)}" cy="12" r="5" fill="var(--ink)" stroke="var(--paper)" stroke-width="2"/>
+    <text x="${x(5)}" y="26" text-anchor="middle" font-size="7" fill="var(--ink-3)" font-family="var(--font-mono)" letter-spacing=".05em">5%</text>
+    <text x="${W}" y="26" text-anchor="end" font-size="7" fill="var(--ink-3)" font-family="var(--font-mono)" letter-spacing=".05em">12%+</text>
+  </svg>`;
+  let txt;
+  if(isReps(s)){
+    const rise=s.metrics&&s.metrics.firstToLastRepHrDelta;
+    txt=`Heart rate ${rise>=0?"rose "+Math.abs(rise).toFixed(0):"dropped "+Math.abs(rise).toFixed(0)} bpm from first rep to last${Math.abs(s.fade)<3?" while pace held level":s.fade<0?" while the reps got faster":" as the reps slowed"}. That climb is the effort the clock doesn't show.`;
+  }else{
+    txt=`Second-half heart rate ran ${Math.abs(d).toFixed(1)}% ${d>=0?"ahead of":"behind"} pace — ${d<5?"inside the durable zone; the engine paid for this one comfortably":(d<8?"just past the durable zone; the last stretch cost more than the clock admits":"well past durable; the finish was bought on credit")}.`;
+  }
+  card.innerHTML=`<div class="top"><span class="num">${d.toFixed(1)}<span class="u">%</span></span><span class="zone ${tier}">${zoneLabel}</span></div>${gauge}<div class="txt">${txt}</div>`;
+}
+
+function deltaRow(lab,now,then,fmt,invert){ /* invert=true → lower is better */
+  if(now==null||then==null||!isFinite(now)||!isFinite(then))return`<div class="cmpr"><span class="lab">${lab}</span><span class="vals"><span class="then">—</span></span></div>`;
+  const d=now-then;const good=invert?d<0:d>0;const cls=Math.abs(d)<0.05?"flat":(good?"dn":"up");
+  const sign=d>0?"+":"−";const dv=fmt==="pace"?sign+fmtPace(Math.abs(d)):(fmt==="int"?sign+Math.abs(Math.round(d)):(fmt==="1dp"?sign+Math.abs(d).toFixed(1):sign+Math.abs(d).toFixed(1)));
+  const nv=fmt==="pace"?fmtPace(now):(fmt==="int"?Math.round(now):now.toFixed(1));
+  const tv=fmt==="pace"?fmtPace(then):(fmt==="int"?Math.round(then):then.toFixed(1));
+  return`<div class="cmpr"><span class="lab">${lab}</span><span class="vals"><span class="then">${tv}</span><span>→</span><span>${nv}</span><span class="delta ${cls}">${dv}</span></span></div>`;
+}
+
+function buildRead(s,g){
+  const heatCost=s.keyPaceSecMi&&s.heatAdjPaceSecMi?Math.round(s.keyPaceSecMi-s.heatAdjPaceSecMi):null;
+  const note=NOTES[s.id];
+  let b="",q="";
+  if(g){
+    const d=s.heatAdjPaceSecMi-g.heatAdjPaceSecMi;
+    const dir=d<-1?`<b>${fmtPace(Math.abs(d))} faster</b> than`:(d>1?`${fmtPace(Math.abs(d))} slower than`:"level with");
+    b=`Heat-neutral, this was ${dir} your last ${isReps(s)?"interval day":"sustained effort"} (${g.label}, ${fmtD(g.date)})`;
+    const hcc=hillCost(s);
+    if(heatCost)b+=` — the day cost about <b>${heatCost}s/mi</b> in heat${hcc>=4?` and another ~${hcc}s/mi in hills`:""}.`;else b+=".";
+    if(s.fade!=null&&isFinite(s.fade)){b+=s.fade<=0?` The back half came in ${s.fade<0?Math.abs(s.fade).toFixed(0)+"s/mi faster":"even"} — it held to the end.`:` The back half gave up ${s.fade.toFixed(0)}s/mi.`}
+  }else{
+    b=`First ${isReps(s)?"interval day":"sustained effort"} of its kind in the window — nothing to set it against yet.`;
+    if(heatCost)b+=` The day cost roughly <b>${heatCost}s/mi</b> in heat.`;
+  }
+  if(note&&note.niggle)b+=` Your memo flagged the <b>${note.niggle.split(" ·")[0]}</b> — worth watching, not worrying.`;
+  if(note&&note.mood==="struggling")q="The clock and the memo disagree less than you think — the conditions explain most of it. What would this have been at 60°F?";
+  else if(note&&note.mood==="tired")q="Tired going in and still this close to last time — what does that say about where fitness actually is?";
+  else if(s.gradeTier==="strong")q="That's the shape you want. What made this one work — and can Thursday borrow it?";
+  else q="Same session in three weeks — what's the one thing you'd change?";
+  return{b,q};
+}
+
+function render(){
+  const s=S[sel],g=prevComparable(sel),note=NOTES[s.id];
+  renderStrip();
+  document.getElementById("title").textContent=s.label+".";
+  document.getElementById("subtitle").textContent=`${fmtDL(s.date)} · ${s.startLocal} · ${s.distanceKm.toFixed(1)} km in ${Math.floor(s.movingTimeS/60)} min`;
+  document.getElementById("heroPace").innerHTML=fmtPace(s.keyPaceSecMi)+`<small>/mi</small>`;
+  const heatCost=s.keyPaceSecMi&&s.heatAdjPaceSecMi?Math.round(s.keyPaceSecMi-s.heatAdjPaceSecMi):null;
+  const hc=hillCost(s);
+  document.getElementById("heroHeat").innerHTML=heatCost?`flat + cool <b>${fmtPace(flatCool(s))}</b> · heat ${heatCost}s · hills ${hc}s /mi`:"flat + cool —";
+  const effHr=isReps(s)?(s.metrics&&s.metrics.avgHrReps):(s.metrics&&s.metrics.avgHr);
+  document.getElementById("heroHr").innerHTML=(effHr?Math.round(effHr):"—")+`<small>bpm</small>`;
+  document.getElementById("heroHrSub").textContent=s.maxHr?`max ${Math.round(s.maxHr)} · ${(s.mPerBeat||0)?s.mPerBeat.toFixed(2)+" m/beat":""}`:"manual entry";
+  /* pills */
+  const pills=document.getElementById("pills");pills.innerHTML="";
+  pills.appendChild(el("span","pill "+(s.gradeTier==="strong"?"strong":s.gradeTier==="watch"?"watch":s.gradeTier==="alert"?"alert":""),s.gradeLabel));
+  if(note&&note.mood){const p=el("span","pill mood",note.mood.toUpperCase());p.style.background=MOODC[note.mood]||"var(--ink-3)";pills.appendChild(p)}
+  if(note&&note.niggle)pills.appendChild(el("span","pill niggle","NIGGLE · "+note.niggle.toUpperCase()));
+  pills.appendChild(el("span","pill",s.kind.toUpperCase()));
+  /* charts */
+  const cur=segs(s),gh=g?segs(g):null;
+  document.getElementById("chartTitle").innerHTML=isReps(s)?"THE FAST SEGMENTS · PACE PER REP":"THE EFFORT · PACE BY SEGMENT";
+  const leg=document.getElementById("legend");
+  if(cur){bars(document.getElementById("paceChart"),cur,gh,340,168);
+    leg.innerHTML=`<span class="it"><span class="sw"></span>THIS SESSION</span>`+(gh?`<span class="it"><span class="sw ghost"></span>LAST · ${g.label} (${fmtD(g.date)})</span>`:"");
+    hrTrack(document.getElementById("hrChart"),cur,340,84);
+    document.getElementById("hrCap").textContent=isReps(s)?"Beats per minute across the reps. Climbing HR at level pace is the effort you can't see on the clock.":"Average HR by segment. A flat line with a held pace is the durable version of fast.";
+  }else{document.getElementById("paceChart").innerHTML="";leg.innerHTML="";document.getElementById("hrChart").innerHTML="";
+    document.getElementById("hrCap").textContent="Manual entry — no laps, streams, or heart rate.";}
+  renderDrift(s);
+  /* comparison */
+  document.getElementById("cmpTitle").textContent=g?`VS LAST ${isReps(s)?"INTERVALS":"SUSTAINED"} · THEN → NOW`:"NO COMPARABLE SESSION YET";
+  const cm=document.getElementById("cmpCard");
+  if(g){
+    const nowHr=isReps(s)?(s.metrics&&s.metrics.avgHrReps):(s.metrics&&s.metrics.avgHr);
+    const thenHr=isReps(g)?(g.metrics&&g.metrics.avgHrReps):(g.metrics&&g.metrics.avgHr);
+    cm.innerHTML=`<div class="hd"><span class="who">${g.label} → ${s.label}</span><span class="when">${fmtD(g.date)} → ${fmtD(s.date)}</span></div>`
+      +deltaRow("KEY PACE /MI",s.keyPaceSecMi,g.keyPaceSecMi,"pace",true)
+      +deltaRow("HEAT-NEUTRAL /MI",s.heatAdjPaceSecMi,g.heatAdjPaceSecMi,"pace",true)
+      +deltaRow("FLAT + COOL /MI",flatCool(s),flatCool(g),"pace",true)
+      +deltaRow("EFFORT HR BPM",nowHr,thenHr,"int",true)
+      +deltaRow("BACK-HALF FADE S/MI",s.fade,g.fade,"1dp",true)
+      +((s.shortReps||g.shortReps)?"":deltaRow("DRIFT %",s.drift,g.drift,"1dp",true))
+      +deltaRow("FEELS-LIKE °F",s.weather?s.weather.tempF:null,g.weather?g.weather.tempF:null,"int",true)
+      +deltaRow("CLIMB M",s.elevGainM,g.elevGainM,"int",true);
+  }else{cm.innerHTML=`<div class="hd"><span class="who">Nothing to set it against</span></div><div style="font-size:11.5px;color:var(--ink-2);line-height:1.5;margin-top:6px">First ${isReps(s)?"interval":"sustained"} session in the window. The next one of this kind will land here as the ghost.</div>`}
+  /* conditions */
+  const ct=document.getElementById("condTiles");ct.innerHTML="";
+  const w=s.weather||{};
+  ct.appendChild(el("div","tile",`<div class="l">FEELS LIKE</div><div class="v">${w.tempF?Math.round(w.tempF):"—"}<span class="u">°F</span></div><div class="s">dew ${w.dewF||"—"}° · ${w.rh||"—"}% rh</div>`));
+  ct.appendChild(el("div","tile",`<div class="l">HEAT COST</div><div class="v">${heatCost??"—"}<span class="u">s/mi</span></div><div class="s">${s.heatAdjPct?s.heatAdjPct.toFixed(1)+"% penalty removed":""}</div>`));
+  ct.appendChild(el("div","tile",`<div class="l">HILL COST</div><div class="v">${hc}<span class="u">s/mi</span></div><div class="s">${s.elevGainM??"—"} m climb · ${s.hilliness?s.hilliness.toFixed(1)+" m/km":"flat"}</div>`));
+  /* memo */
+  const memo=document.getElementById("memo");
+  if(note){memo.className="memo";memo.style.borderLeftColor=note.mood?MOODC[note.mood]:"var(--ink-3)";
+    memo.innerHTML=`<div class="q">“${note.text}”</div><div class="src">VOICE MEMO · ${fmtD(s.date).toUpperCase()}${note.mood?" · "+note.mood.toUpperCase():""}</div>`;
+  }else{memo.className="memo none";memo.style.borderLeftColor="";
+    memo.innerHTML=`<div class="q">No voice memo for this one. Thirty seconds after the next hard day is all the story needs.</div><div class="src">NOTHING LOGGED</div>`;}
+  /* read */
+  const r=buildRead(s,g);
+  document.getElementById("readBody").innerHTML=r.b;
+  document.getElementById("readQ").textContent=r.q;
+  document.getElementById("screen").scrollTop=0;
+}
+render();
+</script>
+</body>
+</html>

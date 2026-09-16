@@ -70,9 +70,9 @@ struct PaceChartView: View {
             HStack(spacing: 8) {
                 Image(systemName: "target")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Color.drip.coral)
+                    .foregroundStyle(Color.drip.textSecondary)
                 Text("GOAL RACE")
-                    .font(.dripCaption(11))
+                    .font(.dripEyebrow(11))
                     .foregroundStyle(Color.drip.textSecondary)
                     .tracking(1.2)
                 Spacer()
@@ -231,9 +231,9 @@ struct PaceChartView: View {
 
         if let high {
             if viewModel.useKilometers {
-                return "\(PaceCalculator.formatPaceKm(high)) - \(PaceCalculator.formatPaceKm(low))"
+                return "\(PaceCalculator.formatPaceKm(high))\u{2013}\(PaceCalculator.formatPaceKm(low))"
             } else {
-                return "\(PaceCalculator.formatPace(high)) - \(PaceCalculator.formatPace(low))"
+                return "\(PaceCalculator.formatPace(high))\u{2013}\(PaceCalculator.formatPace(low))"
             }
         } else {
             if viewModel.useKilometers {
@@ -249,11 +249,11 @@ struct PaceChartView: View {
     private var weatherAdjustmentSection: some View {
         VStack(spacing: 12) {
             HStack(spacing: 8) {
-                Image(systemName: "thermometer.sun.fill")
+                Image(systemName: "thermometer.sun")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Color.drip.coralLight)
+                    .foregroundStyle(Color.drip.textSecondary)
                 Text("WEATHER ADJUSTMENT")
-                    .font(.dripCaption(11))
+                    .font(.dripEyebrow(11))
                     .foregroundStyle(Color.drip.textSecondary)
                     .tracking(1.2)
                 Spacer()
@@ -397,7 +397,7 @@ struct PaceChartView: View {
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("TEMP")
-                            .font(.dripCaption(9))
+                            .font(.dripEyebrow(9))
                             .foregroundStyle(Color.drip.textTertiary)
                         Text(weather.formattedTemperature)
                             .font(.dripStat(22))
@@ -407,7 +407,7 @@ struct PaceChartView: View {
                     if let dewPoint = weather.formattedDewPoint {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("DEW POINT")
-                                .font(.dripCaption(9))
+                                .font(.dripEyebrow(9))
                                 .foregroundStyle(Color.drip.textTertiary)
                             Text(dewPoint)
                                 .font(.dripStat(22))
@@ -529,13 +529,24 @@ struct PaceChartView: View {
             HStack(spacing: 8) {
                 Image(systemName: "speedometer")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Color.drip.energized)
+                    .foregroundStyle(Color.drip.textSecondary)
                 Text("RACE PACES")
-                    .font(.dripCaption(11))
+                    .font(.dripEyebrow(11))
                     .foregroundStyle(Color.drip.textSecondary)
                     .tracking(1.2)
                 Spacer()
+
+                Text("From your goal time")
+                    .font(.dripCaption(10))
+                    .foregroundStyle(Color.drip.textTertiary)
             }
+
+            // These are goal-driven what-ifs. They move when the goal time
+            // above changes; the training paces below do not.
+            Text("If you raced the goal above, this is the pace at every distance.")
+                .font(.dripCaption(11))
+                .foregroundStyle(Color.drip.textTertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
             VStack(spacing: 0) {
                 ForEach(PaceChartDistance.allCases) { distance in
@@ -626,11 +637,11 @@ struct PaceChartView: View {
     private var trainingPacesSection: some View {
         VStack(spacing: 12) {
             HStack(spacing: 8) {
-                Image(systemName: "heart.fill")
+                Image(systemName: "heart")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Color.drip.positive)
+                    .foregroundStyle(Color.drip.textSecondary)
                 Text("TRAINING PACES")
-                    .font(.dripCaption(11))
+                    .font(.dripEyebrow(11))
                     .foregroundStyle(Color.drip.textSecondary)
                     .tracking(1.2)
                 Spacer()
@@ -640,11 +651,18 @@ struct PaceChartView: View {
                     .foregroundStyle(Color.drip.textTertiary)
             }
 
+            // Says out loud that this block is anchored to real fitness, so a
+            // changed goal time above not moving these reads as intended, not broken.
+            Text(trainingPacesBasisNote)
+                .font(.dripCaption(11))
+                .foregroundStyle(Color.drip.textTertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
             VStack(spacing: 0) {
                 // Easy (not clickable)
                 trainingPaceRow(
                     name: "Easy",
-                    description: "70-80% MP",
+                    description: "70-80% of current MP",
                     paceRange: formatPaceRangeWithUnit(
                         low: viewModel.trainingPaces["Easy Fast"],
                         high: viewModel.trainingPaces["Easy Slow"]
@@ -654,7 +672,7 @@ struct PaceChartView: View {
                         high: viewModel.adjustedTrainingPaces["Easy Slow"]
                     ),
                     color: Color.drip.positive,
-                    icon: "leaf.fill",
+                    icon: "leaf",
                     isClickable: false,
                     pace: nil
                 )
@@ -669,7 +687,7 @@ struct PaceChartView: View {
                 // Moderate (not clickable)
                 trainingPaceRow(
                     name: "Moderate",
-                    description: "80-90% MP",
+                    description: "80-90% of current MP",
                     paceRange: formatPaceRangeWithUnit(
                         low: viewModel.trainingPaces["Moderate Fast"],
                         high: viewModel.trainingPaces["Moderate Slow"]
@@ -689,7 +707,7 @@ struct PaceChartView: View {
                 // Steady (not clickable)
                 trainingPaceRow(
                     name: "Steady",
-                    description: "90-100% MP",
+                    description: "90-100% of current MP",
                     paceRange: formatPaceRangeWithUnit(
                         low: viewModel.trainingPaces["Steady Fast"],
                         high: viewModel.trainingPaces["Steady Slow"]
@@ -710,12 +728,12 @@ struct PaceChartView: View {
                 // goal-Riegel fallback when the engine has nothing yet.
                 if let mpPace = viewModel.engineZones?.marathon?.pace ?? viewModel.racePaces["marathon"] {
                     trainingPaceRow(
-                        name: "MP",
-                        description: "Marathon Pace",
+                        name: mpRowName,
+                        description: mpRowDescription,
                         paceRange: viewModel.useKilometers ? PaceCalculator.formatPaceKm(mpPace) : PaceCalculator.formatPace(mpPace),
                         adjustedPaceRange: nil,
                         color: Color.drip.coral,
-                        icon: "bolt.fill",
+                        icon: "bolt",
                         isClickable: true,
                         pace: mpPace
                     )
@@ -726,12 +744,12 @@ struct PaceChartView: View {
                 // HMP — engine race anchor or goal-Riegel fallback.
                 if let hmpPace = viewModel.engineZones?.halfMarathon?.pace ?? viewModel.racePaces["half"] {
                     trainingPaceRow(
-                        name: "HMP",
-                        description: "Half Marathon Pace",
+                        name: hmpRowName,
+                        description: hmpRowDescription,
                         paceRange: viewModel.useKilometers ? PaceCalculator.formatPaceKm(hmpPace) : PaceCalculator.formatPace(hmpPace),
                         adjustedPaceRange: nil,
                         color: Color.drip.tired,
-                        icon: "bolt.horizontal.fill",
+                        icon: "bolt.horizontal",
                         isClickable: true,
                         pace: hmpPace
                     )
@@ -740,6 +758,48 @@ struct PaceChartView: View {
             }
             .background(Color.drip.cardBackground)
             .clipShape(RoundedRectangle(cornerRadius: 16))
+        }
+    }
+
+    /// True when the MP row shows the engine's real marathon anchor rather
+    /// than falling back to the goal-time Riegel value. Drives the row name so
+    /// "Current MP" is never shown for a number that came from the goal.
+    private var mpIsFromEngine: Bool {
+        viewModel.engineZones?.marathon?.pace != nil
+    }
+
+    /// Same test for the HMP row.
+    private var hmpIsFromEngine: Bool {
+        viewModel.engineZones?.halfMarathon?.pace != nil
+    }
+
+    private var mpRowName: String {
+        mpIsFromEngine ? "Current MP" : "Goal MP"
+    }
+
+    private var mpRowDescription: String {
+        mpIsFromEngine ? "Marathon pace from your runs" : "Marathon pace from your goal time"
+    }
+
+    private var hmpRowName: String {
+        hmpIsFromEngine ? "Current HMP" : "Goal HMP"
+    }
+
+    private var hmpRowDescription: String {
+        hmpIsFromEngine ? "Half marathon pace from your runs" : "Half marathon pace from your goal"
+    }
+
+    /// One line under the TRAINING PACES header. The chart shows two marathon
+    /// paces at once (goal-derived above, fitness-derived here); this states
+    /// which one this block is, so they don't read as a contradiction.
+    private var trainingPacesBasisNote: String {
+        switch viewModel.trainingPaceSource {
+        case .engine:
+            return "Where your fitness is now. These don't change when you change the goal above."
+        case .goalFallback:
+            return "Derived from your goal time until you've logged enough runs."
+        case .empty:
+            return "Log a few runs and these will fill in."
         }
     }
 
@@ -838,9 +898,12 @@ struct PaceChartView: View {
 
         let content = HStack {
             HStack(spacing: 10) {
+                // Icon sits at ink-2 (stroked, no color-coding). Per the
+                // design system the zone is named by its label, not painted —
+                // coral stays reserved as the single accent per cluster.
                 Image(systemName: icon)
                     .font(.system(size: 14))
-                    .foregroundStyle(color)
+                    .foregroundStyle(Color.drip.textSecondary)
                     .frame(width: 20)
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -859,7 +922,7 @@ struct PaceChartView: View {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("\(adjusted) \(unit)")
                         .font(.dripStat(16))
-                        .foregroundStyle(viewModel.currentAdjustment?.heatCategory.color ?? color)
+                        .foregroundStyle(viewModel.currentAdjustment?.heatCategory.color ?? Color.drip.textPrimary)
                     Text(paceRange)
                         .font(.dripCaption(10))
                         .foregroundStyle(Color.drip.textTertiary)
@@ -868,7 +931,7 @@ struct PaceChartView: View {
             } else {
                 Text("\(paceRange) \(unit)")
                     .font(.dripStat(16))
-                    .foregroundStyle(color)
+                    .foregroundStyle(Color.drip.textPrimary)
             }
 
             if isClickable {
@@ -908,26 +971,26 @@ struct PaceChartView: View {
     private var infoSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                Image(systemName: "info.circle.fill")
+                Image(systemName: "info.circle")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Color.drip.textTertiary)
                 Text("ABOUT THESE PACES")
-                    .font(.dripCaption(11))
+                    .font(.dripEyebrow(11))
                     .foregroundStyle(Color.drip.textSecondary)
                     .tracking(1.2)
             }
 
             VStack(alignment: .leading, spacing: 8) {
                 // swiftlint:disable:next line_length
-                Text("Race paces are calculated using standard equivalency formulas. Training paces are based on percentage of marathon pace (MP) effort.")
+                Text("Two different things on one screen. Race paces are what-ifs: standard equivalency formulas applied to the goal time you typed. Training paces are your real zones, built from your logged runs — they don't move when the goal changes.")
                     .font(.dripCaption(12))
                     .foregroundStyle(Color.drip.textTertiary)
 
-                Text("MP = Marathon Pace")
+                Text("Current MP = your marathon pace now · Goal MP = the pace your goal time asks for")
                     .font(.dripCaption(12))
                     .foregroundStyle(Color.drip.textTertiary)
 
-                Text("HMP = Half Marathon Pace")
+                Text("HMP = half marathon pace, same distinction")
                     .font(.dripCaption(12))
                     .foregroundStyle(Color.drip.textTertiary)
 
@@ -988,9 +1051,9 @@ struct PaceSplitsSheet: View {
                         HStack(spacing: 8) {
                             Image(systemName: "timer")
                                 .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(Color.drip.energized)
+                                .foregroundStyle(Color.drip.textSecondary)
                             Text("SPLITS")
-                                .font(.dripCaption(11))
+                                .font(.dripEyebrow(11))
                                 .foregroundStyle(Color.drip.textSecondary)
                                 .tracking(1.2)
                             Spacer()
@@ -1038,7 +1101,7 @@ struct PaceSplitsSheet: View {
             HStack(spacing: 12) {
                 Image(systemName: icon)
                     .font(.system(size: 16))
-                    .foregroundStyle(Color.drip.coral)
+                    .foregroundStyle(Color.drip.textSecondary)
                     .frame(width: 24)
 
                 Text(distance)

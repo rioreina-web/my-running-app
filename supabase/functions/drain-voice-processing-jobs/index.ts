@@ -34,6 +34,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 import { corsHeaders } from "../_shared/cors.ts";
+import { isProviderExhaustedText } from "../_shared/provider-errors.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -45,13 +46,19 @@ const MAX_BATCH = 50;
 const PARALLELISM = 3;
 const BACKOFF_BASE_SECONDS = 30;
 const BACKOFF_MAX_SECONDS = 30 * 60;
+/** Flat wait while the model provider is unfunded/over quota. Matches the
+ *  Retry-After that process-training-memo sends on 503. Provider outages run
+ *  minutes-to-hours, so the normal 30s exponential ramp is far too eager. */
+const PROVIDER_OUTAGE_BACKOFF_SECONDS = 15 * 60;
 
 interface ClaimedJob {
   id: number;
   training_log_id: string;
   user_id: string;
-  kind: "memo" | "check_in";
-  audio_url: string;
+  // "note" = a typed manual note: no audio, process-training-memo takes the
+  // text branch (transcription = the row's `notes`).
+  kind: "memo" | "check_in" | "note";
+  audio_url: string | null;
   attempts: number;
   max_attempts: number;
 }
@@ -67,7 +74,12 @@ Deno.serve(async (req: Request) => {
     return jsonResponse({ error: "Authentication required" }, 401);
   }
   const token = authHeader.slice("Bearer ".length).trim();
-  if (!constantTimeEq(token, supabaseServiceKey)) {
+  // Confirm a service-role token by decoding the role claim. The gateway has
+  // already verified the JWT signature (verify_jwt = true in config.toml), so
+  // we only read the claim. Robust to service-key / Vault drift — unlike the
+  // exact-key match against SUPABASE_SERVICE_ROLE_KEY that 403'd these drains
+  // when the function-env key and the Vault copy diverged (2026-06-11).
+  if (!isServiceRoleJWT(token)) {
     return jsonResponse({ error: "Service role required" }, 403);
   }
 
@@ -131,6 +143,9 @@ Deno.serve(async (req: Request) => {
 interface CallResult {
   kind: "ok" | "err";
   retryable: boolean;
+  /** The upstream model provider is out of credit/quota. Retryable, but the
+   *  attempt must NOT be counted — see processJob. */
+  providerExhausted?: boolean;
   error?: string;
 }
 
@@ -149,6 +164,38 @@ async function processJob(job: ClaimedJob, counters: Counters): Promise<void> {
       .update({ status: "completed", completed_at: new Date().toISOString() })
       .eq("id", job.id);
     counters.completed++;
+    return;
+  }
+
+  // ── An upstream billing outage must not spend this job's retry budget. ──
+  // (2026-08-13) Gemini's prepay credits ran dry and every memo recorded in
+  // that window died: three attempts at 30s/60s backoff burned in three
+  // minutes, then `failed` forever, with a "tap to try again" the athlete
+  // could not act on. The outage lasted ~7 hours. Nothing about that is the
+  // job's fault, so we hand the attempt back (the claim RPC already
+  // incremented it) and wait out the outage on a flat 15-minute backoff
+  // instead of an exponential one that starts far too fast.
+  //
+  // This retries indefinitely while the provider is down — deliberately. The
+  // failure mode being fixed is silent permanent data loss; an outage that
+  // never ends is an ops problem a queue cannot solve, and the cost is
+  // bounded (one fail-fast call per job per 15 min, under the LLM budget
+  // guard). The row stays visible in the queue the whole time.
+  if (result.providerExhausted) {
+    await admin
+      .from("voice_processing_jobs")
+      .update({
+        status: "queued",
+        attempts: Math.max(0, job.attempts - 1),
+        next_retry_at: new Date(Date.now() + PROVIDER_OUTAGE_BACKOFF_SECONDS * 1000).toISOString(),
+        last_error: (result.error ?? "").slice(0, 500),
+      })
+      .eq("id", job.id);
+    console.warn(
+      `[drain-voice] job ${job.id}: provider unavailable, attempt not counted ` +
+        `(attempts stays ${Math.max(0, job.attempts - 1)}/${job.max_attempts})`,
+    );
+    counters.retrying++;
     return;
   }
 
@@ -216,9 +263,30 @@ async function callProcessor(job: ClaimedJob): Promise<CallResult> {
     }
 
     const text = await res.text().catch(() => "");
-    // 409/processing-races and "already processed" shapes come back as
-    // 2xx from the processors; anything else: 429 + 5xx retry, 4xx don't.
-    const retryable = res.status === 429 || res.status >= 500;
+
+    // 503 + a provider-exhaustion body = the model provider is out of
+    // credit. Retryable, but uncounted (see processJob). The text check is
+    // the belt-and-braces half: it still fires if an older, not-yet-
+    // redeployed process-training-memo answers 500 with the raw provider
+    // error in the body — which is exactly the shape that stranded memos on
+    // 2026-08-13, and a real risk given this repo's deploy-drift history.
+    if (isProviderExhaustedText(text)) {
+      return {
+        kind: "err",
+        retryable: true,
+        providerExhausted: true,
+        error: `${fn} HTTP ${res.status}: ${text.slice(0, 200)}`,
+      };
+    }
+
+    // 409 = "already processing": with the client now direct-invoking
+    // process-training-memo on insert (2026-08-04), the drain routinely races
+    // an in-flight run. That's a healthy state, not a failure — retry with
+    // backoff, and the next attempt hits the "already processed" 200
+    // short-circuit and completes the job. Marking it failed here would
+    // clobber processing_status on a memo that's actively being processed.
+    // Otherwise: 429 + 5xx retry, remaining 4xx don't.
+    const retryable = res.status === 409 || res.status === 429 || res.status >= 500;
     return {
       kind: "err",
       retryable,
@@ -229,13 +297,23 @@ async function callProcessor(job: ClaimedJob): Promise<CallResult> {
   }
 }
 
-function constantTimeEq(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let result = 0;
-  for (let i = 0; i < a.length; i++) {
-    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+/** True if `token` is a non-expired service-role JWT. Signature is already
+ *  verified by the gateway (verify_jwt = true); we only read the claims.
+ *  Mirrors rebuild-athlete-state's auth so a future key rotation can never
+ *  silently 403 the drain pipeline again. */
+function isServiceRoleJWT(token: string): boolean {
+  try {
+    const seg = token.split(".")[1];
+    if (!seg) return false;
+    const b64 = seg.replace(/-/g, "+").replace(/_/g, "/")
+      .padEnd(Math.ceil(seg.length / 4) * 4, "=");
+    const payload = JSON.parse(atob(b64)) as { role?: string; exp?: number };
+    if (payload.role !== "service_role") return false;
+    if (typeof payload.exp === "number" && payload.exp * 1000 < Date.now()) return false;
+    return true;
+  } catch {
+    return false;
   }
-  return result === 0;
 }
 
 function jsonResponse(body: Record<string, unknown>, status = 200): Response {

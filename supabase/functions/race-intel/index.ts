@@ -6,7 +6,7 @@ import { loadPrompt } from "../_shared/prompt-library.ts";
 
 import { corsHeaders } from "../_shared/cors.ts";
 import { requireAuthOrServiceRole } from "../_shared/auth.ts";
-import { enforceFeatureRateLimit } from "../_shared/rateLimit.ts";
+import { enforceFeatureRateLimit, enforceMonthlyCap } from "../_shared/rateLimit.ts";
 // ============================================================================
 // TYPES
 // ============================================================================
@@ -273,6 +273,8 @@ Deno.serve(async (req: Request) => {
 
     const rlBlocked = await enforceFeatureRateLimit(user_id, "race", corsHeaders, { isServiceRole });
     if (rlBlocked) return rlBlocked;
+    const monthlyCapped = await enforceMonthlyCap(user_id, "race", corsHeaders, { isServiceRole });
+    if (monthlyCapped) return monthlyCapped;
 
     if (!race_name) {
       return new Response(
@@ -431,7 +433,10 @@ Deno.serve(async (req: Request) => {
         const racePaceLabel = distanceLabels[raceDistance];
 
         if (racePace) {
-          const formatPace = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+          const formatPace = (s: number) => {
+            const t = Math.round(s); // round total first — avoids "7:60"
+            return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
+          };
           let adjustedPace = racePace;
           if (paceAdjustments.heat) adjustedPace += (paceAdjustments.heat as any).adjustment_sec_per_mile;
           if (paceAdjustments.elevation_total) adjustedPace += (paceAdjustments.elevation_total as any).total_adjustment_sec;

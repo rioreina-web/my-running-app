@@ -17,7 +17,7 @@ final class HistoryViewModel {
             let userId = AuthManager.shared.userId
             let response: [TrainingLog] = try await supabase
                 .from("training_logs")
-                .select()
+                .select(TrainingLog.columns)
                 .eq("user_id", value: userId)
                 .order("workout_date", ascending: false, nullsFirst: false)
                 .limit(50)

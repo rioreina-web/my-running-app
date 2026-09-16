@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Post Run Drip — Log Detail Redesign</title>
+<style>
+:root{
+  --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF; --paper-deep:#E8E4DF; --rule:#E8E4E0;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-deep:#B84420; --coral-wash:rgba(212,89,42,.10);
+  --mood-tired:#C4873A; --sage:#4A9E6B; --rose:#B83A4A;
+  --font-display:"Crimson Pro",Georgia,"Times New Roman",serif;
+  --font-body:"PT Serif",Georgia,"Times New Roman",serif;
+  --font-mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --tracking-label:.12em; --tracking-meta:.14em;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#DEDAD4;font-family:var(--font-body);color:var(--ink);
+  padding:40px 32px 80px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+
+/* ============ page chrome ============ */
+.page-head{max-width:1940px;margin:0 auto 34px}
+.page-eyebrow{font-family:var(--font-mono);font-size:10px;letter-spacing:var(--tracking-meta);
+  text-transform:uppercase;color:var(--ink-2)}
+.page-title{font-family:var(--font-display);font-size:40px;font-weight:600;margin-top:7px;letter-spacing:-.015em}
+.page-sub{font-size:15px;color:var(--ink-2);margin-top:11px;max-width:70ch;line-height:1.6}
+.page-sub b{color:var(--ink);font-weight:700}
+
+.rail{display:flex;gap:26px;align-items:flex-start;overflow-x:auto;padding-bottom:26px;
+  max-width:1940px;margin:0 auto;scrollbar-width:thin}
+.col{flex:0 0 364px}
+.col-head{margin-bottom:13px;padding-left:2px;height:132px;display:flex;flex-direction:column}
+.col-head .wc{margin-top:auto}
+.col-tag{font-family:var(--font-mono);font-size:9.5px;letter-spacing:var(--tracking-meta);
+  text-transform:uppercase;color:var(--ink-3)}
+.col-tag.now{color:var(--rose)}
+.col-tag.pick{color:var(--coral)}
+.col-name{font-family:var(--font-display);font-size:21px;font-weight:600;margin-top:3px;letter-spacing:-.01em}
+.col-why{font-size:12.5px;color:var(--ink-2);line-height:1.52;margin-top:6px}
+.col-why b{color:var(--ink)}
+.wc{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-3);margin-top:8px}
+.wc b{color:var(--coral);font-weight:600}
+
+/* ============ phone ============ */
+.phone{background:var(--paper);border-radius:30px;overflow:hidden;
+  box-shadow:0 12px 34px rgba(0,0,0,.15);height:806px;display:flex;flex-direction:column;position:relative}
+.phone.dim{opacity:.58;filter:saturate(.75)}
+.status{display:flex;justify-content:space-between;align-items:center;padding:13px 21px 5px;
+  font-family:var(--font-mono);font-size:11px;color:var(--ink-2)}
+.status .batt{color:var(--sage);font-weight:600}
+.grabber{width:36px;height:4px;border-radius:2px;background:var(--paper-deep);margin:5px auto 0}
+.navbar{display:flex;justify-content:space-between;align-items:center;padding:11px 20px 2px;font-size:14.5px;
+  font-family:var(--font-display);font-weight:600}
+.navbar .edit{color:var(--coral)}
+.navbar .done{color:var(--ink-2)}
+.scroll{flex:1;overflow-y:auto;padding:0 22px 20px;scrollbar-width:thin}
+.scroll::-webkit-scrollbar{width:5px}
+.scroll::-webkit-scrollbar-thumb{background:var(--paper-deep);border-radius:3px}
+
+/* ============ atoms ============ */
+.plate{display:flex;justify-content:space-between;align-items:flex-end;
+  padding:12px 0 9px;border-bottom:1px solid var(--rule)}
+.plate-l{font-family:var(--font-mono);font-size:9.5px;letter-spacing:var(--tracking-meta);
+  text-transform:uppercase;color:var(--ink-3)}
+.plate-r{font-family:var(--font-mono);font-size:9.5px;letter-spacing:var(--tracking-meta);color:var(--ink-3);text-align:right}
+
+.title{font-family:var(--font-display);font-size:37px;font-weight:600;letter-spacing:-.018em;
+  line-height:1.02;margin-top:17px}
+.eyebrow-date{font-family:var(--font-mono);font-size:9.5px;letter-spacing:var(--tracking-label);
+  text-transform:uppercase;color:var(--ink-3);margin-top:7px}
+.mood{display:inline-flex;align-items:center;gap:6px;margin-top:11px;padding:5px 11px;
+  border-radius:999px;background:rgba(196,135,58,.13);
+  font-family:var(--font-mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--mood-tired)}
+.mood i{width:5px;height:5px;border-radius:50%;background:var(--mood-tired)}
+
+.stats{display:flex;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);margin-top:17px}
+.stat{flex:1;padding:12px 0 11px;text-align:center;border-right:1px solid var(--rule)}
+.stat:last-child{border-right:0}
+.stat-k{font-family:var(--font-mono);font-size:8.5px;letter-spacing:var(--tracking-label);color:var(--ink-3)}
+.stat-v{font-family:var(--font-display);font-size:25px;font-weight:600;margin-top:3px;letter-spacing:-.012em}
+.stat-v s{font-family:var(--font-mono);font-size:9.5px;font-weight:400;color:var(--ink-3);text-decoration:none;margin-left:2px}
+
+.srow{display:flex;justify-content:space-between;align-items:center;padding:11px 0;
+  border-bottom:1px solid var(--rule)}
+.eyebrow{font-family:var(--font-mono);font-size:9.5px;letter-spacing:var(--tracking-label);
+  text-transform:uppercase;color:var(--ink-2)}
+.eyebrow.faint{color:var(--ink-3)}
+.link{font-family:var(--font-mono);font-size:9.5px;letter-spacing:var(--tracking-label);
+  text-transform:uppercase;color:var(--coral);cursor:pointer;background:none;border:0;padding:0}
+.sec{padding-top:19px}
+.sec-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:9px}
+.body{font-size:14.5px;line-height:1.62}
+.muted{color:var(--ink-2)}
+.hair{height:1px;background:var(--rule);margin-top:20px}
+
+/* ---- OLD: the wordy stack ---- */
+.old-p{font-size:14.5px;line-height:1.6;margin-bottom:2px}
+.old-p.ital{font-style:italic}
+.showfull{font-family:var(--font-display);font-weight:600;font-size:13.5px;color:var(--coral);
+  border-bottom:1px solid var(--coral);display:inline-block;margin-top:9px;padding-bottom:1px}
+
+/* ---- NEW: the memo as hero ---- */
+.memo{margin-top:2px;padding-left:15px;border-left:2px solid var(--coral)}
+.memo p{font-family:var(--font-body);font-style:italic;font-size:17.5px;line-height:1.47;
+  letter-spacing:-.004em;color:var(--ink)}
+.memo p.sm{font-size:16px;line-height:1.5}
+.clamp2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.clamp4{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.clampoff{display:block;overflow:visible}
+.memo-more{font-family:var(--font-mono);font-size:9.5px;letter-spacing:var(--tracking-label);
+  text-transform:uppercase;color:var(--ink-3);margin-top:10px;cursor:pointer;
+  background:none;border:0;padding:0;display:block}
+.memo-more:hover{color:var(--coral)}
+
+/* audio strip */
+.audio{display:flex;align-items:center;gap:11px;margin-top:13px;padding:8px 13px;
+  background:var(--card);border:1px solid var(--rule);border-radius:999px;cursor:pointer}
+.play{width:24px;height:24px;border-radius:50%;background:var(--coral);color:#fff;flex:0 0 auto;
+  display:flex;align-items:center;justify-content:center;font-size:8.5px;padding-left:2px}
+.wave{flex:1;display:flex;align-items:flex-end;gap:2px;height:18px}
+.wave i{flex:1;background:var(--paper-deep);border-radius:1px;min-width:1px}
+.wave i.on{background:var(--coral)}
+.dur{font-family:var(--font-mono);font-size:9.5px;color:var(--ink-3);flex:0 0 auto}
+
+/* insight button */
+.insight-btn{width:100%;margin-top:20px;padding:13px 16px;background:transparent;
+  border:1px solid var(--rule);border-radius:10px;cursor:pointer;
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  transition:border-color .16s,background .16s}
+.insight-btn:hover{border-color:var(--coral);background:var(--coral-wash)}
+.insight-btn .lhs{display:flex;align-items:center;gap:9px}
+.insight-btn .spark{color:var(--coral);font-size:12px;line-height:1}
+.insight-btn .lbl{font-family:var(--font-mono);font-size:10px;letter-spacing:var(--tracking-label);
+  text-transform:uppercase;color:var(--ink)}
+.insight-btn .arw{color:var(--ink-3);font-size:12px}
+.insight-btn.pending .lbl{color:var(--ink-3)}
+.insight-btn.pending{border-style:dashed}
+
+/* insight opened */
+.insight-open{margin-top:20px;padding:16px 17px 15px;background:var(--paper-elevated);
+  border-left:2px solid var(--coral);border-radius:0 8px 8px 0}
+.insight-open .ih{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.insight-open .ih .t{font-family:var(--font-mono);font-size:9.5px;letter-spacing:var(--tracking-label);
+  text-transform:uppercase;color:var(--coral)}
+.insight-open .ih .x{font-family:var(--font-mono);font-size:12px;color:var(--ink-3);cursor:pointer;
+  background:none;border:0}
+.insight-open p{font-size:14px;line-height:1.58;color:var(--ink)}
+.insight-open p+p{margin-top:9px}
+.insight-open .ev{display:flex;gap:14px;margin-top:13px;padding-top:12px;border-top:1px solid var(--rule)}
+.ev-cell .k{font-family:var(--font-mono);font-size:8.5px;letter-spacing:var(--tracking-label);color:var(--ink-3)}
+.ev-cell .v{font-family:var(--font-mono);font-size:13px;font-weight:600;margin-top:3px;color:var(--ink)}
+
+/* chips */
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:13px}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;background:var(--card);
+  border:1px solid var(--rule);border-radius:999px;
+  font-family:var(--font-mono);font-size:9px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-2)}
+.chip i{width:5px;height:5px;border-radius:50%;flex:0 0 auto;background:var(--ink-3)}
+.chip.amber i{background:var(--mood-tired)} .chip.sage i{background:var(--sage)}
+.chip b{font-weight:700;color:var(--ink)}
+
+/* session shape (recipe) */
+.shape{display:flex;align-items:stretch;gap:0;margin-top:13px;height:26px;border-radius:4px;overflow:hidden}
+.shape span{display:flex;align-items:center;justify-content:center;
+  font-family:var(--font-mono);font-size:8.5px;letter-spacing:.06em;color:#fff}
+.shape .st{background:#8C857E;flex:6}
+.shape .ez{background:var(--paper-deep);color:var(--ink-2);flex:2}
+.shape .fa{background:var(--coral);flex:2}
+.shape-key{font-family:var(--font-mono);font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3);margin-top:7px}
+
+/* notes composer collapsed */
+.composer{display:flex;justify-content:space-between;align-items:center;margin-top:22px;
+  padding-top:13px;border-top:1px solid var(--rule);cursor:pointer}
+.composer .l{display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:9.5px;
+  letter-spacing:var(--tracking-label);text-transform:uppercase;color:var(--ink-3)}
+.composer .plus{color:var(--coral);font-size:13px}
+
+.footer-note{font-family:var(--font-mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3);text-align:center;margin-top:26px}
+
+/* pager rail */
+.pager{border-top:1px solid var(--rule);background:var(--paper);padding:9px 20px 13px;
+  display:flex;align-items:center;justify-content:space-between;gap:12px;flex:0 0 auto}
+.ticks{display:flex;gap:14px;align-items:center;overflow:hidden}
+.tick{text-align:center}
+.tick .d{width:5px;height:5px;border-radius:50%;background:var(--paper-deep);margin:0 auto 5px}
+.tick.fill .d{background:var(--ink-3)}
+.tick.cur .d{background:var(--coral);width:6px;height:6px}
+.tick .l{font-family:var(--font-mono);font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.tick.cur .l{color:var(--coral)}
+.count{font-family:var(--font-mono);font-size:9.5px;color:var(--ink-3);flex:0 0 auto}
+
+/* callout under rail */
+.notes{max-width:1940px;margin:12px auto 0;display:flex;gap:22px;flex-wrap:wrap}
+.note{flex:1 1 300px;background:var(--paper);border-radius:12px;padding:19px 21px}
+.note h4{font-family:var(--font-mono);font-size:9.5px;letter-spacing:var(--tracking-meta);
+  text-transform:uppercase;color:var(--coral);font-weight:500}
+.note ul{margin:11px 0 0 0;padding-left:0;list-style:none}
+.note li{font-size:13px;line-height:1.55;color:var(--ink-2);padding-left:15px;position:relative;margin-bottom:7px}
+.note li::before{content:"—";position:absolute;left:0;color:var(--ink-3)}
+.note li b{color:var(--ink)}
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <div class="page-eyebrow">Post Run Drip · Journal · Entry Detail</div>
+  <h1 class="page-title">Let the memo speak.</h1>
+  <p class="page-sub">The sheet currently says the same thing three times: an AI summary of your memo, then your memo, then an AI read on your memo. <b>Your voice becomes the page</b> — clamped to a few lines, in your own words. The AI read moves behind one tap, so it only costs attention when you ask for it.</p>
+</div>
+
+<div class="rail">
+
+  <!-- ============================================================ NOW -->
+  <div class="col">
+    <div class="col-head">
+      <div class="col-tag now">Today</div>
+      <div class="col-name">What ships now</div>
+      <p class="col-why">Three prose blocks stacked. You scroll past 90 words of machine writing before reaching a single number you care about.</p>
+      <div class="wc">162 words of prose · <b>121 AI-written</b></div>
+    </div>
+    <div class="phone dim">
+      <div class="status"><span>3:05</span><span class="batt">90</span></div>
+      <div class="grabber"></div>
+      <div class="navbar"><span class="edit">Edit</span><span class="done">Done</span></div>
+      <div class="scroll">
+        <div class="stats">
+          <div class="stat"><div class="stat-k">DIST</div><div class="stat-v">7.95<s>mi</s></div></div>
+          <div class="stat"><div class="stat-k">TIME</div><div class="stat-v">48:17</div></div>
+          <div class="stat"><div class="stat-k">PACE</div><div class="stat-v">6:04<s>/mi</s></div></div>
+        </div>
+        <div class="srow"><span class="eyebrow">LINKED · CONNECT</span><span class="link">VIEW DETAIL ↗</span></div>
+
+        <div class="sec">
+          <div class="sec-head"><span class="eyebrow">VOICE SUMMARY</span><span class="link">EDIT</span></div>
+          <p class="old-p">I ran a session with steady, easy, and fast intervals on a hilly and humid course. I felt like I wasn't moving very fast and my fitness isn't quite where I want it to be, especially on the fast segments. Despite this, I felt healthy overall, and a previous knee issue resolved itself.</p>
+        </div>
+
+        <div class="sec">
+          <div class="sec-head"><span class="eyebrow">TRANSCRIPT</span></div>
+          <p class="old-p">Ran a session that was six minutes steady, two minutes easy, two minutes fast, two minutes easy. It was on a hilly course in a pretty humid, humid day. I honestly just feel like I'm not moving very fast in s…</p>
+          <span class="showfull">Show full transcript ↓</span>
+        </div>
+
+        <div class="sec">
+          <div class="sec-head"><span class="eyebrow">AI INSIGHT</span></div>
+          <p class="old-p ital">This session shows a slight fade, with the reps slowing in the second half, anchored by the 5:52/mi on the seventh rep. Given the very hot and humid conditions, this is an understandable outcome for a workout targeting the steady zone. Getting this volume of work done while feeling banged up is a credit to your toughness, but notice that some recoveries also drifted into your moderate zone.</p>
+        </div>
+
+        <div class="sec">
+          <div class="sec-head"><span class="eyebrow">WORKOUT NOTES</span><span class="eyebrow faint">OPTIONAL</span></div>
+        </div>
+      </div>
+      <div class="pager">
+        <div class="ticks">
+          <div class="tick fill"><div class="d"></div><div class="l">Jul 24</div></div>
+          <div class="tick fill"><div class="d"></div><div class="l">Jul 28</div></div>
+          <div class="tick fill"><div class="d"></div><div class="l">Aug 1</div></div>
+          <div class="tick cur"><div class="d"></div><div class="l">Aug 4</div></div>
+          <div class="tick"><div class="d"></div><div class="l">Aug 6</div></div>
+        </div>
+        <div class="count">48/50</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ A -->
+  <div class="col">
+    <div class="col-head">
+      <div class="col-tag pick">Option A · recommended</div>
+      <div class="col-name">The memo</div>
+      <p class="col-why">One voice on the page: <b>yours</b>. Transcript is the body copy, clamped to four lines with audio right there. The AI read is one quiet button.</p>
+      <div class="wc">54 words of prose · <b>0 AI-written</b></div>
+    </div>
+    <div class="phone">
+      <div class="status"><span>3:05</span><span class="batt">90</span></div>
+      <div class="grabber"></div>
+      <div class="navbar"><span class="edit">Edit</span><span class="done">Done</span></div>
+      <div class="scroll">
+        <div class="plate"><span class="plate-l">Journal · Entry Detail</span><span class="plate-r">Aug 4 · 07:12</span></div>
+        <h2 class="title">Tuesday.</h2>
+        <div class="eyebrow-date">Steady · Easy · Fast reps</div>
+        <div class="mood"><i></i>Tired</div>
+
+        <div class="stats">
+          <div class="stat"><div class="stat-k">DIST</div><div class="stat-v">7.95<s>mi</s></div></div>
+          <div class="stat"><div class="stat-k">TIME</div><div class="stat-v">48:17</div></div>
+          <div class="stat"><div class="stat-k">PACE</div><div class="stat-v">6:04<s>/mi</s></div></div>
+        </div>
+        <div class="srow"><span class="eyebrow">LINKED · CONNECT</span><span class="link">VIEW DETAIL ↗</span></div>
+
+        <div class="sec">
+          <div class="sec-head"><span class="eyebrow">YOUR MEMO</span><span class="link">EDIT</span></div>
+          <div class="memo">
+            <p class="clamp4" id="memoA">Ran a session that was six minutes steady, two minutes easy, two minutes fast, two minutes easy. It was on a hilly course in a pretty humid, humid day. I honestly just feel like I'm not moving very fast, and my fitness isn't where I want it. Knee felt fine the whole way though.</p>
+          </div>
+          <button class="memo-more" onclick="toggleClamp('memoA', this)">Show all · 0:42 ↓</button>
+          <div class="audio">
+            <div class="play">▶</div>
+            <div class="wave">
+              <i style="height:32%"></i><i style="height:58%"></i><i style="height:44%"></i><i style="height:78%"></i>
+              <i style="height:52%"></i><i style="height:88%"></i><i style="height:36%"></i><i style="height:64%"></i>
+              <i style="height:48%"></i><i style="height:82%"></i><i style="height:40%"></i><i style="height:70%"></i>
+              <i style="height:56%"></i><i style="height:30%"></i><i style="height:66%"></i><i style="height:46%"></i>
+              <i style="height:74%"></i><i style="height:38%"></i><i style="height:60%"></i><i style="height:50%"></i>
+              <i style="height:84%"></i><i style="height:42%"></i><i style="height:68%"></i><i style="height:34%"></i>
+            </div>
+            <div class="dur">0:42</div>
+          </div>
+        </div>
+
+        <button class="insight-btn" onclick="openInsight(this)">
+          <span class="lhs"><span class="spark">✦</span><span class="lbl">Read the insight</span></span>
+          <span class="arw">→</span>
+        </button>
+
+        <div class="composer">
+          <span class="l"><span class="plus">+</span>Add a note</span>
+        </div>
+        <div class="footer-note">— Logged Aug 4 —</div>
+      </div>
+      <div class="pager">
+        <div class="ticks">
+          <div class="tick fill"><div class="d"></div><div class="l">Jul 24</div></div>
+          <div class="tick fill"><div class="d"></div><div class="l">Jul 28</div></div>
+          <div class="tick fill"><div class="d"></div><div class="l">Aug 1</div></div>
+          <div class="tick cur"><div class="d"></div><div class="l">Aug 4</div></div>
+          <div class="tick"><div class="d"></div><div class="l">Aug 6</div></div>
+        </div>
+        <div class="count">48/50</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ B -->
+  <div class="col">
+    <div class="col-head">
+      <div class="col-tag">Option B</div>
+      <div class="col-name">Memo + extracted facts</div>
+      <p class="col-why">Same memo-first spine, but the <b>facts</b> your memo contained (session shape, conditions, body) get pulled out as data instead of re-narrated as prose.</p>
+      <div class="wc">28 words of prose · <b>0 AI-written</b></div>
+    </div>
+    <div class="phone">
+      <div class="status"><span>3:05</span><span class="batt">90</span></div>
+      <div class="grabber"></div>
+      <div class="navbar"><span class="edit">Edit</span><span class="done">Done</span></div>
+      <div class="scroll">
+        <div class="plate"><span class="plate-l">Journal · Entry Detail</span><span class="plate-r">Aug 4 · 07:12</span></div>
+        <h2 class="title">Tuesday.</h2>
+        <div class="eyebrow-date">Steady · Easy · Fast reps</div>
+        <div class="mood"><i></i>Tired</div>
+
+        <div class="stats">
+          <div class="stat"><div class="stat-k">DIST</div><div class="stat-v">7.95<s>mi</s></div></div>
+          <div class="stat"><div class="stat-k">TIME</div><div class="stat-v">48:17</div></div>
+          <div class="stat"><div class="stat-k">PACE</div><div class="stat-v">6:04<s>/mi</s></div></div>
+        </div>
+        <div class="srow"><span class="eyebrow">LINKED · CONNECT</span><span class="link">VIEW DETAIL ↗</span></div>
+
+        <div class="sec">
+          <div class="sec-head"><span class="eyebrow">SESSION SHAPE</span><span class="eyebrow faint">7 × 12′</span></div>
+          <div class="shape"><span class="st">6′ STEADY</span><span class="ez">2′</span><span class="fa">2′ FAST</span><span class="ez">2′</span></div>
+          <div class="shape-key">Steady · Easy · Fast · Easy</div>
+          <div class="chips">
+            <span class="chip amber"><i></i>Hilly</span>
+            <span class="chip amber"><i></i>Humid</span>
+            <span class="chip sage"><i></i>Knee <b>resolved</b></span>
+          </div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-head"><span class="eyebrow">YOUR MEMO</span><span class="link">EDIT</span></div>
+          <div class="memo">
+            <p class="sm clamp2" id="memoB">I honestly just feel like I'm not moving very fast, and my fitness isn't where I want it — especially on the fast segments. Body felt healthy though.</p>
+          </div>
+          <button class="memo-more" onclick="toggleClamp('memoB', this)">Show all · 0:42 ↓</button>
+          <div class="audio">
+            <div class="play">▶</div>
+            <div class="wave">
+              <i style="height:32%"></i><i style="height:58%"></i><i style="height:44%"></i><i style="height:78%"></i>
+              <i style="height:52%"></i><i style="height:88%"></i><i style="height:36%"></i><i style="height:64%"></i>
+              <i style="height:48%"></i><i style="height:82%"></i><i style="height:40%"></i><i style="height:70%"></i>
+              <i style="height:56%"></i><i style="height:30%"></i><i style="height:66%"></i><i style="height:46%"></i>
+              <i style="height:74%"></i><i style="height:38%"></i><i style="height:60%"></i><i style="height:50%"></i>
+              <i style="height:84%"></i><i style="height:42%"></i><i style="height:68%"></i><i style="height:34%"></i>
+            </div>
+            <div class="dur">0:42</div>
+          </div>
+        </div>
+
+        <button class="insight-btn" onclick="openInsight(this)">
+          <span class="lhs"><span class="spark">✦</span><span class="lbl">Read the insight</span></span>
+          <span class="arw">→</span>
+        </button>
+
+        <div class="composer">
+          <span class="l"><span class="plus">+</span>Add a note</span>
+        </div>
+        <div class="footer-note">— Logged Aug 4 —</div>
+      </div>
+      <div class="pager">
+        <div class="ticks">
+          <div class="tick fill"><div class="d"></div><div class="l">Jul 24</div></div>
+          <div class="tick fill"><div class="d"></div><div class="l">Jul 28</div></div>
+          <div class="tick fill"><div class="d"></div><div class="l">Aug 1</div></div>
+          <div class="tick cur"><div class="d"></div><div class="l">Aug 4</div></div>
+          <div class="tick"><div class="d"></div><div class="l">Aug 6</div></div>
+        </div>
+        <div class="count">48/50</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ C: insight open -->
+  <div class="col">
+    <div class="col-head">
+      <div class="col-tag">Option A · state 2</div>
+      <div class="col-name">After you tap it</div>
+      <p class="col-why">The read opens inline, trimmed to <b>two sentences</b> and anchored to numbers. It's a guest on the page, not the page.</p>
+      <div class="wc">AI prose, only on request · <b>68 → 37 words</b></div>
+    </div>
+    <div class="phone">
+      <div class="status"><span>3:05</span><span class="batt">90</span></div>
+      <div class="grabber"></div>
+      <div class="navbar"><span class="edit">Edit</span><span class="done">Done</span></div>
+      <div class="scroll">
+        <div class="plate"><span class="plate-l">Journal · Entry Detail</span><span class="plate-r">Aug 4 · 07:12</span></div>
+        <h2 class="title">Tuesday.</h2>
+        <div class="eyebrow-date">Steady · Easy · Fast reps</div>
+        <div class="mood"><i></i>Tired</div>
+
+        <div class="stats">
+          <div class="stat"><div class="stat-k">DIST</div><div class="stat-v">7.95<s>mi</s></div></div>
+          <div class="stat"><div class="stat-k">TIME</div><div class="stat-v">48:17</div></div>
+          <div class="stat"><div class="stat-k">PACE</div><div class="stat-v">6:04<s>/mi</s></div></div>
+        </div>
+        <div class="srow"><span class="eyebrow">LINKED · CONNECT</span><span class="link">VIEW DETAIL ↗</span></div>
+
+        <div class="sec">
+          <div class="sec-head"><span class="eyebrow">YOUR MEMO</span><span class="link">EDIT</span></div>
+          <div class="memo">
+            <p class="clamp2">Ran a session that was six minutes steady, two minutes easy, two minutes fast, two minutes easy. It was on a hilly course in a pretty humid, humid day.</p>
+          </div>
+          <button class="memo-more">Show all · 0:42 ↓</button>
+        </div>
+
+        <div class="insight-open">
+          <div class="ih"><span class="t">✦ The read</span><button class="x">✕</button></div>
+          <p>Reps faded in the second half — the 7th came in at <b>5:52</b>, twelve seconds off your first. In this humidity, that's the expected shape, not a fitness problem.</p>
+          <p class="muted" style="font-size:13px">Watch the recoveries: three drifted into moderate.</p>
+          <div class="ev">
+            <div class="ev-cell"><div class="k">FADE</div><div class="v">−12s</div></div>
+            <div class="ev-cell"><div class="k">DEW PT</div><div class="v">72°</div></div>
+            <div class="ev-cell"><div class="k">REC DRIFT</div><div class="v">3 / 7</div></div>
+          </div>
+        </div>
+
+        <div class="composer">
+          <span class="l"><span class="plus">+</span>Add a note</span>
+        </div>
+        <div class="footer-note">— Logged Aug 4 —</div>
+      </div>
+      <div class="pager">
+        <div class="ticks">
+          <div class="tick fill"><div class="d"></div><div class="l">Jul 24</div></div>
+          <div class="tick fill"><div class="d"></div><div class="l">Jul 28</div></div>
+          <div class="tick fill"><div class="d"></div><div class="l">Aug 1</div></div>
+          <div class="tick cur"><div class="d"></div><div class="l">Aug 4</div></div>
+          <div class="tick"><div class="d"></div><div class="l">Aug 6</div></div>
+        </div>
+        <div class="count">48/50</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ D: not ready -->
+  <div class="col">
+    <div class="col-head">
+      <div class="col-tag">Edge cases</div>
+      <div class="col-name">Empty & pending</div>
+      <p class="col-why">Insight still processing, no memo recorded, nothing linked. The page has to hold up when there's <b>nothing to say</b>.</p>
+      <div class="wc">All three states in one column</div>
+    </div>
+    <div class="phone">
+      <div class="status"><span>3:05</span><span class="batt">90</span></div>
+      <div class="grabber"></div>
+      <div class="navbar"><span class="edit">Edit</span><span class="done">Done</span></div>
+      <div class="scroll">
+        <div class="plate"><span class="plate-l">Journal · Entry Detail</span><span class="plate-r">Aug 6 · 06:40</span></div>
+        <h2 class="title">Thursday.</h2>
+        <div class="eyebrow-date">No memo recorded</div>
+
+        <div class="stats">
+          <div class="stat"><div class="stat-k">DIST</div><div class="stat-v">5.02<s>mi</s></div></div>
+          <div class="stat"><div class="stat-k">TIME</div><div class="stat-v">41:08</div></div>
+          <div class="stat"><div class="stat-k">PACE</div><div class="stat-v">8:11<s>/mi</s></div></div>
+        </div>
+        <div class="srow"><span class="eyebrow faint">LINKED · NONE</span><span class="link">LINK A RUN →</span></div>
+
+        <div class="sec">
+          <div class="sec-head"><span class="eyebrow faint">YOUR MEMO</span></div>
+          <div class="memo" style="border-left-color:var(--paper-deep)">
+            <p class="sm muted" style="font-style:italic;color:var(--ink-3)">Nothing recorded for this run.</p>
+          </div>
+          <button class="memo-more" style="color:var(--coral)">＋ Record one now</button>
+        </div>
+
+        <button class="insight-btn pending">
+          <span class="lhs"><span class="spark" style="color:var(--ink-3)">✦</span><span class="lbl">Insight needs a memo</span></span>
+        </button>
+
+        <div class="hair"></div>
+
+        <div class="sec">
+          <div class="sec-head"><span class="eyebrow">SAME BUTTON, STILL COOKING</span></div>
+          <button class="insight-btn pending" style="margin-top:8px">
+            <span class="lhs"><span class="spark" style="color:var(--ink-3)">✦</span><span class="lbl">Writing your insight…</span></span>
+          </button>
+          <p class="col-why" style="margin-top:9px;font-size:11.5px">Dashed border + present-tense label. It fills in live when the backend lands — no spinner, no empty section.</p>
+        </div>
+
+        <div class="composer">
+          <span class="l"><span class="plus">+</span>Add a note</span>
+        </div>
+        <div class="footer-note">— Logged Aug 6 —</div>
+      </div>
+      <div class="pager">
+        <div class="ticks">
+          <div class="tick fill"><div class="d"></div><div class="l">Jul 28</div></div>
+          <div class="tick fill"><div class="d"></div><div class="l">Aug 1</div></div>
+          <div class="tick fill"><div class="d"></div><div class="l">Aug 4</div></div>
+          <div class="tick cur"><div class="d"></div><div class="l">Aug 6</div></div>
+        </div>
+        <div class="count">50/50</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="notes">
+  <div class="note">
+    <h4>What got cut</h4>
+    <ul>
+      <li><b>VOICE SUMMARY section — gone.</b> It was an AI paraphrase of the memo sitting directly above the memo. Two voices saying one thing.</li>
+      <li><b>"Show full transcript ↓"</b> → <b>"Show all · 0:42 ↓"</b>. Same job, carries the audio length, stops shouting "transcript".</li>
+      <li><b>AI INSIGHT’s always-on 68-word paragraph</b> → one 44pt button. Nothing generated is thrown away; it just waits to be asked.</li>
+      <li><b>"WORKOUT NOTES / OPTIONAL"</b> → a single <b>＋ Add a note</b> row. An empty labelled section is worse than no section.</li>
+    </ul>
+  </div>
+  <div class="note">
+    <h4>What the memo becomes</h4>
+    <ul>
+      <li>Italic PT Serif, <b>17.5px</b>, coral left rule — the same treatment your journal already gives a quote. It reads as a human speaking.</li>
+      <li>Clamped to <b>4 lines</b> (A) or <b>2 lines</b> (B). Never hidden behind a disclosure; you always see the opening.</li>
+      <li>Audio strip directly under it. The memo <i>is</i> a recording — playing it back should not require hunting.</li>
+      <li>Filler ("humid, humid day") stays. It's your voice. Only strip it in edit mode, if ever.</li>
+    </ul>
+  </div>
+  <div class="note">
+    <h4>If the insight is worth a tap</h4>
+    <ul>
+      <li>Cap it at <b>two sentences</b>, then a number row. Right now it hedges for 68 words and lands nowhere.</li>
+      <li>Lead with the finding, not the framing. "Reps faded — 7th at 5:52" beats "This session shows a slight fade".</li>
+      <li>Drop the flattery. "A credit to your toughness" is the part that makes the whole block feel like filler.</li>
+      <li>Show the evidence as data (<b>FADE −12s · DEW PT 72° · REC DRIFT 3/7</b>) so the claim is checkable, not just asserted.</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+function toggleClamp(id, btn){
+  var el = document.getElementById(id);
+  if(!el) return;
+  var open = el.classList.toggle('clampoff');
+  btn.textContent = open ? 'Show less ↑' : 'Show all · 0:42 ↓';
+}
+function openInsight(btn){
+  var box = document.createElement('div');
+  box.className = 'insight-open';
+  box.innerHTML = '<div class="ih"><span class="t">✦ The read</span><button class="x">✕</button></div>' +
+    '<p>Reps faded in the second half — the 7th came in at <b>5:52</b>, twelve seconds off your first. ' +
+    'In this humidity, that\'s the expected shape, not a fitness problem.</p>' +
+    '<p class="muted" style="font-size:13px">Watch the recoveries: three drifted into moderate.</p>' +
+    '<div class="ev">' +
+      '<div class="ev-cell"><div class="k">FADE</div><div class="v">−12s</div></div>' +
+      '<div class="ev-cell"><div class="k">DEW PT</div><div class="v">72°</div></div>' +
+      '<div class="ev-cell"><div class="k">REC DRIFT</div><div class="v">3 / 7</div></div>' +
+    '</div>';
+  btn.replaceWith(box);
+  box.querySelector('.x').addEventListener('click', function(){
+    var b = document.createElement('button');
+    b.className = 'insight-btn';
+    b.innerHTML = '<span class="lhs"><span class="spark">✦</span><span class="lbl">Read the insight</span></span><span class="arw">→</span>';
+    b.addEventListener('click', function(){ openInsight(b); });
+    box.replaceWith(b);
+  });
+}
+</script>
+</body>
+</html>

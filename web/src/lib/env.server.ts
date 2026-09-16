@@ -56,8 +56,20 @@ export function validateEnv(): void {
  * The Supabase service-role key. Bypasses RLS — server-side use only.
  * Throws at access time if unset rather than allowing a silent empty string
  * to be used as a credential.
+ *
+ * A FUNCTION, not a const, and that is the whole point. As a module-scope
+ * const the throw fired on IMPORT, so `next build` died while collecting page
+ * data for the first route that touched this module — taking down the entire
+ * build, including the pages that never wanted the key. That is what the
+ * docstring above already promised ("at access time") and what the
+ * implementation did not do.
+ *
+ * The safety property is unchanged: an unset key still throws rather than
+ * handing a silent empty string to PostgREST as a credential. It now throws on
+ * the request that actually needs it, which is both narrower and honest — a
+ * deploy missing this variable fails those six routes, not the whole site.
  */
-export const SUPABASE_SERVICE_ROLE_KEY: string = (() => {
+export function serviceRoleKey(): string {
   const v = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!v) {
     throw new Error(
@@ -65,7 +77,7 @@ export const SUPABASE_SERVICE_ROLE_KEY: string = (() => {
     );
   }
   return v;
-})();
+}
 
 // Run validation on import
 validateEnv();

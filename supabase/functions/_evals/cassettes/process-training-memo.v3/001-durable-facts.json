@@ -1,0 +1,28 @@
+{
+  "id": "001-durable-facts",
+  "prompt_name": "process-training-memo.v3",
+  "description": "The core v3 test. A memo carrying durable, athlete-stated facts (a night-shift constraint, a Saturday long-run preference, two kids at home). v3 must emit memory_candidates with the right closed-vocab categories (constraint/preference/life), in the athlete's own framing — never inferred psychology, never health speculation. This is the row the memory writer dedups-or-reinforces into user_memories.",
+  "vars": {
+    "coachAnchorContext": "",
+    "recentContext": ""
+  },
+  "input": "\n\n## Audio Transcript (from groq)\n\"Squeezed in 6 easy miles before my shift. Working nights at the hospital this whole stretch so I can really only get my long runs in on Saturdays. Two little ones at home don't make it easier. Felt fine, just early.\"",
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": ["transcription", "cleaned_notes", "mood", "coach_insight", "extracted_data", "memory_candidates"],
+    "forbidden_pattern_groups": ["diagnosis_terms", "action_bans", "stop_training_bans", "medical_claim_bans"],
+    "forbidden_patterns": [
+      "\"mood\":\\s*\"(?!(energized|positive|neutral|tired|struggling|injured)\")[^\"]*\"",
+      "(?i)\"content\":\\s*\"[^\"]*(seems|anxious|perfectionist|lacks confidence|type-a|struggles emotionally)"
+    ],
+    "required_patterns": [
+      "\"memory_candidates\"\\s*:\\s*\\[",
+      "(?i)\"category\"\\s*:\\s*\"constraint\"",
+      "(?i)night",
+      "(?i)\"category\"\\s*:\\s*\"(preference|life)\""
+    ]
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-flash"
+}

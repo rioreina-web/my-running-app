@@ -10,6 +10,44 @@ import Foundation
 import os
 import Supabase
 
+// MARK: - Launch-storm coalescing
+
+/// Snapshot of the shared active-plan load, applied to every TrainingPlanService
+/// instance that loads concurrently at launch. `@unchecked Sendable` is safe:
+/// it is only ever created and read on the MainActor.
+struct TrainingPlanSnapshot: @unchecked Sendable {
+    let activeGoal: UserGoal?
+    let marathonGoalTime: Int?
+    let weeksUntilRace: Int
+    let activePlan: TrainingPlan?
+    let allScheduledWorkouts: [ScheduledWorkout]
+    let moodByDate: [String: String]
+    let logDistanceByDate: [String: Double]
+    let fitnessSnapshotMarathonSeconds: Int?
+    let errorMessage: String?
+}
+
+/// Collapses concurrent active-plan loads into a single network fetch. The 5
+/// always-alive tabs each own a TrainingPlanService and call loadActivePlan on
+/// launch — without this they fire 3–4 duplicate ~5-query loads + the `-999`
+/// cancellation races. Concurrent callers join the in-flight load and share its
+/// snapshot; once it completes the next call starts fresh (no cache → an edit
+/// always re-fetches).
+@MainActor
+final class PlanLoadCoalescer {
+    static let shared = PlanLoadCoalescer()
+    private var inFlight: Task<TrainingPlanSnapshot?, Never>?
+
+    func load(leader: @escaping @MainActor () async -> TrainingPlanSnapshot?) async -> TrainingPlanSnapshot? {
+        if let inFlight { return await inFlight.value }
+        let task = Task { @MainActor in await leader() }
+        inFlight = task
+        let result = await task.value
+        inFlight = nil
+        return result
+    }
+}
+
 // MARK: - TrainingPlanService
 
 @Observable
@@ -104,29 +142,30 @@ final class TrainingPlanService {
         isLoadingPlan = true
         errorMessage = nil
 
+        // Coalesce the launch refetch storm: the 5 always-alive tabs each call
+        // this with their own service instance. Share ONE network load across
+        // concurrent callers; every instance then applies the same snapshot.
+        let snap = await PlanLoadCoalescer.shared.load(leader: { [weak self] in
+            await self?.performActivePlanLoad()
+            return self?.currentSnapshot()
+        })
+        if let snap { apply(snapshot: snap) }
+
+        isLoadingPlan = false
+        if activePlan != nil { initializeUI() }
+    }
+
+    /// The actual active-plan load (goal + plan + scheduled + mood, or fallback).
+    /// Mutates instance state; a snapshot of it is shared with sibling tabs via
+    /// PlanLoadCoalescer. Deliberately does NOT call the caller's `initializeUI`
+    /// — that's per-instance and runs in loadActivePlan after the snapshot applies.
+    @MainActor
+    private func performActivePlanLoad() async {
         await loadActiveGoal()
 
-        guard !Self.useLocalMode else {
-            isLoadingPlan = false
-            return
-        }
+        guard !Self.useLocalMode else { return }
 
         let debugUid = AuthManager.shared.userId
-        Log.coach.info("loadActivePlan: auth uid=\(debugUid)")
-
-        // 1. Raw fetch (debug): how many rows does RLS expose for this user?
-        do {
-            struct Row: Codable { let id: UUID; let user_id: String; let status: String; let name: String }
-            let rows: [Row] = try await supabase
-                .from("training_plans")
-                .select("id,user_id,status,name")
-                .execute()
-                .value
-            Log.coach.info("loadActivePlan: RLS sees \(rows.count) rows; active=\(rows.filter{$0.status=="active"}.count); user_ids=\(rows.map{$0.user_id}.joined(separator: ","))")
-        } catch {
-            Log.coach.info("loadActivePlan: debug fetch failed: \(error.localizedDescription)")
-            errorMessage = "Debug fetch failed: \(error.localizedDescription)"
-        }
 
         do {
             let plans: [TrainingPlan] = try await supabase
@@ -145,20 +184,44 @@ final class TrainingPlanService {
                 paceConfig.configure(for: plan)
                 await loadScheduledWorkouts(for: plan.id)
                 await loadMoodData(startDate: plan.startDate, endDate: plan.endDate)
-                initializeUI()
             } else {
                 errorMessage = "No active training_plans row for uid \(debugUid)"
                 await loadFitnessSnapshotFallback()
-                isLoadingPlan = false
             }
-
-            isLoadingPlan = false
         } catch {
             Log.coach.error("loadActivePlan: decode/query failed: \(error)")
             errorMessage = "Plan load failed: \(error.localizedDescription)"
             await loadFitnessSnapshotFallback()
-            isLoadingPlan = false
         }
+    }
+
+    @MainActor
+    private func currentSnapshot() -> TrainingPlanSnapshot {
+        TrainingPlanSnapshot(
+            activeGoal: activeGoal,
+            marathonGoalTime: marathonGoalTime,
+            weeksUntilRace: weeksUntilRace,
+            activePlan: activePlan,
+            allScheduledWorkouts: allScheduledWorkouts,
+            moodByDate: moodByDate,
+            logDistanceByDate: logDistanceByDate,
+            fitnessSnapshotMarathonSeconds: fitnessSnapshotMarathonSeconds,
+            errorMessage: errorMessage
+        )
+    }
+
+    @MainActor
+    private func apply(snapshot s: TrainingPlanSnapshot) {
+        activeGoal = s.activeGoal
+        marathonGoalTime = s.marathonGoalTime
+        weeksUntilRace = s.weeksUntilRace
+        activePlan = s.activePlan
+        allScheduledWorkouts = s.allScheduledWorkouts
+        moodByDate = s.moodByDate
+        logDistanceByDate = s.logDistanceByDate
+        fitnessSnapshotMarathonSeconds = s.fitnessSnapshotMarathonSeconds
+        errorMessage = s.errorMessage
+        if let plan = s.activePlan { paceConfig.configure(for: plan) }
     }
 
     /// Load the most recent fitness snapshot to provide pace zone data when no training plan exists
@@ -232,6 +295,18 @@ final class TrainingPlanService {
                 .value
 
             allScheduledWorkouts = workouts
+
+            // Hand the plan's key-session intent to the one store that resolves
+            // it. Done here rather than fetched by the store, because the plan
+            // is already loaded and a second fetch is how two versions of the
+            // truth start.
+            // No `await`: ingestPlanIntent is @MainActor but synchronous, and
+            // this function is already @MainActor — so there is no hop to
+            // suspend for, and the keyword only reads as if there were.
+            KeySessionStore.shared.ingestPlanIntent(
+                workouts.map { (date: $0.date, isKey: $0.isKeySession) }
+            )
+
             print("[ScheduledWorkouts] Loaded \(workouts.count) workouts for plan \(planId.uuidString.prefix(8))")
         } catch {
             print("[ScheduledWorkouts] ERROR: \(error)")
@@ -253,7 +328,7 @@ final class TrainingPlanService {
             let iso = ISO8601DateFormatter()
             return (try? await supabase
                 .from("training_logs")
-                .select()
+                .select(TrainingLog.columns)
                 .eq("user_id", value: logUserId)
                 .not("workout_date", operator: .is, value: "null")
                 .gte("workout_date", value: iso.string(from: bufferStart))
@@ -318,7 +393,7 @@ final class TrainingPlanService {
             let userId = AuthManager.shared.userId
             let entries: [TrainingLog] = try await supabase
                 .from("training_logs")
-                .select()
+                .select(TrainingLog.columns)
                 .eq("user_id", value: userId)
                 .gte("workout_date", value: iso.string(from: dayStart))
                 .lt("workout_date", value: iso.string(from: dayEnd))
@@ -401,6 +476,77 @@ final class TrainingPlanService {
             isSaving = false
             errorMessage = "Failed to save changes"
             showError = true
+        }
+    }
+
+    /// Athlete self-edit of a workout's structure. Unlike `updateWorkout`'s
+    /// silent PostgREST write, this routes through the `edit-scheduled-workout`
+    /// edge function so the change is logged to `plan_adjustments` (yellow tier)
+    /// and surfaced to the coach. The athlete owns their plan, so a race-week
+    /// edit is auto-confirmed — the coach flag is the oversight. Returns true on
+    /// success; on failure the caller keeps the sheet in edit mode.
+    func submitWorkoutEdit(_ workout: ScheduledWorkout) async -> Bool {
+        isSaving = true
+        defer { isSaving = false }
+        do {
+            var body: [String: Any] = [
+                "scheduled_workout_id": workout.id.uuidString,
+                "status": workout.status.rawValue,
+                "confirm_race_week": true,
+            ]
+            if let planned = workout.workout {
+                let encoded = try JSONEncoder().encode(planned)
+                if let obj = try JSONSerialization.jsonObject(with: encoded) as? [String: Any] {
+                    body["workout_data"] = obj
+                }
+            }
+            _ = try await callEdgeFunction(name: "edit-scheduled-workout", body: body)
+            if let index = allScheduledWorkouts.firstIndex(where: { $0.id == workout.id }) {
+                allScheduledWorkouts[index] = workout
+            }
+            return true
+        } catch {
+            Log.coach.error("Failed to submit workout edit: \(error)")
+            ErrorReporter.shared.report(error, context: "athlete workout edit")
+            errorMessage = "Failed to save changes"
+            showError = true
+            return false
+        }
+    }
+
+    /// Duplicate a scheduled workout onto another (future) day. Routes
+    /// through the same `edit-scheduled-workout` edge function as
+    /// `submitWorkoutEdit` — the function inserts a fresh row with
+    /// source = 'user_created' and writes a `duplicate_workout`
+    /// plan_adjustments audit row (yellow tier when the source is a coach
+    /// prescription, so the coach sees the added volume). Reloads the
+    /// scheduled-workout cache on success so the new day appears
+    /// immediately. Returns true on success.
+    func duplicateWorkout(_ workout: ScheduledWorkout, to date: Date) async -> Bool {
+        isSaving = true
+        defer { isSaving = false }
+        do {
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.timeZone = TimeZone.current
+            f.dateFormat = "yyyy-MM-dd"
+            let body: [String: Any] = [
+                "scheduled_workout_id": workout.id.uuidString,
+                "duplicate_to_date": f.string(from: date),
+                // The athlete owns their calendar; landing near the race is
+                // their call — the coach flag is the oversight, mirroring
+                // submitWorkoutEdit's posture.
+                "confirm_race_week": true,
+            ]
+            _ = try await callEdgeFunction(name: "edit-scheduled-workout", body: body)
+            await loadScheduledWorkouts()
+            return true
+        } catch {
+            Log.coach.error("Failed to duplicate workout: \(error)")
+            ErrorReporter.shared.report(error, context: "duplicate scheduled workout")
+            errorMessage = "Failed to duplicate workout"
+            showError = true
+            return false
         }
     }
 

@@ -1,0 +1,29 @@
+{
+  "id": "001-continuous-2k-not-two-1ks",
+  "prompt_name": "parse-workout-structure.v2",
+  "description": "Execution is the source of truth. The note PRESCRIBES '8×1000m @ 3:15 w/ 80s rec', but the athlete actually ran two pairs continuous, so the recovery-segmented bouts are 2k, 1k, 1k, 2k, 1k, 1k = 2×(2k+2×1k). The parse must report EXECUTION: reps=6 (not 8), rep_distance_label='mixed', and an intent_pattern that surfaces the 2k structure — with the prescription noted secondarily. Must NOT parrot 8 reps from the note.",
+  "vars": {
+    "distanceMiles": "5.29",
+    "durationMinutes": "30.8",
+    "moodLabel": "positive",
+    "workoutNotesBlock": "\"8×1000m @ 3:15 w/ 80s rec\"",
+    "voiceTranscriptBlock": "\"Threshold work at Zilker, hot and humid, kept effort around 75-80%, didn't finish the full route to the whale.\"",
+    "workBoutsBlock": "Bout 1: 2.01 km / 1.25 mi in 6:39 @ 3:18/km (5:18/mi) — by distance ≈ 2k, by time ≈ 6'\n  ↳ recovery: 2:03 jog\nBout 2: 1.01 km / 0.63 mi in 3:15 @ 3:13/km (5:12/mi) — by distance ≈ 1k, by time ≈ 3'\n  ↳ recovery: 1:07 jog\nBout 3: 1.01 km / 0.63 mi in 3:15 @ 3:13/km (5:12/mi) — by distance ≈ 1k, by time ≈ 3'\n  ↳ recovery: 1:06 jog\nBout 4: 2.00 km / 1.24 mi in 6:38 @ 3:19/km (5:21/mi) — by distance ≈ 2k, by time ≈ 6'\n  ↳ recovery: 2:19 jog\nBout 5: 1.01 km / 0.63 mi in 3:14 @ 3:12/km (5:10/mi) — by distance ≈ 1k, by time ≈ 3'\n  ↳ recovery: 1:04 jog\nBout 6: 1.00 km / 0.62 mi in 3:14 @ 3:14/km (5:14/mi) — by distance ≈ 1k, by time ≈ 3'",
+    "timelineStr": "0s d=0.0mi pace=5:31 hr=148\n400s d=1.24mi pace=5:18 hr=171\n430s d=1.30mi pace=stopped hr=150\n660s d=1.93mi pace=5:14 hr=172"
+  },
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": ["type", "intent_pattern", "blocks", "work", "subjective", "confidence"],
+    "required_patterns": [
+      "2k"
+    ],
+    "forbidden_patterns": [
+      "\"reps\":\\s*8",
+      "\"type\":\\s*\"easy\"",
+      "\"type\":\\s*\"long_run\""
+    ]
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-flash"
+}

@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Trends — simplified · Post Run Drip</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@200..900&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --paper: #F5F3F0;
+    --paper-elevated: #FAFAF8;
+    --card: #FFFFFF;
+    --paper-deep: #E8E4DF;
+    --rule: #E8E4E0;
+    --ink: #1A1815;
+    --ink-2: #6B6560;
+    --ink-3: #9B9590;
+    --coral: #D4592A;
+    --coral-deep: #B84420;
+    --coral-wash: rgba(212, 89, 42, 0.12);
+    --mood-energized: #2D8A4E;
+    --mood-positive: #4A9E6B;
+    --mood-neutral: #9B9590;
+    --mood-tired: #C4873A;
+    --mood-struggling: #C45A3A;
+    --mood-injured: #B83A4A;
+    --font-display: "Crimson Pro", Georgia, serif;
+    --font-body: "PT Serif", Georgia, serif;
+    --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.06);
+    --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: #E9E6E1; }
+  body {
+    font-family: var(--font-body);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    display: flex;
+    justify-content: center;
+    padding: 32px 0;
+  }
+
+  /* ---- phone frame ---- */
+  .frame {
+    width: 393px;
+    background: var(--paper);
+    border-radius: 28px;
+    box-shadow: 0 12px 48px rgba(0,0,0,0.14);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-height: 852px;
+    position: relative;
+  }
+  .screen { flex: 1; overflow-y: auto; padding: 18px 24px 8px; }
+
+  /* ---- type primitives ---- */
+  .plate {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+    letter-spacing: 0.14em; color: var(--ink-2); text-transform: uppercase;
+    padding-bottom: 14px; border-bottom: 1px solid var(--rule);
+  }
+  .eyebrow {
+    font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+    letter-spacing: 0.12em; color: var(--ink-2); text-transform: uppercase;
+  }
+  .caption {
+    font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+    letter-spacing: 0.10em; color: var(--ink-2); text-transform: uppercase;
+  }
+  .caption--faint { color: var(--ink-3); }
+
+  /* ---- range switcher ---- */
+  .readbar {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-top: 18px;
+  }
+  .ranges { display: flex; gap: 13px; }
+  .ranges span {
+    font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+    letter-spacing: 0.12em; color: var(--ink-3); text-transform: uppercase;
+    padding-bottom: 2px; border-bottom: 1.5px solid transparent; cursor: pointer;
+  }
+  .ranges span.is-active { color: var(--coral); border-bottom-color: var(--coral); }
+
+  /* ---- the read ---- */
+  .read-h {
+    font-family: var(--font-display); font-weight: 700; font-size: 33px;
+    letter-spacing: -0.01em; line-height: 1.05; margin-top: 10px;
+  }
+  .read-h .stop { color: var(--coral); }
+  .read-dek {
+    font-family: var(--font-body); font-style: italic; font-size: 14px;
+    color: var(--ink-2); line-height: 1.5; margin-top: 8px;
+  }
+
+  /* ---- editorial rule ---- */
+  .ed-rule { display: flex; align-items: center; gap: 8px; margin: 22px 0 4px; }
+  .ed-rule::before, .ed-rule::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
+  .ed-rule i { width: 3px; height: 3px; border-radius: 999px; background: var(--ink-3); }
+
+  /* ---- signal ledger (flat — no expansion) ---- */
+  .sig { border-bottom: 1px solid var(--rule); }
+  .sig:last-child { border-bottom: 0; }
+  .sig__row {
+    display: grid;
+    grid-template-columns: 1fr 112px 14px;
+    gap: 12px;
+    align-items: center;
+    padding: 15px 0;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .sig__label { display: block; margin-bottom: 5px; }
+  .sig__value {
+    font-family: var(--font-mono); font-size: 16px; font-weight: 600;
+    color: var(--ink); font-variant-numeric: tabular-nums; line-height: 1;
+  }
+  .sig__value small {
+    font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+    letter-spacing: 0.08em; color: var(--ink-3); text-transform: uppercase;
+    margin-left: 7px;
+  }
+  .sig__spark { justify-self: end; line-height: 0; }
+  .sig__chev {
+    font-family: var(--font-mono); font-size: 12px; color: var(--ink-3);
+    justify-self: end;
+  }
+
+  /* ---- footnote ---- */
+  .footnote {
+    font-family: var(--font-body); font-style: italic; font-size: 11.5px;
+    color: var(--ink-3); text-align: center; margin: 18px 0 16px;
+  }
+
+  /* ---- ask bar ---- */
+  .askbar {
+    background: var(--card); border-radius: 12px; box-shadow: var(--shadow-card);
+    padding: 13px 16px; display: flex; justify-content: space-between;
+    align-items: baseline; cursor: pointer; margin-bottom: 20px;
+  }
+  .askbar em {
+    font-family: var(--font-body); font-style: italic; font-size: 14px;
+    color: var(--ink-3);
+  }
+  .askbar span {
+    font-family: var(--font-mono); font-size: 12px; color: var(--ink-2);
+  }
+
+  /* ---- tab bar ---- */
+  .tabs {
+    border-top: 1px solid var(--rule); background: var(--paper);
+    display: flex; justify-content: space-around; padding: 12px 0 26px;
+  }
+  .tab {
+    display: flex; flex-direction: column; align-items: center; gap: 5px;
+    font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+    letter-spacing: 0.12em; color: var(--ink-3); text-transform: uppercase;
+  }
+  .tab i { width: 6px; height: 6px; border-radius: 999px; background: transparent; }
+  .tab.is-active { color: var(--coral); }
+  .tab.is-active i { background: var(--coral); }
+
+  /* ---- bottom sheet ---- */
+  .scrim {
+    position: absolute; inset: 0;
+    background: rgba(26, 24, 21, 0.28);
+    opacity: 0; pointer-events: none;
+    transition: opacity 300ms var(--ease-out);
+    border-radius: 28px;
+  }
+  .sheet {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    background: var(--card);
+    border-radius: 16px 16px 28px 28px;
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.10);
+    padding: 14px 24px 34px;
+    transform: translateY(105%);
+    transition: transform 300ms var(--ease-out);
+  }
+  .frame.sheet-open .scrim { opacity: 1; pointer-events: auto; }
+  .frame.sheet-open .sheet { transform: translateY(0); }
+  .sheet__grab {
+    width: 36px; height: 4px; border-radius: 999px;
+    background: var(--rule); margin: 0 auto 16px;
+  }
+  .sheet__head {
+    display: flex; justify-content: space-between; align-items: baseline;
+  }
+  .sheet__close {
+    font-family: var(--font-display); font-weight: 600; font-size: 15px;
+    color: var(--ink-2); cursor: pointer;
+  }
+  .sheet__title {
+    font-family: var(--font-display); font-weight: 700; font-size: 26px;
+    letter-spacing: -0.01em; line-height: 1.05; margin: 8px 0 16px;
+  }
+  .sheet__chart { line-height: 0; }
+  .sheet__cap { display: flex; justify-content: space-between; margin-top: 8px; }
+  .sheet__note {
+    font-family: var(--font-body); font-style: italic; font-size: 13px;
+    color: var(--ink-2); line-height: 1.55; margin-top: 12px;
+  }
+  .sheet__note--quiet { color: var(--ink-3); font-size: 11.5px; margin-top: 6px; }
+  .sheet__ask {
+    display: inline-block; margin-top: 16px;
+    font-family: var(--font-display); font-weight: 600; font-size: 15px;
+    color: var(--coral); cursor: pointer;
+    border-bottom: 1.5px solid var(--coral); padding-bottom: 1px;
+  }
+</style>
+</head>
+<body>
+<div class="frame" id="frame">
+  <div class="screen">
+
+    <div class="plate">
+      <span>Running log — Trends</span>
+      <span>Fig. 02 · Aug 6</span>
+    </div>
+
+    <div class="readbar">
+      <span class="eyebrow">The read · Jul 8 – Aug 6</span>
+      <div class="ranges">
+        <span class="is-active">30d</span><span>3mo</span><span>6mo</span><span>1yr</span>
+      </div>
+    </div>
+
+    <h1 class="read-h">You’re coming back up<span class="stop">.</span></h1>
+    <p class="read-dek">Recovery rose 11 points across the window; the mood logs haven’t caught up yet.</p>
+
+    <div class="ed-rule"><i></i></div>
+
+    <div id="ledger">
+
+      <div class="sig" data-sig="volume">
+        <div class="sig__row">
+          <div>
+            <span class="eyebrow sig__label">Volume</span>
+            <span class="sig__value">259 mi<small>−1% · 5 key</small></span>
+          </div>
+          <div class="sig__spark" data-spark="volume"></div>
+          <span class="sig__chev">›</span>
+        </div>
+      </div>
+
+      <div class="sig" data-sig="load">
+        <div class="sig__row">
+          <div>
+            <span class="eyebrow sig__label">Load</span>
+            <span class="sig__value">0.94<small>ACWR · back in band</small></span>
+          </div>
+          <div class="sig__spark" data-spark="load"></div>
+          <span class="sig__chev">›</span>
+        </div>
+      </div>
+
+      <div class="sig" data-sig="recovery">
+        <div class="sig__row">
+          <div>
+            <span class="eyebrow sig__label">Recovery</span>
+            <span class="sig__value">45<small>worn · +11 over window</small></span>
+          </div>
+          <div class="sig__spark" data-spark="recovery"></div>
+          <span class="sig__chev">›</span>
+        </div>
+      </div>
+
+      <div class="sig" data-sig="mood">
+        <div class="sig__row">
+          <div>
+            <span class="eyebrow sig__label">Mood</span>
+            <span class="sig__value">11/30<small>struggling leads</small></span>
+          </div>
+          <div class="sig__spark" data-spark="mood"></div>
+          <span class="sig__chev">›</span>
+        </div>
+      </div>
+
+      <div class="sig" data-sig="niggles">
+        <div class="sig__row">
+          <div>
+            <span class="eyebrow sig__label">Niggles</span>
+            <span class="sig__value">2<small>mentions · left calf</small></span>
+          </div>
+          <div class="sig__spark" data-spark="niggles"></div>
+          <span class="sig__chev">›</span>
+        </div>
+      </div>
+
+    </div>
+
+    <p class="footnote">— deltas compare the back half of the window to the front —</p>
+
+    <div class="askbar">
+      <em>Ask about this block…</em>
+      <span>↗</span>
+    </div>
+
+  </div>
+
+  <div class="tabs">
+    <div class="tab"><i></i>Log</div>
+    <div class="tab is-active"><i></i>Trends</div>
+    <div class="tab"><i></i>Train</div>
+  </div>
+
+  <div class="scrim" id="scrim"></div>
+  <div class="sheet" id="sheet">
+    <div class="sheet__grab"></div>
+    <div class="sheet__head">
+      <span class="eyebrow" id="sheet-eyebrow"></span>
+      <span class="sheet__close" id="sheet-close">Close</span>
+    </div>
+    <h2 class="sheet__title" id="sheet-title"></h2>
+    <div class="sheet__chart" id="sheet-chart"></div>
+    <div class="sheet__cap" id="sheet-cap"></div>
+    <div id="sheet-notes"></div>
+    <span class="sheet__ask" id="sheet-ask"></span>
+  </div>
+</div>
+
+<script>
+(function () {
+  var INK = "#1A1815", INK2 = "#6B6560", INK3 = "#9B9590",
+      RULE = "#E8E4E0", DEEP = "#E8E4DF", CORAL = "#D4592A";
+
+  var MOODS = {
+    energized: "#2D8A4E", positive: "#4A9E6B", neutral: "#9B9590",
+    tired: "#C4873A", struggling: "#C45A3A", injured: "#B83A4A"
+  };
+
+  // ---- data (30 days · Jul 8 – Aug 6) ----
+  var miles = [9,0,7,11,0,8,17, 8,0,7,10,6,9,18, 0,8,7,11,5,9,19, 8,0,9,12,6,0,20, 8,11];
+  var keyDays = [3, 10, 13, 24, 29];
+  var recovery = [34,33,35,36,38,40,39,38,37,39,41,40,42,41,40,42,44,43,41,44,47,45,43,42,44,46,44,43,44,45];
+  var acwr = [1.12,1.10,1.08,1.05,1.06,1.04,1.01,1.00,0.98,0.99,0.97,0.95,0.96,0.94,0.92,0.93,0.91,0.92,0.90,0.91,0.92,0.93,0.92,0.91,0.92,0.93,0.94,0.93,0.94,0.94];
+  var moodByDay = {0:"struggling",1:"struggling",2:"struggling",7:"energized",10:"struggling",13:"tired",14:"energized",19:"struggling",22:"energized",26:"tired",28:"energized"};
+  var niggleDays = [7, 8];
+
+  function svg(w, h, inner) {
+    return '<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h +
+           '" xmlns="http://www.w3.org/2000/svg" style="display:block">' + inner + "</svg>";
+  }
+
+  function linePath(data, w, h, pad, min, max) {
+    var n = data.length, pts = [];
+    for (var i = 0; i < n; i++) {
+      var x = pad + (i / (n - 1)) * (w - pad * 2);
+      var y = h - pad - ((data[i] - min) / (max - min)) * (h - pad * 2);
+      pts.push((i ? "L" : "M") + x.toFixed(1) + " " + y.toFixed(1));
+    }
+    return pts.join(" ");
+  }
+
+  // ---- sparklines (ledger) ----
+  function sparkVolume() {
+    var w = 112, h = 28, n = miles.length, bw = 2.4, gap = (w - n * bw) / (n - 1);
+    var mx = Math.max.apply(null, miles), s = "";
+    for (var i = 0; i < n; i++) {
+      var bh = miles[i] ? Math.max(2, (miles[i] / mx) * (h - 2)) : 0;
+      var x = i * (bw + gap);
+      if (miles[i]) s += '<rect x="' + x.toFixed(1) + '" y="' + (h - bh).toFixed(1) +
+        '" width="' + bw + '" height="' + bh.toFixed(1) + '" rx="0.5" fill="' +
+        (keyDays.indexOf(i) >= 0 ? INK : INK3) + '" opacity="' + (keyDays.indexOf(i) >= 0 ? 1 : 0.55) + '"/>';
+    }
+    return svg(w, h, s);
+  }
+
+  function sparkLoad() {
+    var w = 112, h = 28;
+    var bandTop = h - 2 - ((1.3 - 0.7) / (1.4 - 0.7)) * (h - 4);
+    var bandBot = h - 2 - ((0.8 - 0.7) / (1.4 - 0.7)) * (h - 4);
+    var s = '<rect x="0" y="' + bandTop.toFixed(1) + '" width="' + w + '" height="' +
+            (bandBot - bandTop).toFixed(1) + '" fill="' + DEEP + '" opacity="0.7"/>';
+    s += '<path d="' + linePath(acwr, w, h, 2, 0.7, 1.4) + '" fill="none" stroke="' + INK + '" stroke-width="1.4"/>';
+    return svg(w, h, s);
+  }
+
+  function sparkRecovery() {
+    var w = 112, h = 28;
+    var s = '<path d="' + linePath(recovery, w, h, 2, 30, 62) + '" fill="none" stroke="' + INK + '" stroke-width="1.4"/>';
+    var lastY = h - 2 - ((recovery[recovery.length - 1] - 30) / 32) * (h - 4);
+    s += '<circle cx="' + (w - 2) + '" cy="' + lastY.toFixed(1) + '" r="2.4" fill="' + INK + '"/>';
+    return svg(w, h, s);
+  }
+
+  function sparkMood() {
+    var w = 112, h = 28, n = 30, cw = 2.6, gap = (w - n * cw) / (n - 1);
+    var s = "";
+    for (var i = 0; i < n; i++) {
+      var x = i * (cw + gap), m = moodByDay[i];
+      s += '<rect x="' + x.toFixed(1) + '" y="9" width="' + cw + '" height="10" rx="1" fill="' +
+           (m ? MOODS[m] : DEEP) + '"/>';
+    }
+    return svg(w, h, s);
+  }
+
+  function sparkNiggles() {
+    var w = 112, h = 28, s = "";
+    s += '<line x1="0" y1="14" x2="' + w + '" y2="14" stroke="' + RULE + '" stroke-width="1"/>';
+    for (var i = 0; i < niggleDays.length; i++) {
+      var x = 2 + (niggleDays[i] / 29) * (w - 4);
+      s += '<line x1="' + x.toFixed(1) + '" y1="7" x2="' + x.toFixed(1) + '" y2="21" stroke="' + CORAL + '" stroke-width="2"/>';
+    }
+    return svg(w, h, s);
+  }
+
+  // ---- full charts (sheet) ----
+  var CW = 345, CH = 120;
+
+  function chartVolume() {
+    var n = miles.length, bw = 6, gap = (CW - n * bw) / (n - 1);
+    var mx = Math.max.apply(null, miles), s = "";
+    for (var i = 0; i < n; i++) {
+      var x = i * (bw + gap);
+      if (miles[i]) {
+        var bh = Math.max(3, (miles[i] / mx) * (CH - 18));
+        s += '<rect x="' + x.toFixed(1) + '" y="' + (CH - 12 - bh).toFixed(1) +
+             '" width="' + bw + '" height="' + bh.toFixed(1) + '" rx="1" fill="' + INK3 +
+             '" opacity="' + (keyDays.indexOf(i) >= 0 ? 0.95 : 0.5) + '"/>';
+      }
+      if (keyDays.indexOf(i) >= 0)
+        s += '<circle cx="' + (x + bw / 2).toFixed(1) + '" cy="' + (CH - 4) + '" r="2.2" fill="' + INK + '"/>';
+    }
+    return svg(CW, CH, s);
+  }
+
+  function chartLoad() {
+    var min = 0.7, max = 1.4;
+    var yFor = function (v) { return CH - 8 - ((v - min) / (max - min)) * (CH - 16); };
+    var s = '<rect x="0" y="' + yFor(1.3).toFixed(1) + '" width="' + CW + '" height="' +
+            (yFor(0.8) - yFor(1.3)).toFixed(1) + '" fill="' + DEEP + '" opacity="0.7"/>';
+    s += '<text x="4" y="' + (yFor(1.3) + 11) + '" font-family="ui-monospace,Menlo,monospace" font-size="8" letter-spacing="0.08em" fill="' + INK3 + '">TYPICAL BAND</text>';
+    s += '<path d="' + linePath(acwr, CW, CH, 8, min, max) + '" fill="none" stroke="' + INK + '" stroke-width="1.6"/>';
+    var lastY = yFor(acwr[acwr.length - 1]);
+    s += '<circle cx="' + (CW - 8) + '" cy="' + lastY.toFixed(1) + '" r="3" fill="' + INK + '"/>';
+    return svg(CW, CH, s);
+  }
+
+  function chartRecovery() {
+    var min = 28, max = 66;
+    var yFor = function (v) { return CH - 8 - ((v - min) / (max - min)) * (CH - 16); };
+    var s = '<line x1="0" y1="' + yFor(60).toFixed(1) + '" x2="' + CW + '" y2="' + yFor(60).toFixed(1) +
+            '" stroke="' + INK3 + '" stroke-width="1" stroke-dasharray="3 4"/>';
+    s += '<text x="4" y="' + (yFor(60) - 5).toFixed(1) + '" font-family="ui-monospace,Menlo,monospace" font-size="8" letter-spacing="0.08em" fill="' + INK3 + '">BASELINE 60</text>';
+    s += '<path d="' + linePath(recovery, CW, CH, 8, min, max) + '" fill="none" stroke="' + INK + '" stroke-width="1.6"/>';
+    var lastY = yFor(recovery[recovery.length - 1]);
+    s += '<circle cx="' + (CW - 8) + '" cy="' + lastY.toFixed(1) + '" r="3" fill="' + INK + '"/>';
+    return svg(CW, CH, s);
+  }
+
+  function chartMood() {
+    var n = 30, cw = 8.5, gap = (CW - n * cw) / (n - 1), s = "";
+    for (var i = 0; i < n; i++) {
+      var x = i * (cw + gap), m = moodByDay[i];
+      s += '<rect x="' + x.toFixed(1) + '" y="12" width="' + cw.toFixed(1) +
+           '" height="26" rx="2" fill="' + (m ? MOODS[m] : DEEP) + '"/>';
+    }
+    return svg(CW, 50, s);
+  }
+
+  function chartNiggles() {
+    var s = '<line x1="0" y1="40" x2="' + CW + '" y2="40" stroke="' + RULE + '" stroke-width="1"/>';
+    for (var i = 0; i < niggleDays.length; i++) {
+      var x = 6 + (niggleDays[i] / 29) * (CW - 12);
+      s += '<line x1="' + x.toFixed(1) + '" y1="24" x2="' + x.toFixed(1) + '" y2="56" stroke="' + CORAL + '" stroke-width="2.5"/>';
+    }
+    var lx = 6 + (7.5 / 29) * (CW - 12);
+    s += '<text x="' + (lx + 10).toFixed(1) + '" y="30" font-family="ui-monospace,Menlo,monospace" font-size="8" letter-spacing="0.08em" fill="' + INK2 + '">LEFT CALF</text>';
+    return svg(CW, 80, s);
+  }
+
+  // ---- sheet content ----
+  var SHEETS = {
+    volume: {
+      eyebrow: "Volume · Jul 8 – Aug 6",
+      title: "259 miles.",
+      chart: chartVolume,
+      cap: ["Jul 8", "· = key session", "Aug 6"],
+      notes: ["Dots mark key sessions — 5 in the window, 1.2 a week. Long runs carry the tall bars."],
+      ask: "Ask about volume ↗"
+    },
+    load: {
+      eyebrow: "Load · Jul 8 – Aug 6",
+      title: "Back in band.",
+      chart: chartLoad,
+      cap: ["Jul 8", "Band 0.8 – 1.3", "Aug 6"],
+      notes: ["Acute-to-chronic sits at 0.94 — inside the typical band after three weeks above it."],
+      ask: "Ask about load ↗"
+    },
+    recovery: {
+      eyebrow: "Recovery · Jul 8 – Aug 6",
+      title: "Worn, but climbing.",
+      chart: chartRecovery,
+      cap: ["Jul 8", "", "Aug 6"],
+      notes: ["Eleven points up since Jul 8. Baseline is 60 — you haven’t touched it this window."],
+      ask: "Ask about recovery ↗"
+    },
+    mood: {
+      eyebrow: "Mood · Jul 8 – Aug 6",
+      title: "Eleven logs in thirty.",
+      chart: chartMood,
+      cap: ["Jul 8", "Struggling 5 · Energized 4 · Tired 2", "Aug 6"],
+      notes: ["You logged 11 of 30 days. Struggling leads the count — the greens cluster late."],
+      ask: "Ask about mood ↗"
+    },
+    niggles: {
+      eyebrow: "Niggles · Jul 8 – Aug 6",
+      title: "Left calf, twice.",
+      chart: chartNiggles,
+      cap: ["Jul 8", "Jul 15–16", "Aug 6"],
+      notes: [
+        "“Calf felt tight on the back half.” Two mentions, none since.",
+        "Not medical advice. If anything gets sharper, see a clinician."
+      ],
+      ask: "Ask about niggles ↗"
+    }
+  };
+
+  // ---- mount sparklines ----
+  var sparks = { volume: sparkVolume, load: sparkLoad, recovery: sparkRecovery, mood: sparkMood, niggles: sparkNiggles };
+  document.querySelectorAll("[data-spark]").forEach(function (el) {
+    el.innerHTML = sparks[el.getAttribute("data-spark")]();
+  });
+
+  // ---- sheet open/close ----
+  var frame = document.getElementById("frame");
+
+  function openSheet(key) {
+    var c = SHEETS[key];
+    document.getElementById("sheet-eyebrow").textContent = c.eyebrow;
+    document.getElementById("sheet-title").textContent = c.title;
+    document.getElementById("sheet-chart").innerHTML = c.chart();
+    document.getElementById("sheet-cap").innerHTML = c.cap.map(function (t) {
+      return '<span class="caption caption--faint">' + t + "</span>";
+    }).join("");
+    document.getElementById("sheet-notes").innerHTML = c.notes.map(function (t, i) {
+      return '<p class="sheet__note' + (i > 0 ? " sheet__note--quiet" : "") + '">' + t + "</p>";
+    }).join("");
+    document.getElementById("sheet-ask").textContent = c.ask;
+    frame.classList.add("sheet-open");
+  }
+  function closeSheet() { frame.classList.remove("sheet-open"); }
+
+  document.querySelectorAll(".sig").forEach(function (sig) {
+    sig.querySelector(".sig__row").addEventListener("click", function () {
+      openSheet(sig.getAttribute("data-sig"));
+    });
+  });
+  document.getElementById("scrim").addEventListener("click", closeSheet);
+  document.getElementById("sheet-close").addEventListener("click", closeSheet);
+})();
+</script>
+</body>
+</html>

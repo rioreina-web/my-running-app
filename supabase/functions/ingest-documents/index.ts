@@ -2,14 +2,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { validateLength, validateEnum, internalErrorResponse } from "../_shared/validation.ts";
 
 import { corsHeaders } from "../_shared/cors.ts";
+import { requireServiceRole } from "../_shared/auth.ts";
 
-/** Verify the request carries the service role key (admin-only endpoint) */
-function verifyServiceRole(req: Request): boolean {
-  const authHeader = req.headers.get("Authorization");
-  if (!authHeader) return false;
-  const token = authHeader.replace("Bearer ", "");
-  return token === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-}
 
 interface DocumentInput {
   title: string;
@@ -48,13 +42,13 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    // Admin-only: require service role key
-    if (!verifyServiceRole(req)) {
-      return new Response(
-        JSON.stringify({ error: "Admin access required" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    // Admin-only: require the service-role key. Uses the shared helper rather
+    // than a local `===` so the comparison is constant-time and the key-drift
+    // logging lives in one place. Returns 401 (was 403) — same as every other
+    // service-role-gated function, and it does not confirm the endpoint exists
+    // to an unauthenticated prober.
+    const denied = requireServiceRole(req, corsHeaders);
+    if (denied) return denied;
 
     const body = await req.json();
 

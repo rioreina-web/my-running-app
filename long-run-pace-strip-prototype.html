@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Long-run pace strip — Key Sessions</title>
+<style>
+  :root {
+    --paper:#F5F3F0; --card:#FFFFFF; --ink:#1A1815; --ink2:#6B6560; --ink3:#9B9590;
+    --rule:#E8E4E0; --coral:#D4592A;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--paper); color:var(--ink);
+         font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif; }
+  .wrap { max-width:1180px; margin:0 auto; padding:36px 24px 80px; }
+  h1 { font-family:Georgia,"Times New Roman",serif; font-weight:400; font-size:30px;
+       letter-spacing:-0.2px; margin:0 0 6px; }
+  .sub { color:var(--ink2); font-size:14px; line-height:1.55; max-width:760px; margin:0 0 26px; }
+  .sub b { color:var(--ink); font-weight:600; }
+  .cols { display:grid; grid-template-columns:repeat(3,1fr); gap:22px; align-items:start; }
+  @media (max-width:1000px){ .cols { grid-template-columns:1fr; } }
+  .col { background:var(--card); border:1px solid var(--rule); border-radius:6px; padding:18px 18px 6px; }
+  .colhead { font-size:10px; letter-spacing:1.4px; text-transform:uppercase; color:var(--ink3);
+             margin-bottom:2px; }
+  .coltitle { font-family:Georgia,serif; font-size:16px; margin:0 0 4px; }
+  .colnote { font-size:12px; color:var(--ink2); line-height:1.5; min-height:56px; margin:0 0 14px; }
+  .row { padding:11px 0; border-bottom:1px solid var(--rule); }
+  .r1 { display:flex; justify-content:space-between; align-items:baseline; }
+  .date { font-size:9px; letter-spacing:1.1px; color:var(--ink3); text-transform:uppercase; }
+  .chip { font-size:9px; letter-spacing:1px; color:var(--ink3); border:1px solid var(--rule);
+          border-radius:20px; padding:2px 8px; }
+  .chip.zone { color:var(--ink2); }
+  .r2 { display:flex; justify-content:space-between; align-items:baseline; gap:12px; margin-top:3px; }
+  .title { font-family:Georgia,serif; font-size:17px; }
+  .pace { font-size:15px; white-space:nowrap; }
+  .pace .u { font-size:11px; color:var(--ink2); }
+  .pace.avg { color:var(--ink2); }
+  .strip { margin-top:8px; height:10px; width:100%; display:block; }
+  .none { margin-top:8px; height:10px; font-size:9px; color:var(--ink3); letter-spacing:.6px; }
+  .legend { margin-top:30px; background:var(--card); border:1px solid var(--rule);
+            border-radius:6px; padding:16px 18px; }
+  .legend h3 { font-size:10px; letter-spacing:1.4px; text-transform:uppercase; color:var(--ink3);
+               margin:0 0 10px; font-weight:600; }
+  .ramp { display:flex; height:14px; border-radius:2px; overflow:hidden; }
+  .ramp div { flex:1; }
+  .ramplabels { display:flex; justify-content:space-between; font-size:10px; color:var(--ink2);
+                margin-top:6px; }
+  .foot { margin-top:26px; font-size:12.5px; color:var(--ink2); line-height:1.6; max-width:820px; }
+  .foot b { color:var(--ink); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Long runs, drawn as their splits</h1>
+  <p class="sub">Every row is real data from your log. Left is what ships today; middle is the change
+  as built (<b>continuous bar, split at your own miles, app-wide pace ramp</b>); right shows the same
+  bars with the colour stretched to each run&rsquo;s own range, so you can judge whether the app-wide
+  ramp gives you enough separation before you build.</p>
+
+  <div class="cols">
+    <div class="col" id="c-now">
+      <div class="colhead">Today</div>
+      <div class="coltitle">Merged work bouts</div>
+      <p class="colnote">RepDensityStrip joins every consecutive non-rest lap into one bout, then puts
+      2&nbsp;pt gaps where the rests were. On Aug&nbsp;1 that turns 25 recorded splits into 3 slabs —
+      one per water stop.</p>
+    </div>
+    <div class="col" id="c-new">
+      <div class="colhead">Built</div>
+      <div class="coltitle">Splits · app-wide ramp</div>
+      <p class="colnote">One unbroken bar. Width = split distance, colour = the same PaceSpectrum
+      every screen uses, so a 6:20 mile is this blue everywhere. Pauses are dropped, not drawn.</p>
+    </div>
+    <div class="col" id="c-rel">
+      <div class="colhead">Alternative</div>
+      <div class="coltitle">Splits · stretched per run</div>
+      <p class="colnote">Same bars, but each run&rsquo;s slowest split is palest and its fastest is
+      darkest. Maximum contrast — at the cost of colours no longer comparing across rows.</p>
+    </div>
+  </div>
+
+  <div class="legend">
+    <h3>The pace ramp, anchored to your zones</h3>
+    <div class="ramp" id="ramp"></div>
+    <div class="ramplabels">
+      <span>7:33 easy</span><span>6:39 mod</span><span>5:57 steady</span><span>5:38 MP</span>
+      <span>5:21 LT</span><span>4:57 5K</span><span>4:28 mile</span>
+    </div>
+  </div>
+
+  <p class="foot" id="foot"></p>
+</div>
+
+<script>
+const D = {"stops": ["93B9D6", "74A8CC", "578FC0", "3F7CB5", "2F66A8", "27549B", "20448B", "1A3679", "142964", "0E1D4E"], "anchors": [[0.0, 452.68340000000006], [0.1111111111111111, 399.0259], [0.2222222222222222, 356.7759], [0.3333333333333333, 338.0], [0.4444444444444444, 323.0], [0.5555555555555556, 320.9], [0.6666666666666666, 309.0], [0.7777777777777778, 297.0], [1.0, 268.0]], "long": {"2026-08-01": ["Long run", 17.0, "6:37", [[1609, 467, 467, 0], [1609, 446, 446, 0], [1609, 456, 456, 0], [100, 32, 517, 1], [1609, 360, 360, 0], [402, 109, 436, 0], [1609, 378, 378, 0], [1609, 383, 383, 0], [343, 96, 450, 0], [50, 14, 450, 1], [1609, 359, 359, 0], [409, 108, 425, 0], [1609, 379, 379, 0], [1609, 384, 384, 0], [401, 112, 449, 0], [1609, 362, 362, 0], [405, 105, 417, 0], [1609, 374, 374, 0], [1609, 377, 377, 0], [315, 91, 465, 0], [1609, 356, 356, 0], [399, 115, 463, 0], [1609, 381, 381, 0], [1609, 384, 384, 0], [406, 130, 515, 0]]], "2026-07-25": ["Long run", 13.1, "6:47", [[1609, 428, 428, 0], [1609, 417, 417, 0], [1609, 408, 408, 0], [1609, 397, 397, 0], [1609, 395, 395, 0], [1609, 408, 408, 0], [1609, 413, 413, 0], [1609, 410, 410, 0], [1609, 413, 413, 0], [1609, 406, 406, 0], [1609, 392, 392, 0], [1609, 403, 403, 0], [1609, 405, 405, 0], [191, 54, 455, 1]]], "2026-07-11": ["Long run", 15.0, "6:47", [[1000, 298, 480, 0], [1000, 278, 447, 0], [12, 4, 529, 1], [1000, 258, 415, 0], [1000, 250, 402, 0], [1000, 259, 417, 0], [1000, 248, 399, 0], [1000, 246, 396, 0], [1000, 239, 385, 0], [1000, 239, 385, 0], [1000, 257, 414, 0], [1000, 253, 407, 0], [1000, 254, 409, 0], [1000, 240, 386, 0], [1000, 246, 396, 0], [1000, 244, 393, 0], [1000, 247, 398, 0], [1000, 254, 409, 0], [1000, 255, 410, 0], [1000, 250, 402, 0], [1000, 255, 410, 0], [1000, 253, 407, 0], [1000, 269, 433, 0], [1000, 260, 418, 0], [1000, 253, 407, 0], [115, 31, 434, 1]]], "2026-06-27": ["Long run", 17.8, "6:41", [[1000, 277, 446, 0], [1000, 257, 414, 0], [1000, 257, 414, 0], [1000, 253, 407, 0], [1000, 247, 398, 0], [1000, 245, 394, 0], [1000, 250, 402, 0], [1000, 250, 402, 0], [1000, 253, 407, 0], [1000, 243, 391, 0], [1000, 235, 378, 0], [1000, 245, 394, 0], [1000, 239, 385, 0], [1000, 241, 388, 0], [1000, 244, 393, 0], [1000, 244, 393, 0], [1000, 243, 391, 0], [1000, 241, 388, 0], [1000, 246, 396, 0], [1000, 252, 406, 0], [1000, 253, 407, 0], [1000, 259, 417, 0], [1000, 263, 423, 0], [1000, 258, 415, 0], [1000, 255, 410, 0], [1000, 263, 423, 0], [1000, 278, 447, 0], [1000, 272, 438, 0], [601, 167, 447, 0]]], "2026-06-20": ["Long run", 13.0, "6:52", [[1000, 285, 459, 0], [1000, 261, 420, 0], [1000, 263, 423, 0], [1000, 259, 417, 0], [1000, 263, 423, 0], [1000, 255, 410, 0], [1000, 261, 420, 0], [1000, 250, 402, 0], [1000, 248, 399, 0], [1000, 257, 414, 0], [1000, 252, 406, 0], [1000, 252, 406, 0], [1000, 284, 457, 0], [1000, 261, 420, 0], [1000, 268, 431, 0], [1000, 260, 418, 0], [1000, 252, 406, 0], [1000, 252, 406, 0], [1000, 240, 386, 0], [1000, 251, 404, 0], [1000, 267, 430, 0], [329, 95, 464, 0]]], "2026-05-24": ["Long run", 14.0, "6:44", [[1000, 271, 436, 0], [1000, 253, 407, 0], [1000, 248, 399, 0], [1000, 241, 388, 0], [1000, 244, 393, 0], [1000, 249, 401, 0], [1000, 255, 410, 0], [1000, 251, 404, 0], [1000, 252, 406, 0], [1000, 248, 399, 0], [1000, 257, 414, 0], [1000, 252, 406, 0], [1000, 253, 407, 0], [1000, 259, 417, 0], [1000, 243, 391, 0], [1000, 255, 410, 0], [1000, 252, 406, 0], [1000, 256, 412, 0], [1000, 254, 409, 0], [1000, 241, 388, 0], [1000, 220, 354, 0], [1000, 262, 422, 0], [521, 142, 438, 0]]]}, "reps": {"2026-08-18": ["3\u00d72mi", 6.2, "LT", "5:19", [[1619, 326, 324, 0], [1632, 336, 331, 0], [167, 146, 1410, 1], [1623, 321, 318, 0], [1617, 337, 335, 0], [125, 150, 1924, 1], [1615, 329, 328, 0], [1615, 338, 337, 0]]], "2026-08-11": ["10\u00d71K", 6.6, "LT", "5:10", [[994, 197, 319, 0], [78, 67, 1376, 1], [1007, 194, 310, 0], [73, 66, 1447, 1], [1006, 197, 315, 0], [100, 66, 1062, 1], [1000, 197, 317, 0], [45, 67, 2392, 1], [993, 198, 321, 0], [87, 64, 1190, 1], [1009, 199, 317, 0], [47, 131, 4527, 1], [998, 199, 321, 0], [90, 66, 1183, 1], [1004, 199, 319, 0], [57, 73, 2061, 1], [991, 203, 330, 0], [93, 55, 952, 1], [992, 194, 315, 0], [15, 2, 209, 1]]]}};
+
+function hex2rgb(h){return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];}
+function mix(a,b,t){const A=hex2rgb(a),B=hex2rgb(b);
+  return 'rgb('+A.map((v,i)=>Math.round(v+(B[i]-v)*t)).join(',')+')';}
+function colorAt(t){const s=D.stops;t=Math.min(Math.max(t,0),1);
+  const sc=t*(s.length-1),i=Math.min(Math.floor(sc),s.length-2);return mix(s[i],s[i+1],sc-i);}
+function anchored(pace){
+  const a=D.anchors;
+  if(pace>=a[0][1]) return colorAt(a[0][0]);
+  const last=a[a.length-1]; if(pace<=last[1]) return colorAt(last[0]);
+  for(let i=0;i<a.length-1;i++){
+    const [t0,p0]=a[i],[t1,p1]=a[i+1];
+    if(pace<=p0&&pace>=p1){const span=p0-p1;const f=span>0?(p0-pace)/span:0;return colorAt(t0+(t1-t0)*f);}
+  }
+  return colorAt(0);
+}
+function relative(pace,slow,fast){
+  if(!(slow>fast)) return colorAt(0);
+  return colorAt((slow-pace)/(slow-fast));
+}
+function fmt(sec){const s=Math.round(sec);return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');}
+function dateLine(iso){
+  const [y,m,dd]=iso.split('-').map(Number);
+  const dt=new Date(Date.UTC(y,m-1,dd));
+  const wd=['SUN','MON','TUE','WED','THU','FRI','SAT'][dt.getUTCDay()];
+  const mo=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][m-1];
+  return wd+' · '+mo+' '+dd;
+}
+
+// --- strip builders -------------------------------------------------------
+const MIN_M=150, MIN_S=20, MIN_SPLITS=4;
+
+function splitsOf(laps){
+  return laps.filter(l=>!l[3] && l[2]>0 && l[0]>=MIN_M && l[1]>=MIN_S);
+}
+function mergedBouts(laps){   // mirrors WorkoutLapsService.mergeWorkBouts
+  const out=[]; let i=0;
+  while(i<laps.length){
+    if(laps[i][3]){ i++; continue; }
+    let d=0,t=0,j=i;
+    while(j<laps.length && !laps[j][3]){ d+=laps[j][0]; t+=laps[j][1]; j++; }
+    if(d>0&&t>0) out.push([d,t,t/(d/1609.344),0]);
+    i=j;
+  }
+  return out.filter(b=>b[0]>=MIN_M&&b[1]>=MIN_S);
+}
+
+function svgStrip(blocks, mode, gap){
+  if(!blocks.length) return '';
+  const W=1000,H=10,g=gap?2:0;
+  const total=blocks.reduce((s,b)=>s+b[0],0);
+  const paces=blocks.map(b=>b[2]);
+  const slow=Math.max(...paces), fast=Math.min(...paces);
+  const avail=W-g*(blocks.length-1);
+  let x=0, parts='';
+  blocks.forEach((b,i)=>{
+    const w=avail*b[0]/total;
+    const isLast=i===blocks.length-1;
+    const right=gap ? x+w : (isLast?W:x+w+0.6);
+    const fill = mode==='rel' ? relative(b[2],slow,fast) : anchored(b[2]);
+    parts+='<rect x="'+x.toFixed(2)+'" y="0" width="'+Math.max(right-x,0).toFixed(2)+
+           '" height="'+H+'" fill="'+fill+'"'+(gap?' rx="1.5"':'')+'></rect>';
+    x+=w+g;
+  });
+  const clip = gap?'':' clip-path="inset(0 round 1.5px)"';
+  return '<svg class="strip" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none"'+clip+'>'+parts+'</svg>';
+}
+
+// --- rows -----------------------------------------------------------------
+const dates=[...Object.keys(D.long),...Object.keys(D.reps)].sort().reverse();
+
+function rowHTML(iso, col){
+  const isLong = iso in D.long;
+  let title, dist, chip, chipZone, pace, isAvg, laps;
+  if(isLong){ const [t,dm,p,l]=D.long[iso]; title=t; dist=dm; chip='LONG'; chipZone=false;
+              pace=p; isAvg=true; laps=l; }
+  else { const [t,dm,z,p,l]=D.reps[iso]; title=t; dist=dm; chip=z; chipZone=true;
+         pace=p; isAvg=false; laps=l; }
+
+  let strip;
+  if(col==='now'){
+    const b=mergedBouts(laps);
+    strip = b.length>=2 ? svgStrip(b,'anch',true) : '<div class="none">no strip</div>';
+  } else {
+    if(isLong){
+      const s=splitsOf(laps);
+      strip = s.length>=MIN_SPLITS
+        ? svgStrip(s, col==='rel'?'rel':'anch', false)
+        : '<div class="none">NO SPLITS RECORDED</div>';
+    } else {
+      const b=mergedBouts(laps);
+      strip = b.length>=2 ? svgStrip(b, col==='rel'?'rel':'anch', true) : '<div class="none">no strip</div>';
+    }
+  }
+
+  return '<div class="row">'+
+    '<div class="r1"><span class="date">'+dateLine(iso)+'</span>'+
+      '<span class="chip'+(chipZone?' zone':'')+'">'+chip+'</span></div>'+
+    '<div class="r2"><span class="title">'+title+' · '+dist.toFixed(1)+' mi</span>'+
+      '<span class="pace'+(isAvg?' avg':'')+'">'+pace+
+      '<span class="u"> /mi'+(isAvg?' avg':'')+'</span></span></div>'+
+    strip+'</div>';
+}
+
+['now','new','rel'].forEach(col=>{
+  document.getElementById('c-'+col).insertAdjacentHTML('beforeend',
+    dates.map(iso=>rowHTML(iso,col)).join(''));
+});
+
+document.getElementById('ramp').innerHTML =
+  Array.from({length:120},(_,i)=>'<div style="background:'+colorAt(i/119)+'"></div>').join('');
+
+// footnote with the measured spread
+const spread = Object.entries(D.long).map(([iso,[,,,laps]])=>{
+  const s=splitsOf(laps).map(l=>l[2]);
+  return s.length>=MIN_SPLITS ? fmt(Math.min(...s))+'–'+fmt(Math.max(...s)) : null;
+}).filter(Boolean);
+document.getElementById('foot').innerHTML =
+  '<b>What the data says.</b> Split spread on these six runs: '+spread.join(', ')+
+  '. All of it sits in the pale third of the ramp, between easy (7:33) and steady (5:57) — which is '+
+  'what a long run <i>is</i>. The app-wide ramp shows that honestly: real, readable variation, '+
+  'without dressing a 6:50 mile up as threshold work. Aug 16 and Aug 8 are absent from this page '+
+  'for the same reason they draw no bar in the app — one summary lap each, no splits ever recorded.';
+</script>
+</body>
+</html>

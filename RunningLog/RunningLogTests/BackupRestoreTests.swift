@@ -29,7 +29,8 @@ struct BackupEncodingTests {
                 workoutType: "easy",
                 source: nil,
                 vitalWorkoutId: nil,
-                paceSegments: nil
+                paceSegments: nil,
+                parsedStructure: nil
             )
         }
 
@@ -41,9 +42,7 @@ struct BackupEncodingTests {
             scheduledWorkouts: [],
             userGoals: [],
             injuries: [],
-            fitnessSnapshots: [],
-            biomechanicsAnalyses: [],
-            formChecks: []
+            fitnessSnapshots: []
         )
     }
 
@@ -75,8 +74,6 @@ struct BackupEncodingTests {
         #expect(restored.userGoals.isEmpty)
         #expect(restored.injuries.isEmpty)
         #expect(restored.fitnessSnapshots.isEmpty)
-        #expect(restored.biomechanicsAnalyses.isEmpty)
-        #expect(restored.formChecks.isEmpty)
     }
 
     @Test("FullBackup preserves training log fields")
@@ -108,9 +105,7 @@ struct BackupEncodingTests {
             scheduledWorkouts: [],
             userGoals: [],
             injuries: [],
-            fitnessSnapshots: [],
-            biomechanicsAnalyses: [],
-            formChecks: []
+            fitnessSnapshots: []
         )
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -135,9 +130,9 @@ struct RestoreSummaryTests {
         summary.userGoals = 3
         summary.injuries = 1
         summary.fitnessSnapshots = 5
-        summary.biomechanicsAnalyses = 2
-        summary.formChecks = 4
-        #expect(summary.totalRecords == 77)
+        // 10 + 2 + 50 + 3 + 1 + 5. Biomechanics (2) and form checks (4) left the
+        // product with the CV feature; the total dropped 77 → 71 with them.
+        #expect(summary.totalRecords == 71)
     }
 
     @Test("Breakdown filters empty tables")
@@ -377,7 +372,9 @@ struct AthleteProfileContextTests {
 
     @Test("profileContextForAI returns nil when no profile")
     func nilWhenNoProfile() {
-        let service = AthleteProfileService()
+        // Not `AthleteProfileService()` — that reads the UserDefaults cache,
+        // so this asserted on whatever the app last left on the device.
+        let service = AthleteProfileService(loadCache: false)
         #expect(service.profileContextForAI == nil)
     }
 

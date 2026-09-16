@@ -298,7 +298,7 @@ struct PlanTemplateBuilderView: View {
                 ForEach(0..<7, id: \.self) { dayIdx in
                     let primary = workoutFor(day: dayIdx, slot: 0)
                     let secondary = doubleWorkoutFor(day: dayIdx)
-                    DayCell(
+                    PlanDayCell(
                         dayName: dayNames[dayIdx],
                         primary: primary,
                         secondary: secondary,
@@ -510,7 +510,10 @@ struct PlanTemplateBuilderView: View {
 
 // MARK: - DayCell
 
-struct DayCell: View {
+// Renamed from `DayCell` to avoid clashing with the unrelated `DayCell` data
+// model added in Training/Analytics/TrainingAnalyticsViewModel.swift. This view
+// is only used within this file.
+private struct PlanDayCell: View {
     let dayName: String
     let primary: PlanTemplateWorkout
     let secondary: PlanTemplateWorkout?

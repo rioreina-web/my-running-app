@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>What every chart on Trends is asking · Post Run Drip</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@300..800&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F5F3F0; --paper-elev:#FAFAF8; --card:#FFFFFF; --paper-deep:#E8E4DF;
+    --rule:#E8E4E0; --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+    --coral:#D4592A; --coral-wash:rgba(212,89,42,.10);
+    --font-display:"Crimson Pro",Georgia,serif;
+    --font-body:"PT Serif",Georgia,serif;
+    --font-mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--paper);color:var(--ink);font-family:var(--font-body);
+       -webkit-font-smoothing:antialiased;padding:36px 20px 90px;line-height:1.55}
+  .wrap{max-width:900px;margin:0 auto}
+
+  .strip{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.14em;
+         text-transform:uppercase;color:var(--ink-2);display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+  .strip .dot{width:3px;height:3px;border-radius:99px;background:var(--coral);flex:none}
+  h1{font-family:var(--font-display);font-weight:700;font-size:42px;letter-spacing:-.01em;
+     line-height:1.04;margin:12px 0 14px}
+  .lede{font-size:16px;color:var(--ink-2);max-width:660px}
+  .lede b{color:var(--ink);font-weight:700}
+
+  .pull{background:var(--ink);color:#F5F3F0;border-radius:16px;padding:24px;margin:30px 0 8px}
+  .pull .pt{font-family:var(--font-mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+            color:rgba(245,243,240,.55);margin-bottom:11px}
+  .pull p{font-size:14px;line-height:1.65;color:rgba(245,243,240,.86)}
+  .pull p+p{margin-top:10px}
+  .pull em{color:#FBFAF8;font-style:normal;font-weight:700}
+  .pull q{font-family:var(--font-body);font-style:italic;color:#FBFAF8}
+
+  h2{font-family:var(--font-display);font-weight:700;font-size:27px;margin:46px 0 4px}
+  .group-meta{font-family:var(--font-mono);font-size:10px;letter-spacing:.12em;
+              text-transform:uppercase;color:var(--coral);margin-top:34px}
+  .group-note{font-size:13.5px;color:var(--ink-2);margin:6px 0 18px;max-width:660px}
+
+  .chart-card{background:var(--card);border:1px solid var(--rule);border-radius:14px;
+              padding:18px;margin-bottom:16px;display:grid;
+              grid-template-columns:330px 1fr;gap:22px;align-items:start}
+  @media (max-width:760px){.chart-card{grid-template-columns:1fr}}
+  .cc-num{font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;color:var(--ink-3)}
+  .cc-title{font-family:var(--font-mono);font-size:12px;letter-spacing:.1em;font-weight:600;
+            text-transform:uppercase;margin:3px 0 2px}
+  .cc-where{font-size:12px;color:var(--ink-3);font-style:italic;margin-bottom:12px}
+  .field{margin-bottom:11px}
+  .field .fl{font-family:var(--font-mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;
+             color:var(--ink-3);margin-bottom:3px}
+  .field .fv{font-size:13.5px;line-height:1.5}
+  .field .fv b{font-weight:700}
+
+  .badge{display:inline-block;font-family:var(--font-mono);font-size:9px;letter-spacing:.09em;
+         text-transform:uppercase;padding:5px 10px;border-radius:99px;font-weight:600}
+  .badge.ok{background:var(--ink);color:#FBFAF8}
+  .badge.hard{border:1px solid var(--ink-3);color:var(--ink-2)}
+  .badge.dup{border:1px solid var(--ink-3);color:var(--ink-3)}
+  .badge.bad{background:var(--coral);color:#FFF}
+
+  svg{display:block;width:100%;height:auto;border-radius:8px;background:var(--card)}
+  .figcap{font-family:var(--font-mono);font-size:8.5px;letter-spacing:.06em;color:var(--ink-3);
+          margin-top:7px;text-transform:uppercase}
+  .behind{font-family:var(--font-mono);font-size:10.5px;color:var(--ink-2);
+          background:var(--paper);border-radius:6px;padding:8px 10px;margin-top:9px;line-height:1.5}
+  .behind b{color:var(--ink)}
+
+  .tilegrid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  .tile{background:var(--card);border:1px solid var(--rule);border-radius:11px;padding:9px}
+  .tile .tt{font-family:var(--font-mono);font-size:8.5px;letter-spacing:.07em;color:var(--ink-2);font-weight:600}
+  .tile .tu{font-family:var(--font-mono);font-size:7.5px;color:var(--ink-3);margin-bottom:2px}
+
+  table{width:100%;border-collapse:collapse;margin-top:16px;font-size:13px}
+  th{font-family:var(--font-mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;
+     color:var(--ink-3);text-align:left;padding:0 10px 8px 0;border-bottom:1px solid var(--rule);font-weight:500}
+  td{padding:11px 10px 11px 0;border-bottom:1px solid var(--rule);vertical-align:top}
+  td.name{font-family:var(--font-mono);font-size:11px;letter-spacing:.05em;white-space:nowrap}
+  td.verdict{white-space:nowrap}
+
+  .flag{border-left:2px solid var(--coral);padding:2px 0 2px 14px;margin:18px 0}
+  .flag .fh{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;
+            color:var(--ink-2);margin-bottom:5px}
+  .flag p{font-size:13.5px;color:var(--ink);line-height:1.55}
+  .flag p+p{margin-top:7px}
+
+  .foot{font-family:var(--font-mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;
+        color:var(--ink-3);text-align:center;margin-top:56px}
+  .rule{display:flex;align-items:center;gap:10px;margin:40px 0 0}
+  .rule::before,.rule::after{content:"";flex:1;height:1px;background:var(--rule)}
+  .rule span{font-family:var(--font-mono);font-size:9px;letter-spacing:.14em;
+             text-transform:uppercase;color:var(--ink-3)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="strip">POST RUN DRIP <span class="dot"></span> TRENDS AUDIT <span class="dot"></span> 12 CHARTS <span class="dot"></span> JUL 27 2026</div>
+  <h1>What every chart on<br>Trends is actually asking.</h1>
+  <p class="lede">A plain-language guide to all twelve, in the order you meet them. For each one: what it wants to tell you, how to read it, and what you have to already know before it makes any sense. <b>No changes have been made to the app.</b> This is just so you can decide what earns its place.</p>
+
+  <div class="pull">
+    <div class="pt">The standard you already set</div>
+    <p>Your own IA doc describes the Trends tab in four words: <q>the 5-second view.</q></p>
+    <p>Twelve charts is not a 5-second view. But the useful thing is that you already know what good looks like here, so this isn't a question of taste. It's a question of which charts clear the bar you set.</p>
+    <p>One more line of yours, written into <em>SharpEndFitnessRead.swift</em> yesterday: <q>The shipped charts present data but never state a conclusion, so every read is homework.</q> That is the exact diagnosis. Hold onto it while you read the next twelve entries.</p>
+  </div>
+
+  <!-- ============ GROUP A ============ -->
+  <div class="group-meta">Group A · The Read card</div>
+  <h2>Three charts behind one switch</h2>
+  <p class="group-note">These live inside the black “Are you getting fitter?” card at the top of the screen. A three-way segmented control swaps between them, so you only ever see one at a time. All three are drawn from the same set of key sessions.</p>
+
+  <div class="chart-card">
+    <div>
+      <div id="c1"></div>
+      <div class="figcap">Fig. 1 — effort-levelled pace over the block</div>
+    </div>
+    <div>
+      <div class="cc-num">CHART 01</div>
+      <div class="cc-title">Progress over time</div>
+      <div class="cc-where">The Read card, first tab</div>
+      <div class="field"><div class="fl">What it asks</div><div class="fv">Is my pace improving, once I account for how hard I was working on each day?</div></div>
+      <div class="field"><div class="fl">How to read it</div><div class="fv">Time runs left to right. The black line is your pace, and it is flipped so <b>higher means faster</b>. The dashed line is where you started. The grey band is normal week-to-week wobble: while the line sits inside it, nothing is proven.</div></div>
+      <div class="field"><div class="fl">What you must already know</div><div class="fv">That every session has been mathematically re-priced to “what would you have run at 162 bpm” so that a hard rep day and an easy tempo day can share one scale. If you don’t accept that step, the whole line is meaningless.</div></div>
+      <div class="field"><div class="fl">Verdict</div><div class="fv"><span class="badge ok">Reads cleanly</span> &nbsp;The best chart on the surface. One line, one direction, and it states its conclusion in words underneath.</div></div>
+    </div>
+  </div>
+
+  <div class="chart-card">
+    <div>
+      <div id="c2"></div>
+      <div class="figcap">Fig. 2 — the two fitted lines, as they actually render</div>
+      <div class="behind"><b>Look where they cross.</b> Above the crossing the solid “now” line is to the <b>left</b> of the dashed one, which means slower. The caption under this chart in the app says “faster at every intensity.” The picture says otherwise.</div>
+    </div>
+    <div>
+      <div class="cc-num">CHART 02</div>
+      <div class="cc-title">The two lines</div>
+      <div class="cc-where">The Read card, second tab</div>
+      <div class="field"><div class="fl">What it asks</div><div class="fv">At any given effort level, am I holding a faster pace now than I was early in the block?</div></div>
+      <div class="field"><div class="fl">How to read it</div><div class="fv">Pace runs across, faster to the right. Heart rate runs up. Each dot is a session. The dashed line summarises early-you, the solid line summarises now-you. If the solid line sits entirely to the right of the dashed one, you are faster at every effort. The horizontal gap between them is the gain.</div></div>
+      <div class="field"><div class="fl">What you must already know</div><div class="fv">Linear regression. That a straight line can stand in for a cloud of dots. That horizontal distance between two lines at a fixed height is an effect size. This is a statistics-class chart.</div></div>
+      <div class="field"><div class="fl">Verdict</div><div class="fv"><span class="badge bad">Broken</span> &nbsp;Not just hard, wrong. A handful of impossible data points (roughly 4:15/mi at 130 bpm, almost certainly a downhill segment or GPS artifact) flipped the slope of the fit. The lines now cross near 162 bpm, which is exactly where the app measures the gap. The reported number is the crossing point of two bad lines.</div></div>
+    </div>
+  </div>
+
+  <div class="chart-card">
+    <div>
+      <div id="c3"></div>
+      <div class="figcap">Fig. 3 — every session, raw</div>
+    </div>
+    <div>
+      <div class="cc-num">CHART 03</div>
+      <div class="cc-title">Every session</div>
+      <div class="cc-where">The Read card, third tab</div>
+      <div class="field"><div class="fl">What it asks</div><div class="fv">What does my raw data actually look like, before any fitting or adjusting?</div></div>
+      <div class="field"><div class="fl">How to read it</div><div class="fv">Each dot is one key session. Pace across (faster right), heart rate up. Bottom-right is the good corner: fast for a low heart rate. Bigger dot means more fast miles. More solid dot means more recent.</div></div>
+      <div class="field"><div class="fl">What you must already know</div><div class="fv">Three codes at once — position, size and opacity — and the legend only explains one of them. Nothing on screen tells you that dot size means volume or that faded means old.</div></div>
+      <div class="field"><div class="fl">Verdict</div><div class="fv"><span class="badge hard">Hard work</span> &nbsp;Honest, but wordless. Its own caption explains how the chart is encoded rather than telling you anything about your training.</div></div>
+    </div>
+  </div>
+
+  <!-- ============ GROUP B ============ -->
+  <div class="group-meta">Group B · The compare maps</div>
+  <h2>Two full-width scatter plots</h2>
+  <p class="group-note">Further down the same scroll, under the headings “THE MAP” and “WORKLOAD”. Both are always visible, and both have an expand button that opens the same chart bigger in a sheet.</p>
+
+  <div class="chart-card">
+    <div>
+      <div id="c4"></div>
+      <div class="figcap">Fig. 4 — pace × effort, A and B ringed</div>
+    </div>
+    <div>
+      <div class="cc-num">CHART 04</div>
+      <div class="cc-title">Pace × effort</div>
+      <div class="cc-where">Section “THE MAP”, always visible</div>
+      <div class="field"><div class="fl">What it asks</div><div class="fv">Of the two sessions I picked, which was faster for less effort — and where do they sit among everything else?</div></div>
+      <div class="field"><div class="fl">How to read it</div><div class="fv">Identical to chart 3. Pace across, heart rate up, bottom-right is fitter. The two ringed dots are your selected A and B.</div></div>
+      <div class="field"><div class="fl">What you must already know</div><div class="fv">Same as chart 3 — plus you have to notice that this one quietly uses <b>raw</b> heart rate while chart 3 uses heat-corrected heart rate, so the same session sits in two different places on two charts one scroll apart.</div></div>
+      <div class="field"><div class="fl">Verdict</div><div class="fv"><span class="badge dup">Duplicate</span> &nbsp;This is chart 3 again, drawn 200 pixels lower with different rules. Two charts of the same two numbers, disagreeing slightly, is worse than either alone.</div></div>
+    </div>
+  </div>
+
+  <div class="chart-card">
+    <div>
+      <div id="c5"></div>
+      <div class="figcap">Fig. 5 — effort × volume</div>
+    </div>
+    <div>
+      <div class="cc-num">CHART 05</div>
+      <div class="cc-title">Effort × volume</div>
+      <div class="cc-where">Section “WORKLOAD”, always visible</div>
+      <div class="field"><div class="fl">What it asks</div><div class="fv">How hard was a session, relative to how much of it there was?</div></div>
+      <div class="field"><div class="fl">How to read it</div><div class="fv">Fast miles across, heart rate up. Top-left is short and sharp. Bottom-right is long and easy.</div></div>
+      <div class="field"><div class="fl">What you must already know</div><div class="fv">That average heart rate is standing in for “how hard”. That is the weak link: eight mile-reps with full recovery and a steady 6-mile tempo can produce the same average heart rate and are nothing like each other.</div></div>
+      <div class="field"><div class="fl">Verdict</div><div class="fv"><span class="badge hard">Hard work</span> &nbsp;The premise is shakier than the drawing. It never says anything about your training; you have to supply the conclusion yourself.</div></div>
+    </div>
+  </div>
+
+  <!-- ============ GROUP C ============ -->
+  <div class="group-meta">Group C · The trend grid</div>
+  <h2>Six small tiles, all on screen at once</h2>
+  <p class="group-note">A 2×3 grid under “TRENDS · TAP TO EXPAND”. Each tile is about a thumb tall and shows a title, a unit line and a bare line. Tapping opens a bigger version that adds the axis labels and one explanatory sentence — none of which are visible on the tile itself.</p>
+
+  <div class="chart-card">
+    <div>
+      <div class="tilegrid" id="tiles"></div>
+      <div class="figcap">Fig. 6–11 — the grid as it appears in the app</div>
+    </div>
+    <div>
+      <div class="cc-num">CHARTS 06–11</div>
+      <div class="cc-title">Pace · Density · Fast volume · HR drift · Decoupling · Avg HR</div>
+      <div class="cc-where">Section “TRENDS · TAP TO EXPAND”</div>
+      <div class="field"><div class="fl">What they ask</div><div class="fv">Six separate questions: is my pace improving, am I running fast for more of the session, is my fast volume growing, is my heart rate staying flatter within a session, am I holding form on long efforts, and is the same work costing fewer beats?</div></div>
+      <div class="field"><div class="fl">The problem, in one sentence</div><div class="fv"><b>Five of these six charts silently flip their vertical axis</b> so that “up” always means “better”. The only signal is the tiny ▲ in the unit line. On the Fast volume tile, up means the number went up. On the five beside it, up means the number went down.</div></div>
+      <div class="field"><div class="fl">The second problem</div><div class="fv">The horizontal axis is <b>session number, not date</b>. Sessions are spaced evenly regardless of when they happened, so a three-week injury gap and a three-day gap look identical. The shape you are reading does not exist in time.</div></div>
+      <div class="field"><div class="fl">Verdict</div><div class="fv"><span class="badge hard">Hard work</span> &nbsp;All six. Not because any one is badly drawn, but because reading the row requires holding six definitions and five axis inversions in your head simultaneously. Nobody can do that, including the person who built it.</div></div>
+    </div>
+  </div>
+
+  <div class="chart-card" style="grid-template-columns:1fr">
+    <div>
+      <div class="cc-num">WORKED EXAMPLE</div>
+      <div class="cc-title">Why the flip is so disorienting</div>
+      <div class="behind" style="margin-top:12px">
+        <b>HR drift tile</b> — the real numbers, session by session: &nbsp;<b>+2 &nbsp; +5 &nbsp; +3 &nbsp; +8 &nbsp; +4 &nbsp; +6 &nbsp; +2</b><br>
+        Your heart rate drifted <b>more</b> in session 4 than in session 1. That is worse. But the line on the tile <b>dips down</b> there, because the axis is inverted so that better is up.<br><br>
+        <b>Fast volume tile</b>, right next to it: &nbsp;<b>5.0 &nbsp; 3.0 &nbsp; 4.2 &nbsp; 6.0 &nbsp; 3.5 &nbsp; 4.8 &nbsp; 6.2</b><br>
+        Here the line goes <b>up</b> at session 4, and up means the number genuinely went up.<br><br>
+        Same visual gesture, opposite meaning, nine pixels apart. That is the whole problem.
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ GROUP D ============ -->
+  <div class="group-meta">Group D · Fast segments</div>
+  <h2>One chart, six datasets</h2>
+  <p class="group-note">A separate surface with a row of chips across the top (mile, 3k, 5k, 10k, HMP, MP). The chart redraws for whichever pace system you pick.</p>
+
+  <div class="chart-card">
+    <div>
+      <div id="c12"></div>
+      <div class="figcap">Fig. 12 — one pace system over its own sessions</div>
+    </div>
+    <div>
+      <div class="cc-num">CHART 12</div>
+      <div class="cc-title">5K · pace, heat + hills adjusted</div>
+      <div class="cc-where">Fast Segments, one chip selected</div>
+      <div class="field"><div class="fl">What it asks</div><div class="fv">For this one type of fast work, is it getting sharper?</div></div>
+      <div class="field"><div class="fl">How to read it</div><div class="fv">Your 5k-pace sessions in order, pace flipped so higher is faster. Colour deepens as pace gets faster.</div></div>
+      <div class="field"><div class="fl">What you must already know</div><div class="fv">That “5k” here means a <b>pace</b>, not a distance you raced. That the heat and hill corrections are trustworthy. And again, that the horizontal axis is session order, not calendar time.</div></div>
+      <div class="field"><div class="fl">Verdict</div><div class="fv"><span class="badge ok">Reads cleanly</span> &nbsp;And here is the interesting part: it works because of the line of text sitting above it — <i>“▼ 6s/mi faster than your first”</i>. That sentence does all the work. Cover it up and the chart goes quiet. This is the pattern worth copying.</div></div>
+    </div>
+  </div>
+
+  <!-- ============ OVERLAP ============ -->
+  <div class="rule"><span>The overlap</span></div>
+  <h2>Twelve charts, four numbers</h2>
+  <p class="group-note">Nearly everything above is drawn from the same handful of values. This is why the screen feels like more information than it is.</p>
+
+  <table>
+    <thead><tr><th style="width:170px">The number</th><th>Where it appears</th></tr></thead>
+    <tbody>
+      <tr><td class="name">Pace vs heart rate</td><td>Charted <b>three separate times</b>: as “Every session” (chart 3), as “Pace × effort” (chart 4), and again with regression lines as “The two lines” (chart 2). Charts 3 and 4 are on the same scroll, one using heat-corrected heart rate and one using raw.</td></tr>
+      <tr><td class="name">Pace over time</td><td>Charted <b>three times</b>: “Progress over time” (1), the Pace tile (6), and the Fast Segments chart (12).</td></tr>
+      <tr><td class="name">Average heart rate</td><td>Charted <b>three times</b>: as the Avg HR tile (11), and as the vertical axis of both scatter plots (4 and 5).</td></tr>
+      <tr><td class="name">Fast volume</td><td>Charted <b>twice</b> (tile 8, and the horizontal axis of chart 5) — and used as the invisible dot-size code in charts 1, 2, 3 and 4.</td></tr>
+      <tr><td class="name">The gain (−4s/mi)</td><td>Appears <b>three times</b>: as a sentence in the black verdict card, as a chip on chart 1, and as a chip on chart 2 — where it reads −2s instead, because of the broken fit.</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ============ TWO FLAGS ============ -->
+  <div class="rule"><span>Two things I found in your own rules</span></div>
+
+  <div class="flag">
+    <div class="fh">Hard rule #8 — no em-dashes as empty-state placeholders</div>
+    <p>The head-to-head table prints “—” for every missing value, and with the sample data that is four of eleven rows: Decoupling, Heat cost, Hill cost, and Avg rest on continuous efforts. Your rule says every empty cell gets the empty-state component instead.</p>
+    <p>Worth noting this is the most common state for a new user. Someone in their first fortnight sees a table that is mostly dashes.</p>
+  </div>
+
+  <div class="flag">
+    <div class="fh">Three-palette rule — green is mood-only</div>
+    <p>Your colour rule from 2026-07-03 says blue is pace, warm is mood, coral is alert, and the three never share hues — with a specific note that a “safe zone” band goes <b>neutral gray, never green</b>.</p>
+    <p>Charts 1 and 2 both use a success green (#006300) for the “now” level, the gain bar and the “RIGHT = FITTER” label. That is a fourth palette doing a job the rules assign to ink weight. The head-to-head table already solves this correctly: bold ink for the stronger figure, gray for the weaker, no colour at all.</p>
+    <p><i>My earlier mockups used the same green. That was my error, and I would drop it to ink in any version we build.</i></p>
+  </div>
+
+  <!-- ============ SUMMARY ============ -->
+  <div class="rule"><span>All twelve, at a glance</span></div>
+  <table>
+    <thead><tr><th style="width:150px">Chart</th><th>What it tells you</th><th style="width:120px">Verdict</th></tr></thead>
+    <tbody>
+      <tr><td class="name">01 Progress</td><td>Your pace trend, effort accounted for. Says its conclusion in words.</td><td class="verdict"><span class="badge ok">Keep</span></td></tr>
+      <tr><td class="name">02 Two lines</td><td>Nothing reliable. The fit is wrong-signed and the lines cross at the measurement point.</td><td class="verdict"><span class="badge bad">Broken</span></td></tr>
+      <tr><td class="name">03 Every session</td><td>The raw cloud. Three encodings, one legend, no conclusion.</td><td class="verdict"><span class="badge hard">Hard</span></td></tr>
+      <tr><td class="name">04 Pace × effort</td><td>Chart 03 again, with different heart-rate rules.</td><td class="verdict"><span class="badge dup">Duplicate</span></td></tr>
+      <tr><td class="name">05 Effort × volume</td><td>Hard vs much, with average heart rate as a shaky stand-in for hard.</td><td class="verdict"><span class="badge hard">Hard</span></td></tr>
+      <tr><td class="name">06 Pace</td><td>Key-session pace by session number. Axis inverted.</td><td class="verdict"><span class="badge hard">Hard</span></td></tr>
+      <tr><td class="name">07 Density</td><td>Share of session spent fast. The one tile that isn’t inverted.</td><td class="verdict"><span class="badge hard">Hard</span></td></tr>
+      <tr><td class="name">08 Fast volume</td><td>Miles at pace. Also not inverted.</td><td class="verdict"><span class="badge hard">Hard</span></td></tr>
+      <tr><td class="name">09 HR drift</td><td>Heart-rate climb within a session. Inverted.</td><td class="verdict"><span class="badge hard">Hard</span></td></tr>
+      <tr><td class="name">10 Decoupling</td><td>Form held on continuous efforts. Inverted, and blank for rep sessions.</td><td class="verdict"><span class="badge hard">Hard</span></td></tr>
+      <tr><td class="name">11 Avg HR</td><td>Cost of the work. Inverted.</td><td class="verdict"><span class="badge hard">Hard</span></td></tr>
+      <tr><td class="name">12 Fast segments</td><td>One pace system getting sharper. Works because of the sentence above it.</td><td class="verdict"><span class="badge ok">Keep</span></td></tr>
+    </tbody>
+  </table>
+
+  <div class="pull" style="margin-top:34px">
+    <div class="pt">If you only take one thing from this</div>
+    <p>The two charts that work (01 and 12) are the two that <em>say a sentence first and show a picture second</em>. The ten that don't are the ten that hand you a shape and trust you to derive the sentence yourself.</p>
+    <p>That's not a charting problem. It's the difference between a tool that observes for you and a tool that makes you do the observing — which is the entire premise of the product, printed at the top of your own CLAUDE.md: <q>honest observation without prescription.</q></p>
+    <p>The observation part is the promise. Right now the Trends tab is outsourcing it back to the runner.</p>
+  </div>
+
+  <div class="foot">Post Run Drip · Trends audit · no app changes made · Jul 27 2026</div>
+</div>
+
+<script>
+// ─────────────── shared data ───────────────
+const INK='#1A1815', INK2='#6B6560', INK3='#9B9590', RULE='#E8E4E0', CARD='#FFFFFF', PAPER='#F5F3F0';
+const PACE_RAMP=['#93B9D6','#7BA3C8','#5D86B4','#42679C','#2B4A80','#0E1D4E'];
+
+// 20 key sessions: effort-levelled pace (for ch.1), raw pace + hr (scatters), volume
+const S=[
+ {d:0,ev:305,p:302,h:165,mi:5.0},{d:8,ev:312,p:311,h:161,mi:3.0},
+ {d:15,ev:308,p:307,h:163,mi:4.2},{d:23,ev:318,p:322,h:158,mi:2.2},
+ {d:30,ev:314,p:316,h:160,mi:3.6},{d:38,ev:309,p:305,h:167,mi:5.4},
+ {d:45,ev:320,p:330,h:154,mi:2.0},{d:52,ev:306,p:301,h:169,mi:4.8},
+ {d:60,ev:311,p:314,h:162,mi:3.4},{d:67,ev:303,p:298,h:171,mi:5.8},
+ {d:74,ev:307,p:306,h:166,mi:4.0},{d:82,ev:300,p:295,h:172,mi:6.2},
+ {d:89,ev:304,p:303,h:168,mi:4.4},{d:96,ev:299,p:294,h:170,mi:5.0},
+ {d:104,ev:302,p:300,h:167,mi:4.6},{d:111,ev:301,p:297,h:169,mi:5.2},
+ // the three impossible points that flip the fit
+ {d:56,ev:301,p:256,h:131,mi:0.6,bad:1},{d:78,ev:300,p:259,h:128,mi:0.5,bad:1},
+ {d:99,ev:302,p:263,h:133,mi:0.7,bad:1},
+ {d:35,ev:316,p:440,h:158,mi:1.0,bad:1},
+];
+const GOOD=S.filter(s=>!s.bad), ALL=S;
+const pace=s=>`${Math.floor(s/60)}:${String(Math.round(s%60)).padStart(2,'0')}`;
+
+function svg(w,h,inner,aria){
+  return `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${aria||''}">${inner}</svg>`;
+}
+function mono(x,y,t,{s=8,f=INK3,a='start',w=500,ls='.05em'}={}){
+  return `<text x="${x}" y="${y}" font-family="ui-monospace,'SF Mono',Menlo,monospace" font-size="${s}" fill="${f}" text-anchor="${a}" font-weight="${w}" letter-spacing="${ls}">${t}</text>`;
+}
+function grid(x0,x1,y0,y1,vals,Y,fmt){
+  return vals.map(v=>`<line x1="${x0}" x2="${x1}" y1="${Y(v)}" y2="${Y(v)}" stroke="${RULE}" stroke-width="1"/>`
+    + mono(x0-5,Y(v)+3,fmt(v),{a:'end'})).join('');
+}
+// simple least-squares
+function fit(xs,ys){const n=xs.length,mx=xs.reduce((a,b)=>a+b,0)/n,my=ys.reduce((a,b)=>a+b,0)/n;
+  let nu=0,de=0;for(let i=0;i<n;i++){nu+=(xs[i]-mx)*(ys[i]-my);de+=(xs[i]-mx)**2}
+  const sl=de?nu/de:0;return {sl,ic:my-sl*mx,at:h=>my-sl*mx+sl*h};}
+
+// ── 1. Progress over time ──
+(function(){
+  const W=330,H=170,x0=34,x1=W-58,y0=16,y1=H-24;
+  const lo=294,hi=326;
+  const X=d=>x0+(d/111)*(x1-x0), Y=v=>y0+((v-lo)/(hi-lo))*(y1-y0);
+  let g=grid(x0,x1,y0,y1,[300,310,320],Y,v=>pace(v));
+  // rolling mean of GOOD
+  const pts=GOOD.map((s,i,a)=>{const lo_=Math.max(0,i-2),hi_=Math.min(a.length-1,i+2);
+    let t=0,c=0;for(let k=lo_;k<=hi_;k++){t+=a[k].ev;c++}return {d:s.d,v:t/c}});
+  const up=pts.map(p=>`${X(p.d).toFixed(1)},${Y(p.v-5).toFixed(1)}`);
+  const dn=pts.map(p=>`${X(p.d).toFixed(1)},${Y(p.v+5).toFixed(1)}`).reverse();
+  g+=`<polygon points="${up.join(' ')} ${dn.join(' ')}" fill="${INK}" opacity=".06"/>`;
+  g+=`<line x1="${x0}" x2="${x1}" y1="${Y(311)}" y2="${Y(311)}" stroke="${INK3}" stroke-width="1.2" stroke-dasharray="4 3"/>`;
+  g+=`<path d="${pts.map((p,i)=>`${i?'L':'M'} ${X(p.d).toFixed(1)} ${Y(p.v).toFixed(1)}`).join(' ')}" fill="none" stroke="${INK}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
+  const last=pts[pts.length-1];
+  g+=`<circle cx="${X(last.d)}" cy="${Y(last.v)}" r="3.6" fill="${INK}"/>`;
+  g+=mono(x1+6,Y(last.v)-3,'NOW',{s:7.5,f:INK,w:700,ls:'.1em'});
+  g+=mono(x1+6,Y(last.v)+8,pace(last.v),{s:10,f:INK,w:700});
+  g+=mono(x1+6,Y(311)+3,'EARLY',{s:7.5,f:INK3,ls:'.1em'});
+  g+=mono(x0-26,y0-4,'FASTER ↑',{s:7.5,f:INK2,ls:'.1em'});
+  ['MAR','APR','MAY','JUN','JUL'].forEach((m,i)=>{g+=mono(x0+i*((x1-x0)/4),y1+13,m,{a:'middle',s:7.5})});
+  document.getElementById('c1').innerHTML=svg(W,H,g,'Pace improving over the block');
+})();
+
+// ── 2. The two lines (honest render — they cross) ──
+(function(){
+  const W=330,H=170,x0=32,x1=W-14,y0=22,y1=H-26;
+  const plo=250,phi=345, hlo=124,hhi=176;
+  const X=p=>x0+((phi-p)/(phi-plo))*(x1-x0), Y=h=>y0+((hhi-h)/(hhi-hlo))*(y1-y0);
+  let g=grid(x0,x1,y0,y1,[130,150,170],Y,v=>v);
+  const use=ALL.filter(s=>s.p<400);
+  const early=use.slice(0,Math.floor(use.length/2)), late=use.slice(Math.floor(use.length/2));
+  const fE=fit(early.map(s=>s.h),early.map(s=>s.p)), fL=fit(late.map(s=>s.h),late.map(s=>s.p));
+  const cl=v=>Math.max(x0,Math.min(x1,v));
+  const a=hlo+4,b=hhi-4;
+  // band
+  g+=`<polygon points="${cl(X(fE.at(a)))},${Y(a)} ${cl(X(fE.at(b)))},${Y(b)} ${cl(X(fL.at(b)))},${Y(b)} ${cl(X(fL.at(a)))},${Y(a)}" fill="${INK}" opacity=".05"/>`;
+  // dots
+  use.forEach(s=>{const r=2.4+Math.sqrt(Math.max(.3,s.mi))*.9;
+    g+=`<circle cx="${X(s.p)}" cy="${Y(s.h)}" r="${r+1.4}" fill="${CARD}"/>`;
+    g+=`<circle cx="${X(s.p)}" cy="${Y(s.h)}" r="${r}" fill="${s.bad?INK:PACE_RAMP[3]}" opacity="${s.bad?.75:.42}"/>`;});
+  g+=`<line x1="${cl(X(fE.at(a)))}" y1="${Y(a)}" x2="${cl(X(fE.at(b)))}" y2="${Y(b)}" stroke="${INK3}" stroke-width="1.5" stroke-dasharray="4 3"/>`;
+  g+=`<line x1="${cl(X(fL.at(a)))}" y1="${Y(a)}" x2="${cl(X(fL.at(b)))}" y2="${Y(b)}" stroke="${INK}" stroke-width="2.2"/>`;
+  // mark the crossing
+  const hx=(fL.ic-fE.ic)/(fE.sl-fL.sl);
+  if(hx>hlo&&hx<hhi){const cx=cl(X(fE.at(hx))),cy=Y(hx);
+    g+=`<circle cx="${cx}" cy="${cy}" r="8" fill="none" stroke="#D4592A" stroke-width="1.4"/>`;
+    g+=mono(cx-11,cy+3,'THEY CROSS',{s:7.5,f:'#D4592A',a:'end',w:700,ls:'.08em'});}
+  g+=mono(x0-24,y0-6,'HEART RATE ↑',{s:7.5,f:INK2,ls:'.08em'});
+  g+=mono(x1,y1+14,'FASTER →',{s:7.5,a:'end',ls:'.08em'});
+  g+=mono(x0,y1+14,'← SLOWER',{s:7.5,ls:'.08em'});
+  document.getElementById('c2').innerHTML=svg(W,H,g,'Two fitted lines that cross');
+})();
+
+// ── 3 / 4 scatter ──
+function scatter(el,{ring=false,label=''}){
+  const W=330,H=170,x0=32,x1=W-14,y0=18,y1=H-26;
+  const plo=250,phi=345,hlo=124,hhi=176;
+  const X=p=>x0+((phi-p)/(phi-plo))*(x1-x0), Y=h=>y0+((hhi-h)/(hhi-hlo))*(y1-y0);
+  let g=grid(x0,x1,y0,y1,[130,150,170],Y,v=>v);
+  ALL.filter(s=>s.p<400).forEach((s,i,arr)=>{
+    const rec=i/(arr.length-1), r=2.6+Math.sqrt(Math.max(.3,s.mi))*1.15;
+    const c=PACE_RAMP[Math.min(5,Math.floor((345-s.p)/16))];
+    g+=`<circle cx="${X(s.p)}" cy="${Y(s.h)}" r="${r+1.4}" fill="${CARD}"/>`;
+    g+=`<circle cx="${X(s.p)}" cy="${Y(s.h)}" r="${r}" fill="${c}" opacity="${ring?.34:(.26+.5*rec)}"/>`;});
+  if(ring){[GOOD[11],GOOD[7]].forEach((s,k)=>{
+    const r=2.6+Math.sqrt(s.mi)*1.15;
+    g+=`<circle cx="${X(s.p)}" cy="${Y(s.h)}" r="${r}" fill="${PACE_RAMP[4]}"/>`;
+    g+=`<circle cx="${X(s.p)}" cy="${Y(s.h)}" r="${r+1.6}" fill="none" stroke="${INK}" stroke-width="1.4"/>`;
+    g+=mono(X(s.p),Y(s.h)-r-6,k?'B':'A',{s:8,f:INK,a:'middle',w:700});});}
+  g+=mono(x0-24,y0-4,'HEART RATE ↑',{s:7.5,f:INK2,ls:'.08em'});
+  g+=mono(x1,y1+14,label||'FASTER →',{s:7.5,a:'end',ls:'.08em'});
+  document.getElementById(el).innerHTML=svg(W,H,g,'Pace against heart rate');
+}
+scatter('c3',{});
+scatter('c4',{ring:true});
+
+// ── 5. effort × volume ──
+(function(){
+  const W=330,H=170,x0=32,x1=W-14,y0=18,y1=H-26;
+  const vlo=0,vhi=7,hlo=124,hhi=176;
+  const X=v=>x0+((v-vlo)/(vhi-vlo))*(x1-x0), Y=h=>y0+((hhi-h)/(hhi-hlo))*(y1-y0);
+  let g=grid(x0,x1,y0,y1,[130,150,170],Y,v=>v);
+  ALL.filter(s=>s.p<400).forEach(s=>{
+    const r=3.2, c=PACE_RAMP[Math.min(5,Math.floor((345-s.p)/16))];
+    g+=`<circle cx="${X(s.mi)}" cy="${Y(s.h)}" r="${r+1.4}" fill="${CARD}"/>`;
+    g+=`<circle cx="${X(s.mi)}" cy="${Y(s.h)}" r="${r}" fill="${c}" opacity=".45"/>`;});
+  g+=mono(x0-24,y0-4,'HEART RATE ↑',{s:7.5,f:INK2,ls:'.08em'});
+  g+=mono(x1,y1+14,'MORE MILES →',{s:7.5,a:'end',ls:'.08em'});
+  document.getElementById('c5').innerHTML=svg(W,H,g,'Effort against volume');
+})();
+
+// ── 6–11 tiles ──
+(function(){
+  const T=[
+   {t:'PACE',u:'min/mi · ▲ faster',v:[302,311,307,322,316,305,301],inv:1},
+   {t:'DENSITY',u:'% · ▲ denser',v:[74,66,71,62,69,76,79],inv:0},
+   {t:'FAST VOLUME',u:'mi · ▲ more',v:[5.0,3.0,4.2,6.0,3.5,4.8,6.2],inv:0},
+   {t:'HR DRIFT',u:'bpm · ▲ steadier',v:[2,5,3,8,4,6,2],inv:1},
+   {t:'DECOUPLING',u:'% · ▲ held form',v:[3.1,4.8,3.6,5.9,4.1,3.3,2.8],inv:1},
+   {t:'AVG HR',u:'bpm · ▲ cheaper',v:[165,161,163,158,160,167,169],inv:1},
+  ];
+  document.getElementById('tiles').innerHTML=T.map(m=>{
+    const W=145,H=54,mL=5,mR=6,mT=5,mB=5;
+    const lo=Math.min(...m.v),hi=Math.max(...m.v),pad=(hi-lo)*.22+.001;
+    const L=lo-pad,Hh=hi+pad;
+    const X=i=>mL+i/(m.v.length-1)*(W-mL-mR);
+    const Y=v=>{const t=(v-L)/(Hh-L);return mT+(m.inv?t:1-t)*(H-mT-mB)};
+    let g=`<line x1="${mL}" x2="${W-mR}" y1="${H-mB}" y2="${H-mB}" stroke="${RULE}" stroke-width="1"/>`;
+    g+=`<path d="${m.v.map((v,i)=>`${i?'L':'M'} ${X(i).toFixed(1)} ${Y(v).toFixed(1)}`).join(' ')}" fill="none" stroke="${INK}" stroke-opacity=".45" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`;
+    m.v.forEach((v,i)=>{g+=`<circle cx="${X(i)}" cy="${Y(v)}" r="2.2" fill="${PACE_RAMP[3]}" opacity=".55"/>`});
+    return `<div class="tile"><div class="tt">${m.t}</div><div class="tu">${m.u}</div>${svg(W,H,g,m.t)}</div>`;
+  }).join('');
+})();
+
+// ── 12. fast segments ──
+(function(){
+  const W=330,H=170,x0=34,x1=W-14,y0=20,y1=H-26;
+  const v=[318,314,311,309,306,304,300], lo=296,hi=322;
+  const X=i=>x0+i/(v.length-1)*(x1-x0), Y=p=>y0+((p-lo)/(hi-lo))*(y1-y0);
+  let g=grid(x0,x1,y0,y1,[300,310,320],Y,p=>pace(p));
+  g+=`<path d="${v.map((p,i)=>`${i?'L':'M'} ${X(i).toFixed(1)} ${Y(p).toFixed(1)}`).join(' ')}" fill="none" stroke="${PACE_RAMP[4]}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`;
+  v.forEach((p,i)=>{g+=`<circle cx="${X(i)}" cy="${Y(p)}" r="3.4" fill="${CARD}"/>`;
+    g+=`<circle cx="${X(i)}" cy="${Y(p)}" r="2.6" fill="${PACE_RAMP[Math.min(5,3+Math.floor(i/3))]}"/>`});
+  g+=mono(x0-26,y0-6,'FASTER ↑',{s:7.5,f:INK2,ls:'.1em'});
+  g+=mono(x0,y1+14,'FIRST',{s:7.5});
+  g+=mono(x1,y1+14,'LATEST',{s:7.5,a:'end'});
+  document.getElementById('c12').innerHTML=svg(W,H,g,'One pace system getting sharper');
+})();
+</script>
+</body>
+</html>

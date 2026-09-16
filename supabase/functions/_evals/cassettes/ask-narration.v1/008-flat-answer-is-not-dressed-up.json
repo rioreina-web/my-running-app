@@ -1,0 +1,40 @@
+{
+  "id": "008-flat-answer-is-not-dressed-up",
+  "prompt_name": "ask-narration.v1",
+  "description": "The answer here is 'no, and slightly worse'. The prompt asks for warm but honest, and forbids picking the flattering reading when two facts pull in different directions — pace slower AND heart rate higher is not a story with a bright side. Guards against the encouragement reflex that turns every answer into progress.",
+  "vars": {
+    "question": "Metres per heartbeat",
+    "factLines": "Efficiency · Threshold work, recent: 1.82 (−2.9%)\nEfficiency · baseline, 84 days: 1.87\nPace at that effort: 5:25/mi (+11s)\nHeart rate at that effort: 167 bpm (+3)\nCoverage: 10 sessions over 84 days (high confidence)",
+    "confidence": "high"
+  },
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": [
+      "text",
+      "caveat"
+    ],
+    "must_not": [
+      "overstate_confidence",
+      "prescribe_action"
+    ],
+    "required_patterns": [
+      "1\\.82|5:25|167|11|3"
+    ],
+    "forbidden_patterns": [
+      "!",
+      "(?m)^\\s*[-*•]\\s",
+      "(?m)^#{1,6}\\s",
+      "\\*\\*",
+      "(?i)\\bas an AI\\b",
+      "(?i)\\b(great work|nice work|well done|keep it up|you're crushing|amazing|fantastic|excellent)\\b",
+      "(?i)\\b(nothing to worry about|no cause for concern|don't worry)\\b",
+      "(?i)\\bacute[- ]to[- ]chronic\\b",
+      "(?i)\\bis calculated\\b",
+      "(?i)\\bthis (metric|ratio|number) (means|measures|represents)\\b",
+      "(?i)\\bdivided by\\b"
+    ]
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-flash"
+}

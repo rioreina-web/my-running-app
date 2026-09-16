@@ -1,0 +1,23 @@
+{
+  "id": "004-interval-reps-no-fabricated-race",
+  "prompt_name": "parse-workout-structure.v2",
+  "description": "Regression for the elite-prediction bug (2026-07-16). An interval REP session (8×800 with jog recoveries at ~4:50-5:00/mi rep pace) must NOT emit an equivalent_race_pace — reps are run faster than you can race, and equating the two invented a 15:00 5K that anchored the fitness predictor at a near-elite ~30:00 10K. For rep sessions, equivalent_race_pace MUST be null (only sustained continuous efforts, time trials, or declared races produce one). type must be 'interval'.",
+  "vars": {
+    "distanceMiles": "5.30",
+    "durationMinutes": "32.8",
+    "moodLabel": "positive",
+    "workoutNotesBlock": "\"8 x 800m @ 2:25 w/ 400m jog\"",
+    "voiceTranscriptBlock": "(none)",
+    "workBoutsBlock": "Bout 1: 0.80 km / 0.50 mi in 02:25 @ 3:00/km (4:50/mi) — by distance ≈ 800m\n  ↳ recovery: 400m jog\nBout 2: 0.80 km / 0.50 mi in 02:26 @ 3:02/km (4:52/mi) — by distance ≈ 800m\n  ↳ recovery: 400m jog\nBout 3: 0.80 km / 0.50 mi in 02:24 @ 3:00/km (4:49/mi) — by distance ≈ 800m\n  ↳ recovery: 400m jog\nBout 4: 0.80 km / 0.50 mi in 02:25 @ 3:01/km (4:50/mi) — by distance ≈ 800m\n  ↳ recovery: 400m jog\nBout 5: 0.80 km / 0.50 mi in 02:26 @ 3:02/km (4:52/mi) — by distance ≈ 800m\n  ↳ recovery: 400m jog\nBout 6: 0.80 km / 0.50 mi in 02:25 @ 3:00/km (4:50/mi) — by distance ≈ 800m\n  ↳ recovery: 400m jog\nBout 7: 0.80 km / 0.50 mi in 02:24 @ 2:59/km (4:48/mi) — by distance ≈ 800m\n  ↳ recovery: 400m jog\nBout 8: 0.80 km / 0.50 mi in 02:23 @ 2:58/km (4:47/mi) — by distance ≈ 800m",
+    "timelineStr": "0s d=0.0mi pace=8:30 hr=140\n600s d=1.2mi pace=8:30 hr=150\n900s d=1.7mi pace=4:50 hr=168\n1400s d=2.6mi pace=4:51 hr=172"
+  },
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": ["type", "intent_pattern", "blocks", "work", "equivalent_race_pace", "subjective", "confidence"],
+    "required_patterns": ["\"type\":\\s*\"interval\"", "\"equivalent_race_pace\":\\s*null"],
+    "forbidden_patterns": ["\"distance_key\"", "15:0", "14:", "4:5\\d/mi.{0,40}5K"]
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-flash"
+}

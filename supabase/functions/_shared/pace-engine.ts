@@ -32,6 +32,19 @@
  */
 
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { equivalentRacePaceSecPerMile, RACE_DISTANCE_MI, raceKeyForInput, TRAINING_MP_SPEED_RATIO, type RaceKey } from "./paces.ts";
+
+/**
+ * Convert a pace at one race distance to the equivalent pace at another via
+ * the canonical race-equivalence ratio table (RACE_RATIOS_TO_10K), replacing
+ * the old hardcoded multiplier chains (10K→MP ×1.15, 5K→MP ×1.22, …) which
+ * ran ~5–7% off the table. A 0/falsy input returns 0 so the `||` fallback
+ * cascades that use this still short-circuit correctly.
+ */
+function paceEquiv(fromPace: number, fromKey: RaceKey, toKey: RaceKey): number {
+  if (!fromPace) return 0;
+  return equivalentRacePaceSecPerMile(fromKey, fromPace * RACE_DISTANCE_MI[fromKey], toKey);
+}
 
 // ── Public types ─────────────────────────────────────────
 
@@ -40,6 +53,7 @@ export type PaceSource =
                    // No longer emitted — observed surfaces via observedEasy
                    // diagnostic instead. Kept in the union for decoder
                    // backwards-compat with cached payloads.
+  | "manual"       // athlete/coach-confirmed effort — overrides all auto sources
   | "profile"      // athlete_pace_profiles DB row
   | "race_derived" // anchored to fitness_snapshots predictions
   | "goal_only"    // training_plans.target_time_seconds, nothing else
@@ -135,6 +149,12 @@ export interface AthletePaceProfileRow {
   five_k_pace_seconds: number | null;
   mile_pace_seconds: number | null;
   updated_at: string;
+  // User-confirmed current-fitness effort (distance + time). When present it
+  // overrides every auto-derived anchor — the athlete/coach's explicit word on
+  // fitness. The whole ladder is derived from this one effort via race-
+  // equivalence so zones stay coherent. Null for everyone until set.
+  manual_anchor_distance?: string | null;
+  manual_anchor_time_seconds?: number | null;
 }
 
 export interface FitnessSnapshotRow {
@@ -304,7 +324,7 @@ export async function fetchAndComputePaceZones(
     supabase
       .from("athlete_pace_profiles")
       .select(
-        "easy_pace_seconds, marathon_pace_seconds, half_pace_seconds, ten_k_pace_seconds, five_k_pace_seconds, mile_pace_seconds, updated_at",
+        "easy_pace_seconds, marathon_pace_seconds, half_pace_seconds, ten_k_pace_seconds, five_k_pace_seconds, mile_pace_seconds, updated_at, manual_anchor_distance, manual_anchor_time_seconds",
       )
       .eq("user_id", userId)
       .maybeSingle(),
@@ -359,10 +379,27 @@ interface RaceAnchorTable {
 function resolveRaceAnchors(input: PaceEngineInput): RaceAnchorTable {
   const { profile, snapshot } = input;
 
+  // A user-confirmed effort (distance + time) overrides every auto source. The
+  // whole ladder is derived from it via race-equivalence so the zones stay
+  // internally coherent (LT faster than MP, etc.). Null until someone sets it,
+  // so this is a no-op for every athlete who hasn't corrected their fitness.
+  const manualKey: RaceKey | null =
+    profile?.manual_anchor_distance != null
+      ? raceKeyForInput(profile.manual_anchor_distance)
+      : null;
+  const manualTime = profile?.manual_anchor_time_seconds ?? null;
+  const manualValid = manualKey != null && manualTime != null && manualTime > 0;
+  const manualPace = (to: RaceKey): number | null =>
+    manualValid ? equivalentRacePaceSecPerMile(manualKey!, manualTime!, to) : null;
+
   const buildAnchor = (
+    manualVal: number | null | undefined,
     profileVal: number | null | undefined,
     snapshotVal: number | null | undefined,
   ): PaceAnchor | null => {
+    if (manualVal != null && manualVal >= PACE_FLOOR_SEC && manualVal <= PACE_CEILING_SEC) {
+      return { pace: Math.round(manualVal), source: "manual", confidence: "high" };
+    }
     if (profileVal != null && profileVal >= PACE_FLOOR_SEC && profileVal <= PACE_CEILING_SEC) {
       return { pace: Math.round(profileVal), source: "profile", confidence: "high" };
     }
@@ -373,22 +410,27 @@ function resolveRaceAnchors(input: PaceEngineInput): RaceAnchorTable {
   };
 
   let marathon = buildAnchor(
+    manualPace("marathon"),
     profile?.marathon_pace_seconds,
     snapshotPace(snapshot?.predicted_marathon_seconds, MILES.marathon),
   );
   const halfMarathon = buildAnchor(
+    manualPace("half"),
     profile?.half_pace_seconds,
     snapshotPace(snapshot?.predicted_half_seconds, MILES.halfMarathon),
   );
   const tenK = buildAnchor(
+    manualPace("tenK"),
     profile?.ten_k_pace_seconds,
     snapshotPace(snapshot?.predicted_10k_seconds, MILES.tenK),
   );
   const fiveK = buildAnchor(
+    manualPace("fiveK"),
     profile?.five_k_pace_seconds,
     snapshotPace(snapshot?.predicted_5k_seconds, MILES.fiveK),
   );
   const mile = buildAnchor(
+    manualPace("mile"),
     profile?.mile_pace_seconds,
     snapshotPace(snapshot?.predicted_mile_seconds, MILES.mile),
   );
@@ -452,27 +494,28 @@ function snapshotPace(totalSeconds: number | null | undefined, miles: number): n
 
 function goalToMpPace(plan: TrainingPlanRow): number | null {
   if (!plan.target_time_seconds || !plan.target_race_distance) return null;
-  const distMi = distanceFromKey(plan.target_race_distance);
-  if (!distMi) return null;
-  const pace = plan.target_time_seconds / distMi;
+  const raceKey = planKeyToRaceKey(plan.target_race_distance);
+  if (!raceKey) return null;
+  const pace = plan.target_time_seconds / RACE_DISTANCE_MI[raceKey];
   if (pace < PACE_FLOOR_SEC || pace > PACE_CEILING_SEC) return null;
-  if (distMi >= MILES.marathon - 0.1) return pace;
-  if (distMi >= MILES.halfMarathon - 0.1) return pace * 1.06;
-  if (distMi >= MILES.tenK - 0.1) return pace * 1.15;
-  if (distMi >= MILES.fiveK - 0.1) return pace * 1.22;
-  return pace * 1.30;
+  // Convert the goal race pace to MARATHON pace via the canonical ratio table
+  // (was hardcoded ×1.06/1.15/1.22/1.30, which ran ~5–7% off the ladder and
+  // handed goal-only athletes an MP up to ~25 s/mi slow).
+  return raceKey === "marathon"
+    ? pace
+    : equivalentRacePaceSecPerMile(raceKey, plan.target_time_seconds, "marathon");
 }
 
-function distanceFromKey(key: string): number | null {
+function planKeyToRaceKey(key: string): RaceKey | null {
   const k = key.toLowerCase().trim();
-  if (k === "marathon") return MILES.marathon;
-  if (k === "half" || k === "half_marathon" || k === "half marathon" || k === "hm") return MILES.halfMarathon;
-  if (k === "10mi" || k === "10_mile" || k === "10 mile") return MILES.tenMile;
-  if (k === "10k" || k === "ten_k") return MILES.tenK;
-  if (k === "5k" || k === "five_k") return MILES.fiveK;
-  if (k === "3k" || k === "three_k") return MILES.threeK;
-  if (k === "mile") return MILES.mile;
-  if (k === "1500m" || k === "1500") return MILES.fifteenHundred;
+  if (k === "marathon") return "marathon";
+  if (k === "half" || k === "half_marathon" || k === "half marathon" || k === "hm") return "half";
+  if (k === "10mi" || k === "10_mile" || k === "10 mile" || k === "tenmi") return "tenMi";
+  if (k === "10k" || k === "ten_k" || k === "tenk") return "tenK";
+  if (k === "5k" || k === "five_k" || k === "fivek") return "fiveK";
+  if (k === "3k" || k === "three_k" || k === "threek") return "threeK";
+  if (k === "mile") return "mile";
+  if (k === "1500m" || k === "1500") return "1500m";
   return null;
 }
 
@@ -662,33 +705,28 @@ export function projectToLegacyZones(zones: PaceZones): LegacyPaceZones | null {
   if (!mpAnchor && !hmAnchor && !tkAnchor && !fkAnchor) return null;
 
   // Engine cascades fill these in when one race anchor is present, but keep
-  // belt-and-suspenders fallbacks for completeness.
-  const mp = mpAnchor || (hmAnchor * 1.06) || (tkAnchor * 1.15) || (fkAnchor * 1.22);
-  const hm = hmAnchor || (mpAnchor * 0.943) || (tkAnchor * 1.08) || (fkAnchor * 1.15);
-  const tk = tkAnchor || (hmAnchor * 0.925) || (fkAnchor * 1.06) || (mp * 0.87);
-  const fk = fkAnchor || (tkAnchor * 0.943) || (hmAnchor * 0.87) || (mp * 0.82);
+  // belt-and-suspenders fallbacks for completeness. Conversions go through the
+  // canonical ratio table (paceEquiv), not the old hardcoded multipliers.
+  const mp = mpAnchor || paceEquiv(hmAnchor, "half", "marathon") || paceEquiv(tkAnchor, "tenK", "marathon") || paceEquiv(fkAnchor, "fiveK", "marathon");
+  const hm = hmAnchor || paceEquiv(mpAnchor, "marathon", "half") || paceEquiv(tkAnchor, "tenK", "half") || paceEquiv(fkAnchor, "fiveK", "half");
+  const tk = tkAnchor || paceEquiv(hmAnchor, "half", "tenK") || paceEquiv(fkAnchor, "fiveK", "tenK") || paceEquiv(mp, "marathon", "tenK");
+  const fk = fkAnchor || paceEquiv(tkAnchor, "tenK", "fiveK") || paceEquiv(hmAnchor, "half", "fiveK") || paceEquiv(mp, "marathon", "fiveK");
 
-  // Single-number anchors per zone — midpoint of each band.
-  // For 2:20 marathoner (mp 320): recovery=485 (8:05), easy=427 (7:07),
-  // moderate=378 (6:18), steady=338 (5:38).
-  const recovery = zones.recovery
-    ? (zones.recovery.paceFast + zones.recovery.paceSlow) / 2
-    : mp * 1.5476; // 65% MP fallback (midpoint of 60-70%)
-  const easy = zones.easy
-    ? (zones.easy.paceFast + zones.easy.paceSlow) / 2
-    : mp * 1.3393; // 75% MP fallback (midpoint of 70-80%)
-  const moderate = zones.moderate
-    ? (zones.moderate.paceFast + zones.moderate.paceSlow) / 2
-    : mp * 1.1806; // 85% MP fallback (midpoint of 80-90%)
-  const steady = zones.steady
-    ? (zones.steady.paceFast + zones.steady.paceSlow) / 2
-    : mp * 1.0556; // 95% MP fallback (midpoint of 90-100%)
+  // Single-number training anchors — the SPEED midpoint (MP ÷ speed ratio),
+  // the canonical convention shared with paces.ts / derivePaceTableFromGoal /
+  // iOS PaceModels. Computed from MP directly (not the band's arithmetic
+  // midpoint, which was ~3 s/mi off — the §6 drift). For 2:20 marathoner
+  // (mp 320): recovery=492, easy=427, moderate=376, steady=337.
+  const recovery = mp / TRAINING_MP_SPEED_RATIO.recovery;
+  const easy = mp / TRAINING_MP_SPEED_RATIO.easy;
+  const moderate = mp / TRAINING_MP_SPEED_RATIO.moderate;
+  const steady = mp / TRAINING_MP_SPEED_RATIO.steady;
 
   // 3K and mile cascade off the race anchors (or fall back to ratios).
   const threeKAnchor = zones.threeK?.pace ?? 0;
   const mileAnchor = zones.mile?.pace ?? 0;
-  const threeK = threeKAnchor || (fk * 0.95);
-  const mile = mileAnchor || (threeKAnchor ? threeKAnchor * 0.93 : fk * 0.88);
+  const threeK = threeKAnchor || paceEquiv(fk, "fiveK", "threeK");
+  const mile = mileAnchor || (threeKAnchor ? paceEquiv(threeKAnchor, "threeK", "mile") : paceEquiv(fk, "fiveK", "mile"));
 
   return {
     recovery: Math.round(recovery),
@@ -798,9 +836,10 @@ export function rangesFromSnapshot(snap: {
 // ── Formatters (canonical chart-style strings) ──────────
 
 export function formatPace(sec: number): string {
-  const m = Math.floor(sec / 60);
-  const s = Math.round(sec % 60);
-  return `${m}:${String(s).padStart(2, "0")}`;
+  // Round the total FIRST, then split — rounding sec%60 in isolation renders
+  // "7:60" at fractional inputs (479.6s). Mirrors _shared/shared/format.ts.
+  const t = Math.round(sec);
+  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
 }
 
 /**

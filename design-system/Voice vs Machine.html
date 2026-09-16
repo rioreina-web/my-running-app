@@ -1,0 +1,133 @@
+<!doctype html>
+<!-- @dsCard group="Foundations" name="Voice vs machine" subtitle="The same run, said by the athlete and answered by the AI — italic mono against roman mono" viewport="1000x1180" -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Voice vs machine</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+html,body{margin:0;padding:0;background:#DEDCD6}
+.page{width:1000px;box-sizing:border-box;padding:34px 34px 40px;background:var(--paper);color:var(--ink);font-family:var(--font-body)}
+a{color:var(--session);text-decoration:none}a:hover{color:var(--red-text)}
+.hd{border-top:2px solid var(--ink);padding-top:10px;display:flex;align-items:baseline;justify-content:space-between;gap:16px}
+.hd b{font-family:var(--font-label);font-size:11px;font-weight:600;letter-spacing:.2em;text-transform:uppercase}
+.hd span{font-family:var(--font-data);font-size:10px;font-weight:500;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
+h1{font-family:var(--font-display);font-size:40px;font-weight:700;letter-spacing:-.04em;line-height:1;margin:20px 0 0}
+.dek{font-family:var(--font-serif);font-style:italic;font-size:18px;line-height:1.4;color:var(--ink-2);margin:12px 0 0;max-width:52ch}
+
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:0;margin-top:34px;border-top:1px solid var(--rule)}
+.side{padding:22px 26px 26px;border-right:1px solid var(--rule)}
+.side:last-child{border-right:0;padding-right:0}
+.side:first-child{padding-left:0}
+.tag{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.tag i{width:7px;height:7px;border-radius:999px;display:block;flex:none}
+.tag b{font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;white-space:nowrap}
+.human .tag i{background:var(--ink)}
+.human .tag b{color:var(--ink)}
+.mach .tag i{background:var(--ink);opacity:.35}
+.mach .tag b{color:var(--ink-2)}
+.side>.who{font-family:var(--font-data);font-size:11px;font-weight:500;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-2);display:block;margin-bottom:18px}
+
+/* the two specimens — same size, same measure, one difference */
+.voice{font-family:var(--font-mono);font-style:italic;font-size:14px;font-weight:400;letter-spacing:-.01em;line-height:1.55;color:var(--ink);margin:0}
+.ai{font-family:var(--font-mono);font-size:13px;font-weight:400;letter-spacing:-.005em;line-height:1.72;color:var(--ink);margin:0}
+.ai u{text-decoration:none;font-weight:500;color:var(--ink)}
+.ailabel{font-family:var(--font-mono);font-size:12px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
+
+.note{margin-top:20px;padding-top:13px;border-top:1px solid var(--rule);font-family:var(--font-data);font-size:12px;line-height:1.6;color:var(--ink-2)}
+.note b{color:var(--ink);font-weight:600}
+
+.sec{margin-top:40px}
+.sec>.lbl{font-family:var(--font-label);font-size:10px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-2);display:block;border-top:1px solid var(--rule);padding-top:9px;margin-bottom:16px}
+
+/* side-by-side in a real screen context */
+.ctx{display:grid;grid-template-columns:1fr 1fr;gap:26px}
+.card{background:var(--paper-deep);padding:20px 22px 22px}
+.card .kick{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:11px}
+.card .kick .k{font-family:var(--font-label);font-size:10px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--red-text)}
+.card .kick .t{font-family:var(--font-data);font-size:10px;font-weight:500;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
+.card h3{font-family:var(--font-display);font-size:24px;font-weight:700;letter-spacing:-.035em;line-height:1.02;margin:0 0 12px}
+.card .nums{display:flex;margin:0 0 14px;border-top:1px solid var(--rule);padding-top:11px}
+.card .nums div{flex:1;display:flex;flex-direction:column;gap:5px}
+.card .nums b{font-family:var(--font-label);font-size:9px;font-weight:600;letter-spacing:.17em;text-transform:uppercase;color:var(--ink-2)}
+.card .nums span{font-family:var(--font-data);font-size:18px;font-weight:600;letter-spacing:-.025em;font-variant-numeric:tabular-nums}
+.card .byline{font-family:var(--font-data);font-size:10px;font-weight:500;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3);margin:12px 0 0}
+.card .rule{height:1px;background:var(--rule);margin:14px 0}
+.card .airule{height:2px;background:var(--ink);width:28px;margin:0 0 11px}
+
+/* the wrong way */
+.wrong{display:grid;grid-template-columns:1fr 1fr;gap:26px;margin-top:6px}
+.wrong .w{padding:18px 20px;border:1px solid var(--rule)}
+.wrong .w>b{display:block;font-family:var(--font-label);font-size:10px;font-weight:600;letter-spacing:.17em;text-transform:uppercase;margin-bottom:11px}
+.wrong .no>b{color:var(--red-text)}
+.wrong .yes>b{color:var(--ink)}
+.wrong .no{background:#FDF4F3}
+.bad-prose{font-family:var(--font-prose);font-size:18px;line-height:1.45;margin:0;color:var(--ink)}
+.bad-italic{font-family:var(--font-mono);font-style:italic;font-size:13px;line-height:1.7;margin:0}
+.bad-italic u{text-decoration:none;font-weight:500;color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="hd"><b>Type &middot; the one distinction</b><span>Direction I &middot; Aug 2026</span></div>
+  <h1>Italic mono is the athlete. Roman mono is the machine.</h1>
+  <p class="dek">One family, two postures. Nothing else in the interface is set in mono, so posture alone tells you who is talking &mdash; no avatar, no badge, no label required.</p>
+
+  <div class="pair">
+    <div class="side human">
+      <div class="tag"><i></i><b>Voice &middot; italic</b></div>
+      <span class="who">The athlete, verbatim &middot; --font-mono italic &middot; 14px/1.55</span>
+      <p class="voice">&mdash; still not right, honestly. Ankle was stiff for the first mile and then it loosened up. Knee was fine, which is the first time in three weeks. Kept it slow on purpose &mdash;</p>
+      <p class="note"><b>Transcribed, not edited.</b> Italic carries the hesitation. Set in ink, never olive: the athlete&rsquo;s words are not a computed value.</p>
+    </div>
+    <div class="side mach">
+      <div class="tag"><i></i><b>Answer &middot; roman</b></div>
+      <span class="who">The machine &middot; --font-mono roman &middot; 13px/1.72</span>
+      <p class="ai">Three easy days in a row after Tuesday&rsquo;s intervals. Weekly load is <u>25.4 mi</u> against a <u>32 mi</u> target, so the long run carries <u>6.6 mi</u> of the gap. Given the ankle, hold Sunday at <u>7:40&ndash;7:55 /mi</u>.</p>
+      <p class="note"><b>Roman, wider leading.</b> Weight, not colour, marks the values it computed &mdash; the machine has no hue of its own, so nothing competes with the red.</p>
+    </div>
+  </div>
+
+  <div class="sec">
+    <span class="lbl">In a screen</span>
+    <div class="ctx">
+      <div class="card">
+        <div class="kick"><span class="k">Thursday 20 Aug</span><span class="t">Voice &middot; 0:42</span></div>
+        <h3>Easy 4.4 miles.</h3>
+        <div class="nums">
+          <div><b>Dist</b><span>4.43</span></div>
+          <div><b>Time</b><span>31:52</span></div>
+          <div><b>Pace</b><span>7:12</span></div>
+        </div>
+        <p class="voice">&mdash; ankle stiff for a mile, knee finally fine, kept it slow on purpose &mdash;</p>
+        <p class="byline">Transcribed from voice</p>
+      </div>
+      <div class="card">
+        <div class="kick"><span class="k" style="color:var(--ink-2)">The read</span><span class="t">Generated &middot; 8:41</span></div>
+        <div class="airule"></div>
+        <span class="ailabel">Load &middot; 25.4 of 32 mi</span>
+        <div class="rule"></div>
+        <p class="ai">Fourth easy day would flatten the week. If the ankle holds through the warm-up, run Sunday at <u>7:40&ndash;7:55</u> and let the last three miles come down on feel.</p>
+        <p class="byline">Computed from 14 days</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <span class="lbl">The failure modes</span>
+    <div class="wrong">
+      <div class="w no">
+        <b>Never &mdash; AI in the reading serif</b>
+        <p class="bad-prose">Fourth easy day would flatten the week. Run Sunday at 7:40&ndash;7:55 and let the last three miles come down on feel.</p>
+        <p class="note" style="border-top:0;padding-top:11px;margin-top:11px">Crimson means a person wrote it. In the serif, a recommendation reads like the athlete&rsquo;s own conclusion.</p>
+      </div>
+      <div class="w no">
+        <b>Never &mdash; AI in italic</b>
+        <p class="bad-italic">Fourth easy day would flatten the week. Run Sunday at <u>7:40&ndash;7:55</u> and let the last three miles come down on feel.</p>
+        <p class="note" style="border-top:0;padding-top:11px;margin-top:11px">Italic is the voice memo. Borrowing it gives the machine a body it does not have &mdash; the one confusion the system exists to prevent.</p>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

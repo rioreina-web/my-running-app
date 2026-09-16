@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Trends — story × month · Post Run Drip</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@200..900&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --paper: #F5F3F0; --paper-elevated: #FAFAF8; --card: #FFFFFF;
+    --paper-deep: #E8E4DF; --rule: #E8E4E0;
+    --ink: #1A1815; --ink-2: #6B6560; --ink-3: #9B9590;
+    --coral: #D4592A;
+    --mood-energized: #2D8A4E; --mood-positive: #4A9E6B; --mood-neutral: #9B9590;
+    --mood-tired: #C4873A; --mood-struggling: #C45A3A; --mood-injured: #B83A4A;
+    --font-display: "Crimson Pro", Georgia, serif;
+    --font-body: "PT Serif", Georgia, serif;
+    --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --shadow-card: 0 2px 8px rgba(0,0,0,0.06);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: #E9E6E1; }
+  body {
+    font-family: var(--font-body); color: var(--ink);
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+    display: flex; justify-content: center; padding: 32px 0;
+  }
+
+  .frame {
+    width: 393px; background: var(--paper); border-radius: 28px;
+    box-shadow: 0 12px 48px rgba(0,0,0,0.14); overflow: hidden;
+    display: flex; flex-direction: column; min-height: 852px;
+  }
+  .screen { flex: 1; overflow-y: auto; padding: 18px 24px 8px; }
+
+  .plate {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+    letter-spacing: 0.14em; color: var(--ink-2); text-transform: uppercase;
+    padding-bottom: 14px; border-bottom: 1px solid var(--rule);
+  }
+  .eyebrow {
+    font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+    letter-spacing: 0.12em; color: var(--ink-2); text-transform: uppercase;
+  }
+  .caption {
+    font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+    letter-spacing: 0.10em; color: var(--ink-2); text-transform: uppercase;
+  }
+  .caption--faint { color: var(--ink-3); }
+
+  .readbar { display: flex; justify-content: space-between; align-items: baseline; margin-top: 18px; }
+  .ranges { display: flex; gap: 13px; }
+  .ranges span {
+    font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+    letter-spacing: 0.12em; color: var(--ink-3); text-transform: uppercase;
+    padding-bottom: 2px; border-bottom: 1.5px solid transparent; cursor: pointer;
+  }
+  .ranges span.is-active { color: var(--coral); border-bottom-color: var(--coral); }
+
+  .read-h {
+    font-family: var(--font-display); font-weight: 700; font-size: 34px;
+    letter-spacing: -0.01em; line-height: 1.05; margin-top: 10px;
+  }
+  .read-h .stop { color: var(--coral); }
+
+  .story {
+    font-family: var(--font-body); font-size: 14.5px; color: var(--ink);
+    line-height: 1.65; margin-top: 12px;
+  }
+  .story sup {
+    font-family: var(--font-mono); font-size: 9px; font-weight: 600;
+    color: var(--ink-2); vertical-align: super; line-height: 0; margin-left: 1px;
+  }
+
+  .ed-rule { display: flex; align-items: center; gap: 8px; margin: 20px 0 12px; }
+  .ed-rule::before, .ed-rule::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
+  .ed-rule i { width: 3px; height: 3px; border-radius: 999px; background: var(--ink-3); }
+
+  .sec-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+
+  /* ---- the figure: three lanes on one axis ---- */
+  .figure { position: relative; }
+  .turnline {
+    position: absolute; top: 16px; bottom: 20px; width: 0;
+    border-left: 1px dashed #C4BEB7; z-index: 0;
+  }
+  .lane { position: relative; z-index: 1; margin-bottom: 12px; }
+  .lane:first-of-type { margin-top: 4px; }
+  .lane__head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 3px; }
+  .lane__svg { line-height: 0; }
+  .axis { display: flex; justify-content: space-between; position: relative; z-index: 1; margin-top: 2px; }
+
+  .legend { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+  .legend__ramp { display: flex; height: 7px; border-radius: 2px; overflow: hidden; flex: 1; }
+  .legend__ramp i { flex: 1; }
+
+  /* ---- calendar ---- */
+  .cal { display: grid; grid-template-columns: repeat(7, 1fr) 44px; gap: 3px; margin-top: 8px; }
+  .cal__wd {
+    font-family: var(--font-mono); font-size: 8.5px; font-weight: 500;
+    letter-spacing: 0.10em; color: var(--ink-3); text-transform: uppercase;
+    text-align: center; padding-bottom: 3px;
+  }
+  .cal__wd--margin { text-align: right; padding-right: 2px; }
+  .day { position: relative; height: 48px; border-radius: 4px; padding: 4px 5px; }
+  .day--out { background: transparent; }
+  .day--rest { background: var(--paper-deep); }
+  .day--run { background: var(--card); }
+  .day__date { font-family: var(--font-mono); font-size: 8.5px; font-weight: 500; color: var(--ink-3); }
+  .day--niggle .day__date { color: var(--coral); font-weight: 600; }
+  .day--mark .day__date { margin-left: 16px; }
+  .day__mood { position: absolute; top: 5px; right: 5px; width: 5px; height: 5px; border-radius: 999px; }
+  .day__mi {
+    position: absolute; left: 0; right: 0; bottom: 8px; text-align: center;
+    font-family: var(--font-mono); font-size: 13px; font-weight: 600;
+    color: var(--ink); font-variant-numeric: tabular-nums;
+  }
+  .day--key .day__mi { bottom: 13px; }
+  .day__key { position: absolute; left: 50%; bottom: 2px; margin-left: -5px; line-height: 0; }
+  .day__mark {
+    position: absolute; left: 4px; top: 3px;
+    width: 13px; height: 13px; border-radius: 999px;
+    background: var(--card); border: 1px solid var(--ink-3);
+    font-family: var(--font-mono); font-size: 8px; font-weight: 600;
+    color: var(--ink); display: flex; align-items: center; justify-content: center;
+  }
+  .wk {
+    display: flex; flex-direction: column; align-items: flex-end; justify-content: center;
+    height: 48px; border-left: 1px solid var(--rule); padding-left: 8px;
+  }
+  .wk__mi {
+    font-family: var(--font-mono); font-size: 13px; font-weight: 600;
+    color: var(--ink); font-variant-numeric: tabular-nums; line-height: 1;
+  }
+  .wk__unit {
+    font-family: var(--font-mono); font-size: 7.5px; font-weight: 500;
+    letter-spacing: 0.10em; color: var(--ink-3); text-transform: uppercase; margin-top: 3px;
+  }
+  .moodkey { display: flex; gap: 12px; margin-top: 10px; flex-wrap: wrap; }
+  .moodkey span { display: flex; align-items: center; gap: 5px; }
+  .moodkey i { width: 6px; height: 6px; border-radius: 999px; }
+
+  .footnote {
+    font-family: var(--font-body); font-style: italic; font-size: 11.5px;
+    color: var(--ink-3); text-align: center; margin: 16px 0 14px;
+  }
+  .askbar {
+    background: var(--card); border-radius: 12px; box-shadow: var(--shadow-card);
+    padding: 13px 16px; display: flex; justify-content: space-between;
+    align-items: baseline; cursor: pointer; margin-bottom: 20px;
+  }
+  .askbar em { font-family: var(--font-body); font-style: italic; font-size: 14px; color: var(--ink-3); }
+  .askbar span { font-family: var(--font-mono); font-size: 12px; color: var(--ink-2); }
+  .tabs {
+    border-top: 1px solid var(--rule); background: var(--paper);
+    display: flex; justify-content: space-around; padding: 12px 0 26px;
+  }
+  .tab {
+    display: flex; flex-direction: column; align-items: center; gap: 5px;
+    font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+    letter-spacing: 0.12em; color: var(--ink-3); text-transform: uppercase;
+  }
+  .tab i { width: 6px; height: 6px; border-radius: 999px; background: transparent; }
+  .tab.is-active { color: var(--coral); }
+  .tab.is-active i { background: var(--coral); }
+</style>
+</head>
+<body>
+<div class="frame">
+  <div class="screen">
+
+    <div class="plate">
+      <span>Running log — Trends</span>
+      <span>Fig. 09 · Aug 6</span>
+    </div>
+
+    <div class="readbar">
+      <span class="eyebrow">The read · Jul 8 – Aug 6</span>
+      <div class="ranges">
+        <span class="is-active">30d</span><span>3mo</span><span>6mo</span><span>1yr</span>
+      </div>
+    </div>
+
+    <h1 class="read-h">Recovery, up 11<span class="stop">.</span></h1>
+
+    <p class="story">
+      The window opened rough — three struggling logs in the first three
+      days<sup>1</sup>. The calf spoke up mid-month, twice, then went
+      quiet<sup>2</sup>. Underneath it the work held: 259 miles, 5 key
+      sessions, load back in its band. And from Jul 27, the turn<sup>3</sup>
+      — recovery up 11 points, not a struggling log since.
+    </p>
+
+    <div class="ed-rule"><i></i></div>
+
+    <div class="sec-head">
+      <span class="eyebrow">The figure</span>
+      <span class="caption caption--faint">One axis · 30 days</span>
+    </div>
+
+    <div class="figure">
+      <div class="turnline" id="turnline"></div>
+
+      <div class="lane">
+        <div class="lane__head">
+          <span class="caption">Volume × pace</span>
+          <span class="caption caption--faint">259 mi · −1% · 5 key</span>
+        </div>
+        <div class="lane__svg" data-lane="work"></div>
+      </div>
+
+      <div class="lane">
+        <div class="lane__head">
+          <span class="caption">Load</span>
+          <span class="caption caption--faint">0.94 ACWR · band 0.8–1.3</span>
+        </div>
+        <div class="lane__svg" data-lane="load"></div>
+      </div>
+
+      <div class="lane" style="margin-bottom:0">
+        <div class="lane__head">
+          <span class="caption">Recovery</span>
+          <span class="caption caption--faint">45 · worn · +11</span>
+        </div>
+        <div class="lane__svg" data-lane="recovery"></div>
+      </div>
+
+      <div class="axis">
+        <span class="caption caption--faint">Jul 8</span>
+        <span class="caption caption--faint">Jul 15</span>
+        <span class="caption caption--faint">Jul 23</span>
+        <span class="caption caption--faint">Jul 30</span>
+        <span class="caption caption--faint">Aug 6</span>
+      </div>
+    </div>
+
+    <div class="legend">
+      <span class="caption caption--faint">Easy</span>
+      <div class="legend__ramp" id="ramp"></div>
+      <span class="caption caption--faint">Fast</span>
+    </div>
+
+    <div class="ed-rule"><i></i></div>
+
+    <div class="sec-head">
+      <span class="eyebrow">The month</span>
+      <span class="caption caption--faint">11/30 logged · 2 niggles</span>
+    </div>
+
+    <div class="cal" id="cal"></div>
+
+    <div class="moodkey" id="moodkey"></div>
+
+    <p class="footnote">— numerals in the read point into the figure and the month —</p>
+
+    <div class="askbar"><em>Ask about this block…</em><span>↗</span></div>
+
+  </div>
+
+  <div class="tabs">
+    <div class="tab"><i></i>Log</div>
+    <div class="tab is-active"><i></i>Trends</div>
+    <div class="tab"><i></i>Train</div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var INK = "#1A1815", INK2 = "#6B6560", INK3 = "#9B9590", RULE = "#E8E4E0", DEEP = "#E8E4DF";
+
+  var MOODS = { energized:"#2D8A4E", positive:"#4A9E6B", neutral:"#9B9590",
+                tired:"#C4873A", struggling:"#C45A3A", injured:"#B83A4A" };
+  var MOOD_WASH = { energized:"rgba(45,138,78,0.20)", positive:"rgba(74,158,107,0.20)",
+                    neutral:"rgba(155,149,144,0.20)", tired:"rgba(196,135,58,0.22)",
+                    struggling:"rgba(196,90,58,0.22)", injured:"rgba(184,58,74,0.22)" };
+  var PACE = {
+    easy:"#93B9D6", moderate:"#74A8CC", steady:"#578FC0", mp:"#3F7CB5", hmp:"#2F66A8",
+    lt:"#27549B", tenk:"#20448B", fivek:"#1A3679", threek:"#142964", mile:"#0E1D4E"
+  };
+  var RAMP = ["easy","moderate","steady","mp","hmp","lt","tenk","fivek","threek","mile"];
+
+  // ---- data (30 days · Wed Jul 8 – Thu Aug 6) ----
+  var miles = [9,0,7,11,0,8,21, 8,0,7,10,6,9,22, 0,8,7,11,5,9,23, 8,0,9,12,6,0,24, 8,11];
+  var paceByDay = {
+    0:"easy", 2:"easy", 3:"lt", 5:"easy", 6:"moderate",
+    7:"easy", 9:"easy", 10:"tenk", 11:"easy", 12:"easy", 13:"moderate",
+    15:"easy", 16:"easy", 17:"lt", 18:"easy", 19:"easy", 20:"moderate",
+    21:"easy", 23:"easy", 24:"fivek", 25:"easy", 27:"steady", 28:"easy", 29:"lt"
+  };
+  var keyDays = [3, 10, 17, 24, 29];
+  var recovery = [34,33,35,36,38,40,39,38,37,39,41,40,42,41,40,42,44,43,41,44,47,45,43,42,44,46,44,43,44,45];
+  var acwr = [1.12,1.10,1.08,1.05,1.06,1.04,1.01,1.00,0.98,0.99,0.97,0.95,0.96,0.94,0.92,0.93,0.91,0.92,0.90,0.91,0.92,0.93,0.92,0.91,0.92,0.93,0.94,0.93,0.94,0.94];
+  var moodByDay = {0:"struggling",1:"struggling",2:"struggling",7:"energized",10:"struggling",13:"tired",14:"energized",19:"struggling",22:"energized",26:"tired",28:"energized"};
+  var niggleDays = [7,8];
+  var TURN = 19; // Jul 27 — last struggling log
+
+  var dayMarks = { 0:"1", 7:"2", 19:"3" };
+
+  // one shared x mapping for every lane — bar centres and line points align exactly
+  var W = 345, BW = 7, PAD = BW / 2;
+  function X(i){ return PAD + (i/29) * (W - BW); }
+
+  function svgS(w,h,inner){
+    return '<svg width="'+w+'" height="'+h+'" viewBox="0 0 '+w+" "+h+
+           '" xmlns="http://www.w3.org/2000/svg" style="display:block">'+inner+"</svg>";
+  }
+  function linePath(d,h,padY,min,max){
+    var p=[];
+    for(var i=0;i<d.length;i++){
+      var y=h-padY-((d[i]-min)/(max-min))*(h-padY*2);
+      p.push((i?"L":"M")+X(i).toFixed(1)+" "+y.toFixed(1));
+    }
+    return p.join(" ");
+  }
+  function star(cx, cy, r, fill) {
+    var pts = [];
+    for (var i = 0; i < 10; i++) {
+      var ang = (-90 + i*36) * Math.PI/180;
+      var rad = (i%2===0) ? r : r*0.42;
+      pts.push((cx+rad*Math.cos(ang)).toFixed(2)+","+(cy+rad*Math.sin(ang)).toFixed(2));
+    }
+    return '<polygon points="'+pts.join(" ")+'" fill="'+fill+'"/>';
+  }
+  function marker(cx, cy, n) {
+    return '<circle cx="'+cx+'" cy="'+cy+'" r="7" fill="#FFFFFF" stroke="'+INK3+'" stroke-width="1"/>'+
+           '<text x="'+cx+'" y="'+(cy+2.8)+'" text-anchor="middle" '+
+           'font-family="ui-monospace,Menlo,monospace" font-size="8.5" font-weight="600" fill="'+INK+'">'+n+'</text>';
+  }
+
+  // ---- lanes ----
+  var lanes = {
+    work: function(){
+      var BARS=88, STAR=15, H=BARS+STAR;
+      var mx=Math.max.apply(null,miles), s="";
+      s+='<line x1="0" y1="'+BARS+'" x2="'+W+'" y2="'+BARS+'" stroke="'+RULE+'" stroke-width="1"/>';
+      for(var i=0;i<30;i++){
+        if(miles[i]){
+          var bh=Math.max(3,(miles[i]/mx)*(BARS-6));
+          s+='<rect x="'+(X(i)-BW/2).toFixed(1)+'" y="'+(BARS-bh).toFixed(1)+'" width="'+BW+
+             '" height="'+bh.toFixed(1)+'" rx="1.5" fill="'+PACE[paceByDay[i]||"easy"]+'"/>';
+        }
+        if(keyDays.indexOf(i)>=0) s+=star(X(i), BARS+7.5, 4.5, INK);
+      }
+      return svgS(W,H,s);
+    },
+    load: function(){
+      var h=38, min=0.6, max=1.5;
+      var yFor=function(v){ return h-3-((v-min)/(max-min))*(h-6); };
+      var s='<rect x="0" y="'+yFor(1.3).toFixed(1)+'" width="'+W+'" height="'+
+            (yFor(0.8)-yFor(1.3)).toFixed(1)+'" fill="'+DEEP+'" opacity="0.75"/>';
+      s+='<path d="'+linePath(acwr,h,3,min,max)+'" fill="none" stroke="'+INK+'" stroke-width="1.5"/>';
+      s+='<circle cx="'+X(29).toFixed(1)+'" cy="'+yFor(acwr[29]).toFixed(1)+'" r="2.6" fill="'+INK+'"/>';
+      return svgS(W,h,s);
+    },
+    recovery: function(){
+      var h=64, min=30, max=72;
+      var yFor=function(v){ return h-5-((v-min)/(max-min))*(h-10); };
+      var s='<line x1="0" y1="'+yFor(60).toFixed(1)+'" x2="'+W+'" y2="'+yFor(60).toFixed(1)+
+            '" stroke="'+INK3+'" stroke-width="1" stroke-dasharray="3 4"/>';
+      s+='<text x="2" y="'+(yFor(60)-4).toFixed(1)+
+         '" font-family="ui-monospace,Menlo,monospace" font-size="7.5" letter-spacing="0.08em" fill="'+INK3+'">BASELINE 60</text>';
+      s+='<path d="'+linePath(recovery,h,5,min,max)+'" fill="none" stroke="'+INK+'" stroke-width="1.6"/>';
+      s+='<circle cx="'+X(29).toFixed(1)+'" cy="'+yFor(recovery[29]).toFixed(1)+'" r="2.6" fill="'+INK+'"/>';
+      s+=marker(X(TURN).toFixed(1), yFor(recovery[TURN])-14, "3");
+      return svgS(W,h,s);
+    }
+  };
+  document.querySelectorAll("[data-lane]").forEach(function(el){
+    el.innerHTML = lanes[el.getAttribute("data-lane")]();
+  });
+
+  document.getElementById("turnline").style.left = X(TURN).toFixed(1) + "px";
+
+  var ramp="";
+  for(var r=0;r<RAMP.length;r++) ramp+='<i style="background:'+PACE[RAMP[r]]+'"></i>';
+  document.getElementById("ramp").innerHTML = ramp;
+
+  // ---- the month ----
+  var LEAD=2, DAYS=30, TRAIL=3;
+  function dateFor(d){ var day=8+d; return day<=31?day:day-31; }
+  var html="", WD=["M","T","W","T","F","S","S"];
+  for(var w=0;w<7;w++) html+='<div class="cal__wd">'+WD[w]+"</div>";
+  html+='<div class="cal__wd cal__wd--margin">WK</div>';
+
+  var weekMiles=0, cell=0;
+  for(var slot=0; slot<LEAD+DAYS+TRAIL; slot++){
+    var d=slot-LEAD;
+    if(d<0||d>=DAYS){ html+='<div class="day day--out"></div>'; }
+    else {
+      var mi=miles[d], mood=moodByDay[d];
+      var cls="day "+(mi?"day--run":"day--rest")+
+              (niggleDays.indexOf(d)>=0?" day--niggle":"")+
+              (keyDays.indexOf(d)>=0?" day--key":"")+
+              (dayMarks[d]?" day--mark":"");
+      var bg = mood ? ' style="background:'+MOOD_WASH[mood]+'"' : "";
+      html+='<div class="'+cls+'"'+bg+'>';
+      if(dayMarks[d]) html+='<span class="day__mark">'+dayMarks[d]+"</span>";
+      html+='<span class="day__date">'+dateFor(d)+"</span>";
+      if(mood) html+='<span class="day__mood" style="background:'+MOODS[mood]+'"></span>';
+      if(mi) html+='<span class="day__mi">'+mi+"</span>";
+      if(keyDays.indexOf(d)>=0) html+='<span class="day__key">'+svgS(10,10,star(5,5,4.2,INK))+'</span>';
+      html+="</div>";
+      weekMiles+=mi;
+    }
+    cell++;
+    if(cell%7===0){
+      html+='<div class="wk"><span class="wk__mi">'+weekMiles+'</span><span class="wk__unit">mi</span></div>';
+      weekMiles=0;
+    }
+  }
+  document.getElementById("cal").innerHTML = html;
+
+  var keys=[["struggling","Struggling 5"],["tired","Tired 2"],["energized","Energized 4"]], mk="";
+  for(var k=0;k<keys.length;k++)
+    mk+='<span><i style="background:'+MOODS[keys[k][0]]+'"></i>'+
+        '<span class="caption caption--faint">'+keys[k][1]+"</span></span>";
+  mk+='<span><span class="caption caption--faint">★ = key session</span></span>';
+  document.getElementById("moodkey").innerHTML = mk;
+})();
+</script>
+</body>
+</html>

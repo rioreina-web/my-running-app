@@ -77,6 +77,10 @@ struct InjuryEntry28: View {
     var mentionDotIndices: Set<Int> = []
     /// Most recent verbatim quote pulled from a voice log.
     var lastQuote: String? = nil
+    /// Verbatim severity word for voice niggles ("sore", "tight"). Shown in
+    /// place of the "/10" score — a niggle is surfaced, never interpreted into
+    /// a number.
+    var severityWord: String? = nil
 
     let onViewDetail: () -> Void
     let onUpdate: () -> Void
@@ -107,7 +111,7 @@ struct InjuryEntry28: View {
                     .font(.dripDisplay(22))
                     .foregroundStyle(Color.drip.textPrimary)
                 Spacer()
-                Text("\(injury.severity) / 10")
+                Text((severityWord?.isEmpty == false) ? severityWord!.uppercased() : "\(injury.severity) / 10")
                     .font(.system(size: 12, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Color.drip.coral)
             }

@@ -1,0 +1,1041 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trends — Fast Segments (phone prototype)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;600;700&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF; --paper-deep:#E8E4DF; --rule:#E8E4E0;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-deep:#B84420; --coral-wash:rgba(212,89,42,0.12);
+  /* pace = single-hue blue depth ramp (PaceSpectrum.swift) */
+  --pace-mp:#3F7CB5; --pace-hmp:#2F66A8; --pace-lt:#27549B; --pace-10k:#20448B;
+  --pace-5k:#1A3679; --pace-3k:#142964; --pace-mile:#0E1D4E;
+  --font-display:"Crimson Pro",Georgia,serif; --font-body:"PT Serif",Georgia,serif;
+  --font-mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --shadow-card:0 2px 8px rgba(0,0,0,0.06); --shadow-press:0 1px 2px rgba(0,0,0,.04);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#E4E0DA;color:var(--ink);font-family:var(--font-body);-webkit-font-smoothing:antialiased;padding:40px 24px 80px;display:flex;justify-content:center;gap:40px;flex-wrap:wrap}
+.phone{width:392px;height:838px;background:var(--paper);border-radius:44px;border:11px solid #14110E;box-shadow:0 24px 60px rgba(0,0,0,.28);overflow:hidden;position:relative;flex-shrink:0}
+.notch{position:absolute;top:0;left:50%;transform:translateX(-50%);width:150px;height:30px;background:#14110E;border-radius:0 0 18px 18px;z-index:40}
+.statusbar{position:relative;z-index:30;display:flex;justify-content:space-between;align-items:center;padding:14px 28px 6px;font-family:var(--font-mono);font-size:12px;color:var(--ink);font-weight:600}
+.screen{height:calc(838px - 46px - 64px);overflow-y:auto;padding:8px 20px 26px}
+.screen::-webkit-scrollbar{width:0}
+.tabbar{position:absolute;bottom:0;left:0;right:0;height:64px;background:var(--paper);border-top:1px solid var(--rule);display:flex;z-index:30}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px}
+.tab .tdot{width:5px;height:5px;border-radius:999px;background:transparent}
+.tab.active .tdot{background:var(--coral)}
+.tab span{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.tab.active span{color:var(--coral)}
+
+.eyebrow{font-family:var(--font-mono);font-size:10.5px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2)}
+.eyebrow.coral{color:var(--coral)}
+.display-l{font-family:var(--font-display);font-weight:700;font-size:27px;line-height:1.04;letter-spacing:-.01em}
+.subhead{font-family:var(--font-body);font-size:12.5px;color:var(--ink-2);margin-top:5px;line-height:1.45}
+
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:16px}
+.tile{background:var(--card);border:1px solid var(--rule);border-radius:11px;padding:10px 10px}
+.tile .lab{font-family:var(--font-mono);font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+.tile .val{font-family:var(--font-mono);font-weight:600;font-size:19px;color:var(--ink);margin-top:6px;font-variant-numeric:tabular-nums;line-height:1}
+.tile .val .u{font-size:10px;color:var(--ink-3);margin-left:2px}
+.tile .sub{font-family:var(--font-body);font-size:10px;color:var(--ink-2);margin-top:5px}
+
+.seg{display:flex;background:var(--paper-deep);border-radius:10px;padding:3px;gap:2px;margin-top:18px}
+.seg button{flex:1;font-family:var(--font-mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);background:transparent;border:0;padding:8px 0;border-radius:8px;cursor:pointer}
+.seg button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow-press);font-weight:600}
+
+.section-h{font-family:var(--font-mono);font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2);margin-top:18px}
+.chartwrap{position:relative;margin-top:10px;touch-action:none}
+svg.chart{width:100%;display:block;overflow:visible}
+.note{font-family:var(--font-body);font-style:italic;font-size:11.5px;color:var(--ink-3);margin:10px 2px 2px;line-height:1.5}
+
+.chips{display:flex;gap:6px;margin-top:14px;flex-wrap:wrap}
+.chip{font-family:var(--font-mono);font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2);background:var(--card);border:1px solid var(--rule);border-radius:999px;padding:6px 11px;cursor:pointer}
+.chip.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+
+.statrow{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:14px}
+.srh{background:var(--paper-elevated);border:1px solid var(--rule);border-radius:9px;padding:8px 9px}
+.srh .l{font-family:var(--font-mono);font-size:8px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2)}
+.srh .v{font-family:var(--font-mono);font-weight:600;font-size:14px;color:var(--ink);margin-top:4px;font-variant-numeric:tabular-nums}
+.srh .v small{font-size:9px;color:var(--ink-3)}
+
+.read{background:var(--paper-elevated);border:1px solid var(--rule);border-left:2px solid var(--coral);border-radius:10px;padding:14px 15px;margin-top:22px}
+.read .body{font-family:var(--font-body);font-size:13px;line-height:1.58;color:var(--ink);margin-top:7px}
+.read .q{font-family:var(--font-body);font-style:italic;font-size:12.5px;color:var(--ink-2);margin-top:9px}
+.rule{display:flex;align-items:center;gap:8px;margin:20px 0 6px}
+.rule::before,.rule::after{content:"";flex:1;height:1px;background:var(--rule)}
+.rule i{width:3px;height:3px;border-radius:999px;background:var(--rule)}
+.foot{text-align:center;font-family:var(--font-mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-top:4px}
+
+.readout{position:absolute;top:0;left:0;pointer-events:none;background:var(--ink);color:#fff;border-radius:8px;padding:8px 10px;font-family:var(--font-mono);font-size:9.5px;line-height:1.55;opacity:0;transition:opacity .1s;white-space:nowrap;z-index:20;box-shadow:0 6px 18px rgba(0,0,0,.25);transform:translate(-50%,-100%)}
+.readout .r{display:flex;justify-content:space-between;gap:14px}
+.readout b{color:#fff}
+.caption{font-family:var(--font-body);font-size:11px;color:var(--ink-2);margin-top:4px;line-height:1.45}
+
+.aside{width:300px;max-width:90vw;font-family:var(--font-body);color:#4a463f;padding-top:6px}
+.aside h4{font-family:var(--font-mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#7a746c;margin:18px 0 6px}
+.aside p{font-size:13px;line-height:1.6;margin-bottom:8px}
+.aside code{font-family:var(--font-mono);font-size:11.5px;background:#efe9e2;padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="notch"></div>
+  <div class="statusbar"><span>9:41</span><span>KEY&nbsp;SESSIONS</span><span>&#9679;&#9679;&#9679;</span></div>
+  <div class="screen">
+    <div style="margin-top:4px">
+      <div class="eyebrow coral">TRENDS · THE SHARP END</div>
+      <div class="display-l" style="margin-top:6px">Where the<br>speed lives.</div>
+      <div class="subhead">The fast segments pulled out of your key sessions — pace, volume, heart, heat.</div>
+    </div>
+
+    <div class="tiles" id="tiles"></div>
+
+    <div class="seg" id="seg">
+      <button class="on" data-v="time">Over&nbsp;time</button>
+      <button data-v="session">By&nbsp;session</button>
+    </div>
+
+    <div id="view-time">
+      <div class="section-h">8&nbsp;WEEKS · REP&nbsp;PACE</div>
+      <div class="chartwrap">
+        <svg id="cTime" class="chart" viewBox="0 0 330 300" preserveAspectRatio="xMidYMid meet"></svg>
+        <div class="readout" id="roT"></div>
+      </div>
+      <div class="note" id="timeNote"></div>
+    </div>
+
+    <div id="view-session" style="display:none">
+      <div class="chips" id="chips"></div>
+      <div class="section-h" id="sesTitle" style="margin-top:14px"></div>
+      <div class="chartwrap">
+        <svg id="cSes" class="chart" viewBox="0 0 330 220" preserveAspectRatio="xMidYMid meet"></svg>
+        <div class="readout" id="roS"></div>
+      </div>
+      <div class="caption" id="sesLegend"></div>
+      <div class="statrow" id="sesStats"></div>
+      <div class="note" id="sesNote"></div>
+    </div>
+
+    <div class="read">
+      <div class="eyebrow coral">THE&nbsp;READ</div>
+      <div class="body" id="readBody"></div>
+      <div class="q" id="readQ"></div>
+    </div>
+
+    <div class="rule"><i></i></div>
+    <div class="foot">Prototype · your Strava key sessions · AI advises, never acts</div>
+  </div>
+
+  <div class="tabbar">
+    <div class="tab"><div class="tdot"></div><span>Log</span></div>
+    <div class="tab active"><div class="tdot"></div><span>Trends</span></div>
+    <div class="tab"><div class="tdot"></div><span>Train</span></div>
+    <div class="tab"><div class="tdot"></div><span>Coach</span></div>
+  </div>
+</div>
+
+<div class="aside">
+  <h4>What this is</h4>
+  <p>The <b>Fast-Segment Analyzer</b>, rebuilt in Post Run Drip — warm paper, ink, one coral, Crimson&nbsp;Pro / PT&nbsp;Serif, pace on the blue depth ramp. It slots into the <b>Trends</b> tab (or Train ▸ History).</p>
+  <p>Same real data, same detection engine (<code>segment-engine.js</code>) — only the skin changed. Fast reps are isolated from your key sessions and trended by pace, volume, heart, density and heat.</p>
+  <h4>Note on color</h4>
+  <p>Pace uses your blue ramp (pale → navy = easy → fast), so darker reps are faster. Coral stays reserved for alerts, per the three-palette rule. Heat is a neutral gray magnitude, not a mood color.</p>
+  <h4>Next</h4>
+  <p>Wire it to live Strava + real per-session weather, and port the engine into <code>_shared/</code> beside <code>pace-heat-adjustment.ts</code>, with a SwiftUI view in <code>RunningLog/Trends/</code>.</p>
+</div>
+
+<script>
+/* ---------- embedded engine (identical to segment-engine.js) ---------- */
+(function(root){'use strict';
+ var D={fastPaceMs:4.6,wattsAssist:330,cadAssist:88,minRepM:200};
+ function ps(ms,u){if(!ms||ms<=0)return'--';var s=(u==='km')?1000/ms:1609.34/ms;var m=Math.floor(s/60),x=Math.round(s-m*60);if(x===60){m++;x=0}return m+':'+(x<10?'0'+x:x)}
+ function pc(ms,u){if(!ms||ms<=0)return null;return (u==='km')?1000/ms:1609.34/ms}
+ function hi(T,RH){if(T==null||RH==null)return null;if(T<80)return Math.round((0.5*(T+61+(T-68)*1.2+RH*0.094))*10)/10;
+   var h=-42.379+2.04901523*T+10.14333127*RH-0.22475541*T*RH-0.00683783*T*T-0.05481717*RH*RH+0.00122874*T*T*RH+0.00085282*T*RH*RH-0.00000199*T*T*RH*RH;return Math.round(h*10)/10}
+ function isF(l,c){var sp=l[1]>0?l[0]/l[1]:0;return (sp>=c.fastPaceMs)||(l[4]>=c.wattsAssist&&l[3]>=c.cadAssist)}
+ function sum(a,k){return a.reduce(function(s,r){return s+r[k]},0)}
+ function wav(a,k){var t=sum(a,'t');return t?a.reduce(function(s,r){return s+r[k]*r.t},0)/t:0}
+ function r1(x){return Math.round(x*10)/10}
+ function one(s,c){var laps=s.laps||[],fi=[];laps.forEach(function(l,i){if(isF(l,c)&&l[0]>=c.minRepM)fi.push(i)});
+   var reps=[];if(fi.length){var f=fi[0],la=fi[fi.length-1];for(var i=f;i<=la;i++){var l=laps[i],sp=l[1]>0?l[0]/l[1]:0,fa=fi.indexOf(i)!==-1;
+     reps.push({i:reps.length+1,type:fa?'fast':'rest',dist:Math.round(l[0]),t:Math.round(l[1]),spd:Math.round(sp*100)/100,paceMi:ps(sp,'mi'),paceKm:ps(sp,'km'),hr:Math.round(l[2]),cad:Math.round(l[3]),watts:Math.round(l[4]),grade:l[5],elev:l[6]})}}
+   var F=reps.filter(function(r){return r.type==='fast'}),R=reps.filter(function(r){return r.type==='rest'}),m=null;
+   if(F.length){var fd=sum(F,'dist'),ft=sum(F,'t'),rt=sum(R,'t'),beats=F.reduce(function(a,r){return a+r.hr*r.t/60},0),n=F.length,av=fd/ft;
+     m={numReps:n,fastDistM:Math.round(fd),fastTimeS:Math.round(ft),avgSpeedMs:Math.round(av*1000)/1000,paceMi:ps(av,'mi'),paceKm:ps(av,'km'),paceSecMi:pc(av,'mi'),paceSecKm:pc(av,'km'),
+       avgHR:r1(wav(F,'hr')),maxHR:Math.max.apply(null,F.map(function(r){return r.hr})),avgCad:r1(wav(F,'cad')),avgWatts:Math.round(wav(F,'watts')),
+       restTimeS:Math.round(rt),avgRestS:n>1?Math.round(rt/(n-1)):0,densityPct:r1(100*ft/(ft+rt)),workRest:rt>0?Math.round(ft/rt*100)/100:null,
+       avgRepM:Math.round(fd/n),avgRepS:Math.round(ft/n),mPerBeat:beats>0?Math.round(fd/beats*100)/100:0,elevGainM:r1(sum(F,'elev')),avgGrade:r1(wav(F,'grade')),feelsF:s.env?hi(s.env.tempF,s.env.rh):null}}
+   return Object.assign({},s,{reps:reps,metrics:m})}
+ root.FastSegments={DEFAULTS:D,analyze:function(ss,cfg){var c=Object.assign({},D,cfg||{});return (ss||[]).map(function(s){return one(s,c)})},paceStr:ps};
+})(window);
+
+const RAW = [
+ {
+  "id": "18581432805",
+  "name": "10 \u00d7 1K",
+  "date": "2026-05-20",
+  "start": "06:29",
+  "type": "rep",
+  "label": "10\u00d71000m",
+  "env": {
+   "tempF": 73,
+   "rh": 83
+  },
+  "laps": [
+   [
+    1000,
+    191,
+    162.4,
+    96.3,
+    377.3,
+    -0.2,
+    2.2
+   ],
+   [
+    64.2,
+    63,
+    166.6,
+    69.3,
+    181.3,
+    -2.66,
+    0
+   ],
+   [
+    1000,
+    192,
+    167.6,
+    96.1,
+    362.9,
+    -0.12,
+    0
+   ],
+   [
+    55.2,
+    67,
+    155.6,
+    62.9,
+    110.0,
+    -4.47,
+    0
+   ],
+   [
+    1000,
+    190,
+    165.9,
+    95.8,
+    378.0,
+    0.0,
+    2.4
+   ],
+   [
+    52.8,
+    63,
+    171.5,
+    71.4,
+    188.3,
+    -3.86,
+    0.2
+   ],
+   [
+    1000,
+    191,
+    168.1,
+    95.9,
+    360.7,
+    0.02,
+    2.8
+   ],
+   [
+    447.0,
+    165,
+    170.0,
+    88.3,
+    314.0,
+    0.58,
+    1.6
+   ],
+   [
+    53.4,
+    63,
+    163.2,
+    66.5,
+    160.8,
+    -7.86,
+    0
+   ],
+   [
+    1000,
+    192,
+    168.7,
+    95.5,
+    367.1,
+    0.14,
+    5
+   ],
+   [
+    66.2,
+    66,
+    157.4,
+    56.2,
+    102.2,
+    -2.75,
+    0
+   ],
+   [
+    1000,
+    191,
+    169.5,
+    95.5,
+    388.2,
+    0.4,
+    5
+   ],
+   [
+    64.7,
+    63,
+    161.3,
+    59.9,
+    109.1,
+    -5.6,
+    0
+   ],
+   [
+    1000,
+    192,
+    168.7,
+    95.4,
+    372.6,
+    0.52,
+    5.4
+   ],
+   [
+    63.9,
+    69,
+    161.5,
+    64.9,
+    127.3,
+    -4.75,
+    1
+   ],
+   [
+    1000,
+    191,
+    168.8,
+    95.4,
+    389.2,
+    0.42,
+    5
+   ],
+   [
+    61.0,
+    63,
+    163.0,
+    58.4,
+    102.1,
+    -11.16,
+    0
+   ],
+   [
+    1000,
+    190,
+    169.2,
+    96.1,
+    369.8,
+    0.38,
+    4
+   ],
+   [
+    53.4,
+    31,
+    169.4,
+    68.6,
+    154.2,
+    -3.26,
+    0.6
+   ]
+  ]
+ },
+ {
+  "id": "19035729944",
+  "name": "Mile / 1K / 600 set",
+  "date": "2026-06-23",
+  "start": "06:27",
+  "type": "rep",
+  "label": "mile+1K+600s",
+  "env": {
+   "tempF": 77,
+   "rh": 80
+  },
+  "laps": [
+   [
+    1000,
+    201,
+    147.0,
+    94.2,
+    378.2,
+    0.76,
+    8.2
+   ],
+   [
+    1000,
+    211,
+    165.8,
+    92.9,
+    353.8,
+    0.48,
+    4.4
+   ],
+   [
+    1000,
+    220,
+    154.8,
+    91.8,
+    353.4,
+    0.04,
+    7.8
+   ],
+   [
+    645.35,
+    280,
+    140.6,
+    82.5,
+    254.8,
+    -1.8,
+    0
+   ],
+   [
+    1000,
+    192,
+    164.4,
+    95.7,
+    400.6,
+    0.82,
+    10.8
+   ],
+   [
+    206.29,
+    83,
+    150.0,
+    85.7,
+    221.9,
+    -1.66,
+    0
+   ],
+   [
+    599.32,
+    112,
+    167.4,
+    96.3,
+    394.6,
+    0.4,
+    3.4
+   ],
+   [
+    243.08,
+    183,
+    132.3,
+    60.8,
+    80.9,
+    -3.4,
+    0
+   ],
+   [
+    1000,
+    188,
+    169.6,
+    96.2,
+    407.6,
+    0.88,
+    10.6
+   ],
+   [
+    207.72,
+    113,
+    143.5,
+    65.8,
+    118.1,
+    -1.17,
+    2.8
+   ],
+   [
+    600.85,
+    111,
+    170.0,
+    97.2,
+    403.9,
+    0.47,
+    3.2
+   ],
+   [
+    218.31,
+    192,
+    134.1,
+    59.2,
+    75.4,
+    -3.8,
+    0
+   ],
+   [
+    1000,
+    188,
+    169.9,
+    96.6,
+    401.6,
+    0.96,
+    11.2
+   ],
+   [
+    210.39,
+    104,
+    150.1,
+    70.0,
+    158.1,
+    -0.69,
+    4
+   ],
+   [
+    601.72,
+    104,
+    169.0,
+    99.8,
+    406.3,
+    0.03,
+    0.8
+   ],
+   [
+    149.52,
+    434,
+    119.8,
+    54.1,
+    66.8,
+    -6.24,
+    0
+   ]
+  ]
+ },
+ {
+  "id": "19176659405",
+  "name": "\u201cCooked\u201d 20K tempo",
+  "date": "2026-07-04",
+  "start": "06:34",
+  "type": "tempo",
+  "label": "20K sustained",
+  "env": {
+   "tempF": 79,
+   "rh": 77
+  },
+  "laps": [
+   [
+    20014.6,
+    4732,
+    162.6,
+    88.4,
+    358.3,
+    -0.01,
+    231.8
+   ]
+  ]
+ },
+ {
+  "id": "19229242469",
+  "name": "10 \u00d7 1K / 800",
+  "date": "2026-07-08",
+  "start": "06:28",
+  "type": "rep",
+  "label": "8\u00d71K + 2\u00d7800m",
+  "env": {
+   "tempF": 80,
+   "rh": 75
+  },
+  "laps": [
+   [
+    1000,
+    198,
+    156.7,
+    95.1,
+    373.7,
+    0.4,
+    8
+   ],
+   [
+    62.69,
+    67,
+    155.1,
+    69.8,
+    216.0,
+    -3.2,
+    0
+   ],
+   [
+    1000,
+    194,
+    165.7,
+    95.2,
+    376.8,
+    0.12,
+    2.2
+   ],
+   [
+    47.3,
+    69,
+    156.9,
+    62.8,
+    113.5,
+    -4.45,
+    0
+   ],
+   [
+    1000,
+    194,
+    166.3,
+    95.0,
+    376.3,
+    0.18,
+    4.6
+   ],
+   [
+    63.57,
+    58,
+    159.0,
+    64.4,
+    127.0,
+    -4.32,
+    0
+   ],
+   [
+    1000,
+    194,
+    167.5,
+    94.9,
+    376.2,
+    0.34,
+    3.8
+   ],
+   [
+    67.15,
+    64,
+    150.7,
+    50.6,
+    73.6,
+    -5.29,
+    0.4
+   ],
+   [
+    1000,
+    192,
+    167.9,
+    95.0,
+    382.3,
+    0.58,
+    6.2
+   ],
+   [
+    69.27,
+    58,
+    151.6,
+    59.8,
+    99.5,
+    -7.43,
+    0
+   ],
+   [
+    1000,
+    190,
+    170.4,
+    95.6,
+    384.3,
+    0.52,
+    5.6
+   ],
+   [
+    84.24,
+    109,
+    156.6,
+    62.3,
+    100.2,
+    -9.22,
+    0
+   ],
+   [
+    825.29,
+    165,
+    164.9,
+    94.0,
+    372.9,
+    0.68,
+    8
+   ],
+   [
+    106.77,
+    53,
+    155.8,
+    74.2,
+    183.8,
+    0.39,
+    0
+   ],
+   [
+    852.61,
+    168,
+    168.0,
+    94.1,
+    372.1,
+    0.21,
+    3.4
+   ],
+   [
+    42.61,
+    52,
+    161.8,
+    62.8,
+    89.7,
+    -14.32,
+    0
+   ],
+   [
+    1000,
+    204,
+    165.0,
+    92.8,
+    364.6,
+    0.48,
+    8.4
+   ],
+   [
+    64.4,
+    63,
+    156.4,
+    59.4,
+    108.2,
+    -9.27,
+    0
+   ],
+   [
+    1000,
+    196,
+    168.4,
+    94.1,
+    377.9,
+    0.64,
+    7.4
+   ],
+   [
+    25.17,
+    20,
+    170.4,
+    75.6,
+    185.8,
+    -9.47,
+    0
+   ]
+  ]
+ },
+ {
+  "id": "19308651644",
+  "name": "(1200 / 800 / 400) \u00d7 3 ladder",
+  "date": "2026-07-14",
+  "start": "06:31",
+  "type": "rep",
+  "label": "ladder \u00d73",
+  "env": {
+   "tempF": 81,
+   "rh": 74
+  },
+  "laps": [
+   [
+    1202.61,
+    236,
+    162.0,
+    95.2,
+    366.2,
+    0.05,
+    8.2
+   ],
+   [
+    72.4,
+    65,
+    156.0,
+    60.8,
+    92.8,
+    -2.09,
+    2.4
+   ],
+   [
+    803.6,
+    154,
+    167.4,
+    95.6,
+    366.0,
+    -0.12,
+    2.6
+   ],
+   [
+    74.24,
+    64,
+    155.2,
+    60.5,
+    86.3,
+    -1.45,
+    0
+   ],
+   [
+    405.88,
+    74,
+    163.7,
+    97.8,
+    384.6,
+    0.4,
+    2
+   ],
+   [
+    428.73,
+    145,
+    149.1,
+    83.5,
+    257.9,
+    -0.05,
+    0.8
+   ],
+   [
+    1211.13,
+    223,
+    177.7,
+    96.4,
+    376.9,
+    0.12,
+    6.4
+   ],
+   [
+    74.61,
+    62,
+    162.4,
+    59.7,
+    94.2,
+    -1.98,
+    0.6
+   ],
+   [
+    807.38,
+    149,
+    174.6,
+    96.2,
+    376.7,
+    0.3,
+    3.4
+   ],
+   [
+    67.72,
+    61,
+    162.8,
+    58.1,
+    72.6,
+    -4.11,
+    0
+   ],
+   [
+    402.19,
+    73,
+    158.4,
+    98.0,
+    381.1,
+    0.3,
+    0
+   ],
+   [
+    435.63,
+    153,
+    151.2,
+    80.9,
+    240.0,
+    -0.19,
+    2.6
+   ],
+   [
+    1200.24,
+    228,
+    176.6,
+    94.9,
+    374.0,
+    0.28,
+    3.4
+   ],
+   [
+    67.78,
+    60,
+    164.6,
+    61.2,
+    90.2,
+    -4.64,
+    0.2
+   ],
+   [
+    804.3,
+    146,
+    171.9,
+    97.2,
+    376.2,
+    0.47,
+    4.6
+   ],
+   [
+    92.88,
+    71,
+    163.8,
+    59.0,
+    87.1,
+    -4.94,
+    0
+   ],
+   [
+    399.46,
+    71,
+    154.4,
+    98.9,
+    371.9,
+    0.6,
+    3
+   ],
+   [
+    17.65,
+    4,
+    177.3,
+    88.7,
+    436.7,
+    0,
+    0
+   ]
+  ]
+ }
+];
+
+/* ---------- svg helpers ---------- */
+const NS="http://www.w3.org/2000/svg";
+function el(nm,a,t){const e=document.createElementNS(NS,nm);for(const k in a)e.setAttribute(k,a[k]);if(t!=null)e.textContent=t;return e}
+function mk(p,nm,a,t){const e=el(nm,a,t);p.appendChild(e);return e}          // append + return (avoids nested-paren bugs)
+const paceStr=s=>Math.floor(s/60)+":"+String(Math.round(s%60)).padStart(2,"0");
+const fmtDate=d=>new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"});
+const mi=m=>m/1609.34;
+/* blue pace ramp, MP → Mile (fast end). t=0 slowest fast rep, t=1 fastest */
+const RAMP=[[63,124,181],[47,102,168],[39,84,155],[32,68,139],[26,54,121],[20,41,100],[14,29,78]];
+function ramp(t){t=Math.max(0,Math.min(1,t));const f=t*(RAMP.length-1),i=Math.floor(f),a=RAMP[i],b=RAMP[Math.min(i+1,RAMP.length-1)],k=f-i;
+  return `rgb(${Math.round(a[0]+(b[0]-a[0])*k)},${Math.round(a[1]+(b[1]-a[1])*k)},${Math.round(a[2]+(b[2]-a[2])*k)})`}
+
+const S=FastSegments.analyze(RAW).filter(s=>s.metrics&&s.type==='rep'); // rep workouts, oldest→newest
+const state={sel:S.length-1};
+
+/* ---------- tiles ---------- */
+(function(){
+  const first=S[0].metrics,last=S[S.length-1].metrics;
+  const best=S.reduce((a,s)=>s.metrics.paceSecMi<a?s.metrics.paceSecMi:a,1e9);
+  const isBest=Math.abs(last.paceSecMi-best)<0.5;
+  const effUp=last.mPerBeat>=first.mPerBeat;
+  const tiles=[
+    {lab:"REP PACE",val:last.paceMi,u:"/mi",sub:isBest?"8-week best":("vs "+fmtDate(S[0].date))},
+    {lab:"FAST VOLUME",val:mi(last.fastDistM).toFixed(1),u:"mi",sub:last.numReps+" reps"},
+    {lab:"EFFICIENCY",val:last.mPerBeat.toFixed(2),u:"",sub:"m/beat "+(effUp?"▲":"▼")}
+  ];
+  document.getElementById("tiles").innerHTML=tiles.map(t=>`<div class="tile"><div class="lab">${t.lab}</div>
+    <div class="val">${t.val}<span class="u">${t.u}</span></div><div class="sub">${t.sub}</div></div>`).join("");
+})();
+
+/* ---------- OVER TIME chart (pace lane · volume lane · heat lane) ---------- */
+(function(){
+  const svg=document.getElementById("cTime"),ro=document.getElementById("roT");
+  const W=330,M={l:30,r:16},pw=W-M.l-M.r,colW=pw/S.length,cx=i=>M.l+colW*i+colW/2;
+  const PA={t:16,h:150},VB={t:196,h:44},HT={t:258,h:30};
+  const paces=S.map(s=>s.metrics.paceSecMi);
+  const gBest=Math.min(...paces),gWorst=Math.max(...paces),pMin=gBest-4,pMax=gWorst+4;
+  const yP=v=>PA.t+((v-pMin)/(pMax-pMin))*PA.h;
+  mk(svg,"text",{x:M.l-6,y:PA.t-4,'font-family':"var(--font-mono)",'font-size':7.5,fill:"#9B9590",'letter-spacing':".06em"},"PACE /MI · FASTER ↑");
+  [gBest,(gBest+gWorst)/2,gWorst].forEach(p=>{
+    mk(svg,"line",{x1:M.l,y1:yP(p),x2:M.l+pw,y2:yP(p),stroke:"#EFEBE6",'stroke-width':1});
+    mk(svg,"text",{x:M.l-5,y:yP(p)+3,'text-anchor':"end",'font-family':"var(--font-mono)",'font-size':7.5,fill:"#B7AFA8"},paceStr(p));
+  });
+  const pts=S.map((s,i)=>[cx(i),yP(s.metrics.paceSecMi)]);
+  mk(svg,"path",{d:pts.map((p,i)=>(i?"L":"M")+p[0].toFixed(1)+" "+p[1].toFixed(1)).join(" "),fill:"none",stroke:"#1A1815",'stroke-width':2,'stroke-linecap':"round",'stroke-linejoin':"round"});
+  S.forEach((s,i)=>{const t=(gWorst-s.metrics.paceSecMi)/((gWorst-gBest)||1);
+    mk(svg,"circle",{cx:cx(i),cy:yP(s.metrics.paceSecMi),r:4,fill:ramp(t),stroke:"#fff",'stroke-width':1.4});
+    mk(svg,"text",{x:cx(i),y:yP(s.metrics.paceSecMi)-9,'text-anchor':"middle",'font-family':"var(--font-mono)",'font-size':8.5,'font-weight':600,fill:"#1A1815"},s.metrics.paceMi);
+  });
+  const vMax=Math.max(...S.map(s=>mi(s.metrics.fastDistM)))*1.15,yV=v=>VB.t+VB.h-(v/vMax)*VB.h;
+  mk(svg,"text",{x:M.l-6,y:VB.t-3,'font-family':"var(--font-mono)",'font-size':7.5,fill:"#9B9590",'letter-spacing':".06em"},"FAST VOL · MI");
+  S.forEach((s,i)=>{const v=mi(s.metrics.fastDistM),bw=colW*0.44,x=cx(i)-bw/2;
+    mk(svg,"rect",{x,y:yV(v),width:bw,height:VB.t+VB.h-yV(v),rx:2,fill:"#3F7CB5"});
+    mk(svg,"text",{x:cx(i),y:yV(v)-3,'text-anchor':"middle",'font-family':"var(--font-mono)",'font-size':7.5,fill:"#6B6560"},v.toFixed(1)+" ("+s.metrics.numReps+")");
+  });
+  mk(svg,"text",{x:M.l-6,y:HT.t-1,'font-family':"var(--font-mono)",'font-size':7.5,fill:"#9B9590",'letter-spacing':".06em"},"HEAT · FEELS °F");
+  const hMin=Math.min(...S.map(s=>s.metrics.feelsF))-4,hMax=Math.max(...S.map(s=>s.metrics.feelsF))+2;
+  S.forEach((s,i)=>{const f=(s.metrics.feelsF-hMin)/(hMax-hMin),bw=colW*0.66,x=cx(i)-bw/2,y=HT.t+8;
+    mk(svg,"rect",{x,y,width:bw,height:8,rx:4,fill:"#E4DED6"});
+    mk(svg,"rect",{x,y,width:bw*Math.max(.12,f),height:8,rx:4,fill:"#B3A79A"});
+    mk(svg,"text",{x:cx(i),y:y+20,'text-anchor':"middle",'font-family':"var(--font-mono)",'font-size':8,fill:"#6B6560"},Math.round(s.metrics.feelsF)+"°");
+  });
+  S.forEach((s,i)=>mk(svg,"text",{x:cx(i),y:HT.t+HT.h+8,'text-anchor':"middle",'font-family':"var(--font-mono)",'font-size':7.5,fill:"#9B9590"},fmtDate(s.date)));
+  S.forEach((s,i)=>{const hit=mk(svg,"rect",{x:M.l+colW*i,y:PA.t,width:colW,height:HT.t+HT.h-PA.t,fill:"transparent",style:"cursor:pointer"});
+    hit.addEventListener("mousemove",e=>{const m=s.metrics;ro.innerHTML=`<b>${fmtDate(s.date)}</b> · ${s.name}<div class="r"><span>pace</span><b>${m.paceMi}/mi</b></div><div class="r"><span>volume</span><b>${mi(m.fastDistM).toFixed(1)} mi · ${m.numReps}</b></div><div class="r"><span>avg HR</span><b>${Math.round(m.avgHR)}</b></div><div class="r"><span>density</span><b>${m.densityPct}%</b></div><div class="r"><span>feels</span><b>${Math.round(m.feelsF)}°F</b></div>`;pos(ro,e,svg)});
+    hit.addEventListener("mouseleave",()=>ro.style.opacity=0);
+  });
+  const a=S[0].metrics,b=S[S.length-1].metrics;
+  document.getElementById("timeNote").textContent=`Each dot is a key session's average fast-rep pace — darker = faster. Across ${S.length} sessions the reps held ~${b.paceMi}–${a.paceMi}/mi while the morning "feels-like" climbed from ${Math.round(a.feelsF)}° to ${Math.round(b.feelsF)}°.`;
+})();
+
+/* ---------- BY SESSION ---------- */
+function renderChips(){
+  document.getElementById("chips").innerHTML=S.map((s,i)=>`<div class="chip ${i===state.sel?'on':''}" data-i="${i}">${fmtDate(s.date)}</div>`).join("");
+  document.querySelectorAll("#chips .chip").forEach(c=>c.onclick=()=>{state.sel=+c.dataset.i;renderChips();renderSession()});
+}
+function renderSession(){
+  const s=S[state.sel],m=s.metrics,F=s.reps.filter(r=>r.type==='fast');
+  document.getElementById("sesTitle").textContent=s.name.toUpperCase()+" · "+m.numReps+" REPS";
+  const st=[["PACE",m.paceMi,"/mi"],["AVG HR",Math.round(m.avgHR),"bpm"],["DENSITY",m.densityPct,"%"],["REST",m.avgRestS,"s"],
+    ["FAST VOL",mi(m.fastDistM).toFixed(2),"mi"],["WORK:REST",m.workRest?m.workRest.toFixed(1):"—",""],["M/BEAT",m.mPerBeat.toFixed(2),""],["FEELS",Math.round(m.feelsF),"°F"]];
+  document.getElementById("sesStats").innerHTML=st.map(x=>`<div class="srh"><div class="l">${x[0]}</div><div class="v">${x[1]}<small>${x[2]}</small></div></div>`).join("");
+  const svg=document.getElementById("cSes"),ro=document.getElementById("roS");svg.innerHTML="";
+  const W=330,M={l:28,r:24,t:18,b:26},pw=W-M.l-M.r,ph=220-M.t-M.b;
+  const spd=F.map(r=>r.spd),sMin=Math.min(...spd),sMax=Math.max(...spd);
+  const hrs=F.map(r=>r.hr),hMin=Math.min(...hrs)-4,hMax=Math.max(...hrs)+4;
+  const bw=pw/F.length,yBaseTop=v=>M.t+ph-((v-(sMin-0.25))/((sMax+0.15)-(sMin-0.25)))*ph;
+  const yHr=v=>M.t+((hMax-v)/(hMax-hMin))*ph;
+  mk(svg,"text",{x:M.l-6,y:M.t-5,'font-family':"var(--font-mono)",'font-size':7.5,fill:"#9B9590",'letter-spacing':".06em"},"REP PACE");
+  mk(svg,"text",{x:M.l+pw+6,y:M.t-5,'text-anchor':"end",'font-family':"var(--font-mono)",'font-size':7.5,fill:"#9B9590",'letter-spacing':".06em"},"HR");
+  F.forEach((r,i)=>{const t=(sMax>sMin)?(r.spd-sMin)/(sMax-sMin):.5,x=M.l+bw*i+bw*0.16,w=bw*0.68,y=yBaseTop(r.spd);
+    const bar=mk(svg,"rect",{x,y,width:w,height:M.t+ph-y,rx:2.5,fill:ramp(t),style:"cursor:pointer"});
+    bar.addEventListener("mousemove",e=>{ro.innerHTML=`<b>Rep ${r.i}</b> · ${r.dist>=1400?mi(r.dist).toFixed(1)+"mi":r.dist+"m"}<div class="r"><span>pace</span><b>${r.paceMi}/mi</b></div><div class="r"><span>HR</span><b>${r.hr}</b></div><div class="r"><span>power</span><b>${r.watts}W</b></div><div class="r"><span>cad</span><b>${r.cad}</b></div>`;pos(ro,e,svg)});
+    bar.addEventListener("mouseleave",()=>ro.style.opacity=0);
+    if(F.length<=12)mk(svg,"text",{x:M.l+bw*i+bw/2,y:M.t+ph+9,'text-anchor':"middle",'font-family':"var(--font-mono)",'font-size':6.8,fill:"#9B9590"},r.dist>=1400?mi(r.dist).toFixed(1)+"mi":r.dist+"m");
+  });
+  const hp=F.map((r,i)=>[M.l+bw*i+bw/2,yHr(r.hr)]);
+  mk(svg,"path",{d:hp.map((p,i)=>(i?"L":"M")+p[0].toFixed(1)+" "+p[1].toFixed(1)).join(" "),fill:"none",stroke:"#B84420",'stroke-width':1.6,'stroke-linecap':"round"});
+  hp.forEach(p=>mk(svg,"circle",{cx:p[0],cy:p[1],r:2.2,fill:"#B84420"}));
+  document.getElementById("sesLegend").innerHTML=`Bars = each rep's pace (darker = faster) · <span style="color:#B84420">—</span> heart rate. Hover a rep for power &amp; cadence.`;
+  const fade=F.length>1?(F[F.length-1].spd-F[0].spd):0;
+  document.getElementById("sesNote").textContent=`Reps ${F[0].paceMi} → ${F[F.length-1].paceMi}/mi across the set (`+
+    (Math.abs(fade)<0.06?"held pace, no fade":(fade>0?"got faster — negative split":"eased slightly on the back half"))+
+    `). HR ${Math.round(m.avgHR)} avg / ${m.maxHR} max, only ${m.avgRestS}s between reps.`;
+}
+
+/* ---------- THE READ ---------- */
+(function(){
+  const a=S[0].metrics,b=S[S.length-1].metrics;
+  const bestP=S.reduce((x,s)=>s.metrics.paceSecMi<x.metrics.paceSecMi?s:x);
+  document.getElementById("readBody").innerHTML=`Across eight weeks your reps have held around <b>${b.paceMi}–${a.paceMi}/mi</b> while the morning air climbed from <b>${Math.round(a.feelsF)}°</b> to <b>${Math.round(b.feelsF)}°</b> feels-like. ${fmtDate(bestP.date)}'s session was the sharpest of the block at <b>${bestP.metrics.paceMi}/mi</b>, and you're covering a touch more ground per heartbeat than in May — same engine, hotter room.`;
+  document.getElementById("readQ").textContent="Did the sharp one feel as controlled as the numbers say — or were you reaching on the last reps?";
+})();
+
+/* ---------- interactions ---------- */
+function pos(ro,e,svg){const wrap=svg.closest(".chartwrap").getBoundingClientRect();let x=e.clientX-wrap.left,y=e.clientY-wrap.top-10;
+  ro.style.left=Math.max(64,Math.min(x,wrap.width-64))+"px";ro.style.top=Math.max(48,y)+"px";ro.style.opacity=1}
+document.getElementById("seg").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;
+  [...document.querySelectorAll("#seg button")].forEach(x=>x.classList.toggle("on",x===b));const v=b.dataset.v;
+  document.getElementById("view-time").style.display=v==="time"?"":"none";
+  document.getElementById("view-session").style.display=v==="session"?"":"none";});
+renderChips();renderSession();
+</script>
+</body>
+</html>

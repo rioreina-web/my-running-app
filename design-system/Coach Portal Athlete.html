@@ -1,0 +1,1073 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coach Portal — The Athlete</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Schibsted+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:ital,wght@0,400;0,500;1,400&family=Crimson+Pro:wght@400;600;700&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════════════════════════
+   COACH PORTAL · THE ATHLETE  (v2 — training first)
+   The screen a roster row on "Coach Portal Desk.html" opens into.
+
+   v1 opened on Signal — flags, observations, recurrences. That put the
+   diagnosis above the thing being diagnosed. v2 opens on the training
+   and keeps reading downward:
+
+     01 Latest        the most recent session in full, its memo attached,
+                      and the log continuing straight out of it
+     02 Key sessions  every keyed workout against its target, six weeks
+     03 The plan      this week, and week 9 against the block
+     04 Body & mind   mood, and every niggle mention
+     05 Load          volume and stress load
+     06 Analytics     projection, watch list, machine observations,
+                      and where the block has room — moved down here,
+                      because this is where you go looking, not landing
+     07 Adjust        plain language in, a concrete plan edit out.
+                      Nothing is written until the coach applies it.
+
+   Two skins, toggled top-right. Same layout, same data; only tokens move.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ---- EDITORIAL · live iOS values, DesignSystem.swift ------------- */
+:root,
+[data-skin="editorial"] {
+  --paper:          #FAFAF9;
+  --card:           #FFFFFF;
+  --paper-elevated: #FFFFFF;
+  --paper-deep:     #F0F0EE;
+  --rule:           #E6E7EA;
+  --rule-strong:    #0D1016;
+
+  --ink:            #0D1016;
+  --ink-2:          #585D68;
+  --ink-3:          #8F95A1;
+
+  --red:            #E63946;
+  --red-text:       #C42A36;
+  --red-wash:       rgba(230, 57, 70, 0.09);
+
+  --session:        #1F4FA8;
+
+  --mood-energized: #2D8A4E;
+  --mood-positive:  #4A9E6B;
+  --mood-neutral:   #9B9590;
+  --mood-tired:     #C4873A;
+  --mood-struggling:#C45A3A;
+  --mood-injured:   #B83A4A;
+
+  --font-display: "Crimson Pro", Georgia, serif;
+  --font-label:   ui-monospace, "SF Mono", Menlo, monospace;
+  --font-prose:   "PT Serif", Georgia, serif;
+  --font-data:    ui-monospace, "SF Mono", Menlo, monospace;
+  --font-body:    "PT Serif", Georgia, serif;
+  --font-mono:    ui-monospace, "SF Mono", Menlo, monospace;
+  --font-accent:  "PT Serif", Georgia, serif;
+
+  --display-weight: 700;
+  --display-case:   none;
+  --display-track:  -0.02em;
+  --radius:         3px;
+}
+
+/* ---- DIRECTION I · colors_and_type.css, the locked system -------- */
+[data-skin="wild"] {
+  --paper:          #FFFFFF;
+  --card:           #FFFFFF;
+  --paper-elevated: #FAFAFA;
+  --paper-deep:     #F2F2F2;
+  --rule:           #EBEBEB;
+  --rule-strong:    #111111;
+
+  --ink:            #111111;
+  --ink-2:          #6B6B6B;
+  --ink-3:          #9A9A9A;
+
+  --red:            #EE2B24;
+  --red-text:       #D31F19;
+  --red-wash:       rgba(238, 43, 36, 0.10);
+
+  --session:        #1F4FA8;
+
+  --mood-energized: #12703A;
+  --mood-positive:  #1F7A41;
+  --mood-neutral:   #6B6B6B;
+  --mood-tired:     #A8560A;
+  --mood-struggling:#B3261E;
+  --mood-injured:   #8E1219;
+
+  --font-display: "Instrument Sans", "Helvetica Neue", Arial, sans-serif;
+  --font-label:   "Schibsted Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --font-prose:   "Crimson Pro", Georgia, serif;
+  --font-data:    "Inter", "Helvetica Neue", Arial, sans-serif;
+  --font-body:    "Inter", "Helvetica Neue", Arial, sans-serif;
+  --font-mono:    "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --font-accent:  "Times New Roman", Times, serif;
+
+  --display-weight: 700;
+  --display-case:   uppercase;
+  --display-track:  -0.04em;
+  --radius:         0px;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+body {
+  margin: 0; background: var(--paper); color: var(--ink);
+  font-family: var(--font-body); font-size: 14px; line-height: 1.5;
+  padding-bottom: 0;
+}
+
+/* ---- shared type roles ------------------------------------------- */
+.eyebrow {
+  font-family: var(--font-label); font-size: 10px; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink-2); white-space: nowrap;
+}
+.eyebrow--red  { color: var(--red-text); }
+.eyebrow--blue { color: var(--session); }
+.eyebrow--3    { color: var(--ink-3); }
+.display {
+  font-family: var(--font-display); font-weight: var(--display-weight);
+  text-transform: var(--display-case); letter-spacing: var(--display-track);
+  line-height: 1; color: var(--ink); margin: 0;
+}
+.prose { font-family: var(--font-prose); font-size: 15px; line-height: 1.5; color: var(--ink-2); margin: 0; }
+
+/* The one distinction that matters:
+   italic mono is the athlete — roman is the machine. */
+.voice   { font-family: var(--font-mono); font-style: italic; font-size: 12.5px; color: var(--ink); line-height: 1.55; }
+.machine { font-family: var(--font-mono); font-style: normal; font-size: 12px; font-weight: 500; color: var(--ink); line-height: 1.5; }
+
+/* ---- contents rail ------------------------------------------------
+   A contents column, not a nav sidebar: no panel, no fill, no hover
+   chrome. Numbered labels on hairlines, and the active section marked
+   by the 2px red rule the system already uses for an active state.
+   It also carries the two actions, so the page has ONE piece of
+   persistent chrome on the side instead of a rail plus a bottom bar. */
+.layout { display: grid; grid-template-columns: 186px 1fr; gap: 0 42px; }
+.rail { position: sticky; top: 58px; align-self: start; padding: 22px 0 0; }
+.rail__who { font-family: var(--font-display); font-weight: var(--display-weight); text-transform: var(--display-case); letter-spacing: var(--display-track); font-size: 17px; line-height: 1.15; display: block; }
+.rail__meta { font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: 11px; color: var(--ink-3); display: block; margin-top: 6px; }
+.rail__flag { font-family: var(--font-label); font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--red-text); display: block; margin-top: 7px; }
+
+.rail__list { margin-top: 22px; border-top: 2px solid var(--rule-strong); }
+.rail__item {
+  display: flex; align-items: baseline; gap: 9px;
+  padding: 9px 0 9px 9px; margin-left: -11px;
+  border-bottom: 1px solid var(--rule); border-left: 2px solid transparent;
+  font-family: var(--font-label); font-size: 10px; font-weight: 600;
+  letter-spacing: 0.11em; text-transform: uppercase;
+  color: var(--ink-3); text-decoration: none;
+}
+.rail__item i { font-family: var(--font-data); font-style: normal; font-size: 9.5px; font-variant-numeric: tabular-nums; color: var(--ink-3); }
+.rail__item:hover { color: var(--ink); }
+.rail__item[aria-current] { color: var(--ink); border-left-color: var(--red); }
+.rail__item[aria-current] i { color: var(--red-text); }
+
+.rail__act { margin-top: 20px; display: flex; flex-direction: column; gap: 7px; }
+.rail__act .btn { width: 100%; text-align: center; }
+.rail__note { font-family: var(--font-accent); font-style: italic; font-size: 11.5px; color: var(--ink-3); margin: 12px 0 0; line-height: 1.4; }
+
+/* Below 1080 the rail cannot hold its labels — it goes, and the
+   sticky action bar comes back to keep Adjust one click away. */
+@media (max-width: 1080px) {
+  .layout { grid-template-columns: 1fr; gap: 0; }
+  .rail { display: none; }
+}
+
+/* ---- page shell -------------------------------------------------- */
+.shell { max-width: 1180px; margin: 0 auto; padding: 0 28px 60px; }
+
+.plate {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; padding: 14px 0 12px; border-bottom: 1px solid var(--rule);
+  position: sticky; top: 0; background: var(--paper); z-index: 20;
+}
+.plate__left { display: flex; align-items: center; gap: 10px; }
+.plate__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--red); }
+
+.skinbar { display: flex; border: 1px solid var(--rule); border-radius: var(--radius); overflow: hidden; }
+.skinbar button {
+  font-family: var(--font-label); font-size: 9.5px; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  padding: 6px 11px; border: 0; cursor: pointer; background: transparent; color: var(--ink-2);
+}
+.skinbar button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+
+.back {
+  display: inline-block; margin: 16px 0 0;
+  font-family: var(--font-label); font-size: 10px; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); text-decoration: none;
+}
+.back:hover { color: var(--ink); }
+
+/* ---- Masthead ---------------------------------------------------- */
+.masthead { padding: 16px 0 0; display: flex; align-items: flex-end; justify-content: space-between; gap: 30px; flex-wrap: wrap; }
+.masthead h1 { font-size: 46px; }
+.masthead__plan { font-family: var(--font-label); font-size: 10px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); display: block; margin-bottom: 11px; }
+.mood-rule { height: 2px; width: 34px; margin-top: 13px; background: var(--mood-tired); }
+
+.anchors { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); margin-top: 26px; border-top: 2px solid var(--rule-strong); border-bottom: 1px solid var(--rule); }
+.anchor { padding: 14px 20px 14px 0; border-right: 1px solid var(--rule); }
+.anchor:last-child { border-right: 0; }
+.anchor__v { font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: 25px; font-weight: 600; letter-spacing: -0.02em; line-height: 1; display: block; margin: 9px 0 0; }
+.anchor__v--red { color: var(--red-text); }
+.anchor__u { font-size: 11px; font-weight: 500; color: var(--ink-3); margin-left: 2px; }
+.anchor__m { font-family: var(--font-label); font-size: 9px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); display: block; margin-top: 7px; }
+
+/* ---- Section head ------------------------------------------------- */
+.sec { margin-top: 46px; scroll-margin-top: 64px; }
+.sec__head { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; padding-bottom: 8px; border-bottom: 2px solid var(--rule-strong); }
+.sec__n { font-family: var(--font-data); font-size: 10px; font-weight: 600; color: var(--ink-3); margin-right: 9px; font-variant-numeric: tabular-nums; }
+.sec__note { font-family: var(--font-accent); font-style: italic; font-size: 12.5px; color: var(--ink-3); }
+
+/* ---- 01 LATEST — the lede ---------------------------------------- */
+.latest { display: grid; grid-template-columns: 1.55fr 1fr; gap: 0; border-bottom: 1px solid var(--rule); }
+@media (max-width: 900px) { .latest { grid-template-columns: 1fr; } }
+.latest__main { padding: 24px 34px 26px 0; }
+.latest__side { padding: 24px 0 26px 30px; border-left: 1px solid var(--rule); }
+@media (max-width: 900px) { .latest__side { border-left: 0; border-top: 1px solid var(--rule); padding: 20px 0 24px; } }
+
+.latest__top { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+.latest h2 { font-size: 38px; margin-top: 10px; }
+.latest__held { font-family: var(--font-label); font-size: 10.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); }
+.latest__held--off { color: var(--red-text); }
+
+/* Facts on one line, hairline-divided. No tiles, no boxes. */
+.facts { display: grid; grid-template-columns: repeat(5, 1fr); margin-top: 20px; border-top: 1px solid var(--rule); }
+.fact { padding: 12px 14px 12px 0; border-right: 1px solid var(--rule); min-width: 0; }
+.fact:last-child { border-right: 0; padding-right: 0; }
+.fact b { font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: 19px; font-weight: 600; letter-spacing: -0.02em; display: block; margin-top: 7px; white-space: nowrap; }
+@media (max-width: 700px) { .facts { grid-template-columns: repeat(3, 1fr); } }
+.fact b i { font-style: normal; font-size: 10px; font-weight: 500; color: var(--ink-3); margin-left: 2px; }
+
+/* Mile splits. Numbers, not a chart — a pace bar would have to be
+   inverted to read correctly, and inverted bars lie. */
+.splits { display: grid; grid-template-columns: repeat(8, 1fr); gap: 0 12px; margin-top: 22px; border-top: 1px solid var(--rule); }
+.split { padding: 11px 0 0; min-width: 0; }
+@media (max-width: 700px) { .splits { grid-template-columns: repeat(4, 1fr); } }
+.split b { font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: 13px; font-weight: 600; display: block; padding-bottom: 6px; color: var(--ink-2); }
+.split--fast b { color: var(--ink); }
+.split i { display: block; height: 2px; background: var(--rule); }
+.split--fast i { background: var(--ink); }
+.split span { font-family: var(--font-label); font-size: 9px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); display: block; margin-top: 6px; }
+
+.memo { margin-top: 24px; border-left: 2px solid var(--rule); padding-left: 16px; }
+
+/* The last keyed session, sitting beside the latest run */
+.keycard { border-left: 2px solid var(--session); padding-left: 15px; }
+.keycard h3 { font-family: var(--font-display); font-weight: var(--display-weight); text-transform: var(--display-case); letter-spacing: var(--display-track); font-size: 21px; line-height: 1.1; margin: 9px 0 0; }
+.keycard__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 10px; margin-top: 16px; }
+.keycard__v { font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: 17px; font-weight: 600; letter-spacing: -0.02em; display: block; margin-top: 6px; }
+.keycard__v--off { color: var(--red-text); }
+
+/* ---- The log, attached straight to the latest --------------------- */
+.log__row {
+  display: grid; grid-template-columns: 74px minmax(170px, 1.05fr) minmax(165px, 1fr) 86px minmax(200px, 1.5fr);
+  gap: 18px; align-items: start; padding: 15px 8px 15px 0; border-bottom: 1px solid var(--rule);
+}
+.log__row--head { padding: 9px 8px 8px 0; }
+.log__row--key { border-left: 2px solid var(--session); padding-left: 12px; margin-left: -14px; }
+.log__date { font-family: var(--font-data); font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; padding-top: 3px; }
+.log__title { font-family: var(--font-display); font-weight: var(--display-weight); text-transform: var(--display-case); letter-spacing: var(--display-track); font-size: 16px; line-height: 1.15; }
+.log__sub { font-family: var(--font-label); font-size: 9.5px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); margin-top: 5px; display: block; }
+.log__num { font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: 14px; font-weight: 600; letter-spacing: -0.02em; }
+.log__num--off { color: var(--red-text); }
+.log__num--flat { color: var(--ink-3); font-weight: 500; font-size: 12.5px; }
+@media (max-width: 900px) { .log__row { grid-template-columns: 1fr; gap: 7px; } .log__row--head { display: none; } }
+
+.more { display: inline-block; margin-top: 16px; font-family: var(--font-label); font-size: 10px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); text-decoration: none; }
+.more:hover { color: var(--ink); }
+
+/* ---- 02 KEY SESSIONS ---------------------------------------------- */
+/* Every keyed workout against its target. The only place the blue
+   accent earns its keep — one meaning, used consistently. */
+.keys { display: grid; grid-template-columns: repeat(6, 1fr); border-bottom: 1px solid var(--rule); }
+@media (max-width: 980px) { .keys { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 560px) { .keys { grid-template-columns: repeat(2, 1fr); } }
+.key { padding: 16px 14px 18px 0; border-right: 1px solid var(--rule); border-top: 2px solid transparent; }
+.key:last-child { border-right: 0; }
+.key--now { border-top-color: var(--session); background: var(--paper-elevated); }
+.key__d { font-family: var(--font-label); font-size: 9.5px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); }
+.key__t { font-family: var(--font-body); font-size: 12.5px; color: var(--ink); margin-top: 10px; line-height: 1.3; min-height: 34px; }
+.key__delta { font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: 19px; font-weight: 600; letter-spacing: -0.02em; margin-top: 12px; display: block; }
+.key__delta--off { color: var(--red-text); }
+.key__delta--ok { color: var(--ink-3); }
+.key__p { font-family: var(--font-label); font-size: 9px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); display: block; margin-top: 6px; }
+.keys__read { margin-top: 18px; max-width: 68ch; }
+
+/* ---- 03 THE PLAN --------------------------------------------------- */
+.week { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1px solid var(--rule); }
+.day { padding: 14px 12px 18px 0; border-right: 1px solid var(--rule); border-top: 2px solid transparent; min-height: 152px; }
+.day:last-child { border-right: 0; }
+.day--today { background: var(--paper-elevated); border-top-color: var(--red); }
+.day--key { border-top-color: var(--session); }
+.day__d { font-family: var(--font-label); font-size: 9.5px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); }
+.day__p { font-family: var(--font-body); font-size: 12.5px; color: var(--ink-2); margin-top: 11px; line-height: 1.3; }
+.day__a { font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: 16px; font-weight: 600; letter-spacing: -0.02em; margin-top: 9px; }
+.day__a--none { color: var(--ink-3); font-size: 12.5px; font-weight: 500; }
+.day__delta { font-family: var(--font-label); font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 6px; display: block; }
+.day__delta--off { color: var(--red-text); }
+.day__delta--ok { color: var(--ink-3); }
+@media (max-width: 900px) { .week { grid-template-columns: repeat(2, 1fr); } .day { min-height: 0; border-bottom: 1px solid var(--rule); } }
+
+.block { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-top: 22px; }
+.block__c { padding: 0 20px 0 0; border-right: 1px solid var(--rule); }
+.block__c:last-child { border-right: 0; }
+.block__v { font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; display: block; margin-top: 8px; }
+.block__m { font-family: var(--font-label); font-size: 9px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); display: block; margin-top: 6px; }
+/* Block progress — 16 marks, one per week. Not a bar. */
+.weeks { display: flex; gap: 3px; margin-top: 11px; }
+.weeks i { flex: 1; height: 5px; background: var(--rule); display: block; }
+.weeks i.done { background: var(--ink-3); }
+.weeks i.now  { background: var(--red); }
+
+/* ---- 04 BODY & MIND ------------------------------------------------ */
+.bm { display: grid; grid-template-columns: 1.1fr 1fr; }
+@media (max-width: 860px) { .bm { grid-template-columns: 1fr; } }
+.bm__col { padding: 18px 26px 6px 0; }
+.bm__col + .bm__col { border-left: 1px solid var(--rule); padding-left: 26px; padding-right: 0; }
+@media (max-width: 860px) { .bm__col + .bm__col { border-left: 0; border-top: 1px solid var(--rule); padding-left: 0; } }
+
+.nig { padding: 13px 0; border-top: 1px solid var(--rule); }
+.nig:first-of-type { border-top: 0; padding-top: 2px; }
+.nig__top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.nig__name { font-family: var(--font-display); font-weight: var(--display-weight); text-transform: var(--display-case); letter-spacing: var(--display-track); font-size: 17px; }
+.nig__line { position: relative; height: 22px; margin-top: 12px; border-top: 1px solid var(--rule); }
+.nig__m { position: absolute; top: -4px; width: 7px; height: 7px; border-radius: 50%; background: var(--mood-tired); transform: translateX(-50%); }
+.nig__d { position: absolute; top: 8px; font-family: var(--font-data); font-size: 9.5px; color: var(--ink-3); transform: translateX(-50%); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.moods { display: flex; gap: 5px; margin-top: 4px; }
+.moodcol { flex: 1; }
+.moodcol i { display: block; height: 3px; background: var(--mood-neutral); }
+.moodcol span { font-family: var(--font-label); font-size: 9px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); display: block; margin-top: 6px; }
+.mood-key { display: flex; flex-wrap: wrap; gap: 13px; margin-top: 18px; }
+.mood-key b { font-family: var(--font-label); font-size: 9px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-2); display: flex; align-items: center; gap: 6px; }
+.mood-key i { width: 14px; height: 3px; display: block; }
+
+/* ---- 05 LOAD -------------------------------------------------------- */
+.load { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); border-bottom: 1px solid var(--rule); }
+.load__cell { padding: 16px 20px 16px 0; border-right: 1px solid var(--rule); }
+.load__cell:last-child { border-right: 0; }
+.load__v { font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: 24px; font-weight: 600; letter-spacing: -0.02em; line-height: 1; display: block; margin: 9px 0 0; }
+.load__u { font-size: 11px; font-weight: 500; color: var(--ink-3); margin-left: 3px; }
+.load__m { font-family: var(--font-label); font-size: 9px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); display: block; margin-top: 7px; }
+/* Ratio as a hairline scale, not a dial. Print has no gauges. */
+.band { position: relative; height: 24px; margin-top: 13px; border-top: 1px solid var(--rule); }
+.band__safe { position: absolute; top: -1px; height: 2px; background: var(--ink-3); }
+.band__tick { position: absolute; top: -6px; width: 2px; height: 12px; background: var(--red); }
+.band__lab { position: absolute; top: 11px; font-family: var(--font-label); font-size: 9px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+
+.vol { display: grid; grid-template-columns: 92px auto 1fr; align-items: end; gap: 0 30px; margin-top: 24px; }
+@media (max-width: 760px) { .vol { grid-template-columns: 1fr; gap: 14px; } }
+.vol > .eyebrow { padding-bottom: 3px; }
+.vol__plot { display: flex; align-items: flex-end; gap: 9px; height: 56px; }
+.vol__bar { width: 26px; background: var(--ink-3); display: block; position: relative; min-height: 3px; }
+.vol__bar--now { background: var(--ink); }
+.vol__bar b { position: absolute; top: -15px; left: 50%; transform: translateX(-50%); font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: 10px; font-weight: 600; color: var(--ink-3); }
+.vol__bar--now b { color: var(--ink); }
+.vol__read { font-size: 13.5px; max-width: 46ch; padding-bottom: 2px; }
+
+/* ---- 06 ANALYTICS ---------------------------------------------------- */
+.an { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+@media (max-width: 900px) { .an { grid-template-columns: 1fr; } }
+.an__col { padding: 20px 28px 8px 0; }
+.an__col + .an__col { border-left: 1px solid var(--rule); padding-left: 28px; padding-right: 0; }
+@media (max-width: 900px) { .an__col + .an__col { border-left: 0; border-top: 1px solid var(--rule); padding-left: 0; } }
+
+.prog__v { font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: 38px; font-weight: 600; letter-spacing: -0.03em; line-height: 1; display: block; margin: 9px 0 0; }
+.prog__gap { font-family: var(--font-label); font-size: 10.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--red-text); display: block; margin-top: 9px; }
+.chart { width: 100%; height: 132px; display: block; margin-top: 18px; }
+.chart text { font-family: var(--font-label); font-size: 9px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; fill: var(--ink-3); }
+.chart .v { font-family: var(--font-data); font-size: 10px; letter-spacing: 0; text-transform: none; font-weight: 600; fill: var(--ink-2); font-variant-numeric: tabular-nums; }
+
+.watch { display: flex; align-items: flex-start; gap: 11px; padding: 11px 0; border-top: 1px solid var(--rule); }
+.watch:first-of-type { border-top: 0; padding-top: 3px; }
+.watch__dot { width: 7px; height: 7px; border-radius: 50%; margin-top: 6px; flex: none; background: var(--ink-3); }
+.watch__dot--red { background: var(--red); }
+.watch__t { font-family: var(--font-body); font-size: 13.5px; line-height: 1.35; color: var(--ink); }
+.watch__d { font-family: var(--font-body); font-size: 12px; color: var(--ink-2); margin-top: 3px; }
+
+/* AI observations are set ROMAN mono. Never italic — that posture belongs to
+   the athlete. Never Crimson — that would read as a person's conclusion.
+   The machine has no colour of its own. */
+.obs { padding: 14px 0; border-top: 1px solid var(--rule); }
+.obs:first-of-type { border-top: 0; padding-top: 3px; }
+.obs__top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.obs__q { font-family: var(--font-mono); font-size: 12px; color: var(--ink-2); margin-top: 7px; line-height: 1.5; }
+
+.chip {
+  font-family: var(--font-label); font-size: 9.5px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase; padding: 4px 8px;
+  border: 1px solid var(--rule); border-radius: var(--radius);
+  color: var(--ink-2); background: var(--paper-deep); white-space: nowrap;
+}
+.chip--session { color: var(--session); border-color: var(--session); background: transparent; }
+
+/* ---- 07 ADJUST — plain language in, a plan edit out ------------------ */
+.adjust { border-left: 2px solid var(--red); padding: 20px 0 22px 20px; margin-top: 22px; }
+.ask {
+  margin-top: 14px; padding: 14px 16px; border: 1px solid var(--rule);
+  border-radius: var(--radius); background: var(--card);
+  font-family: var(--font-mono); font-style: italic; font-size: 13px; color: var(--ink);
+}
+.quick { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 11px; }
+.quick button { cursor: pointer; font-family: var(--font-label); font-size: 9.5px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; padding: 6px 10px; border: 1px solid var(--rule); border-radius: var(--radius); background: transparent; color: var(--ink-2); }
+.quick button:hover { border-color: var(--ink); color: var(--ink); }
+
+.draft { margin-top: 26px; border-top: 2px solid var(--rule-strong); padding-top: 14px; }
+.draft__head { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }
+.diff { margin-top: 14px; }
+.diff__day { display: grid; grid-template-columns: 92px 1fr; gap: 18px; padding: 13px 0; border-bottom: 1px solid var(--rule); align-items: start; }
+.diff__d { font-family: var(--font-label); font-size: 9.5px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); padding-top: 3px; }
+.diff__was { font-family: var(--font-data); font-size: 13px; color: var(--ink-3); text-decoration: line-through; text-decoration-thickness: 1px; }
+.diff__now { font-family: var(--font-data); font-size: 14px; font-weight: 600; color: var(--ink); margin-top: 5px; display: flex; align-items: baseline; gap: 9px; }
+.diff__now::before { content: ""; width: 2px; height: 13px; background: var(--red); flex: none; transform: translateY(2px); }
+.diff__why { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-2); margin-top: 6px; padding-left: 11px; }
+
+.actions { display: flex; gap: 8px; margin-top: 18px; align-items: center; flex-wrap: wrap; }
+.btn {
+  font-family: var(--font-label); font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase; padding: 9px 15px;
+  border-radius: var(--radius); cursor: pointer;
+  border: 1px solid var(--ink); background: var(--ink); color: var(--paper);
+}
+.btn--ghost { background: transparent; color: var(--ink); border-color: var(--rule); }
+.btn--ghost:hover { border-color: var(--ink); }
+.actions .eyebrow { margin-left: 6px; }
+
+/* Always one click from an adjustment. */
+.bar { display: none; }
+@media (max-width: 1080px) {
+  body { padding-bottom: 60px; }
+  .bar {
+    display: block; position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+    background: var(--paper); border-top: 1px solid var(--rule);
+  }
+}
+.bar__in { max-width: 1180px; margin: 0 auto; padding: 10px 28px; display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.bar__l { display: flex; align-items: center; gap: 16px; min-width: 0; }
+
+.foot { margin-top: 46px; padding-top: 16px; border-top: 1px solid var(--rule); }
+.foot p { font-family: var(--font-accent); font-style: italic; font-size: 12.5px; color: var(--ink-3); margin: 0; }
+
+/* ---- v3 · real data ------------------------------------------------
+   Rebuilt on Rio's own rows (Supabase, 2026-08-28). Three shape changes
+   the fixture version could not have shown:
+
+   1. There is NO ACTIVE PLAN. "Against the plan" was the wrong question —
+      activePlan == nil is a first-class state (CLAUDE.md), so §02 is the
+      TRAIN tab's own shape: Current / Calendar / History, this week, day
+      rows, total. Nothing is measured against a prescription that does
+      not exist.
+   2. §01 is the WORKOUT SHEET, not a summary card: the big three, the
+      structure as written, splits with HR, the conditions strip, and the
+      log notes underneath.
+   3. Tuesday is FOUR sessions. The fixture never had a double, let alone
+      a triple-plus, so nothing in v2 could say "14.68 mi across 4".
+   ------------------------------------------------------------------- */
+.seg { display: flex; border: 1px solid var(--rule); border-radius: var(--radius); overflow: hidden; }
+.seg button { font-family: var(--font-label); font-size: 10px; font-weight: 600; letter-spacing: 0.12em;
+  text-transform: uppercase; padding: 7px 14px; border: 0; cursor: pointer; background: transparent; color: var(--ink-3); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+
+/* The big three, workout-sheet style */
+.big3 { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 2px solid var(--rule-strong); border-bottom: 1px solid var(--rule); }
+.big3 div { padding: 16px 20px 16px 0; border-right: 1px solid var(--rule); }
+.big3 div:last-child { border-right: 0; }
+.big3 b { font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: 34px; font-weight: 600;
+  letter-spacing: -0.03em; line-height: 1; display: block; margin-top: 9px; }
+.big3 b i { font-style: normal; font-size: 12px; font-weight: 500; color: var(--ink-3); margin-left: 3px; }
+
+/* The session as prescribed/observed — mono, because it is a machine reading */
+.recipe { margin-top: 22px; border-left: 2px solid var(--session); padding: 2px 0 2px 15px; }
+
+/* Splits with a heart-rate lane under each */
+.sp { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0 10px; margin-top: 22px; border-top: 1px solid var(--rule); }
+@media (max-width: 760px) { .sp { grid-template-columns: repeat(4, 1fr); } }
+.sp > div { padding: 11px 0 0; min-width: 0; }
+.sp b { font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: 14px; font-weight: 600; display: block; padding-bottom: 6px; }
+.sp .bar { display: block; height: 2px; background: var(--rule); }
+.sp .fast .bar { background: var(--ink); }
+.sp .fast b { color: var(--ink); }
+.sp em { font-style: normal; font-family: var(--font-data); font-variant-numeric: tabular-nums;
+  font-size: 10.5px; color: var(--ink-3); display: block; margin-top: 7px; }
+.sp span { font-family: var(--font-label); font-size: 9px; font-weight: 600; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--ink-3); display: block; margin-top: 3px; }
+
+/* Conditions — the dew point is the one that can go red */
+.cond { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px,1fr)); margin-top: 24px;
+  border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+.cond div { padding: 13px 16px 13px 0; border-right: 1px solid var(--rule); }
+.cond div:last-child { border-right: 0; }
+.cond b { font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: 18px; font-weight: 600;
+  display: block; margin-top: 7px; }
+.cond b.hot { color: var(--red-text); }
+.cond b i { font-style: normal; font-size: 10px; font-weight: 500; color: var(--ink-3); margin-left: 2px; }
+
+/* TRAIN — the week as the Train tab draws it */
+.tw { border-bottom: 1px solid var(--rule); }
+.twr { display: grid; grid-template-columns: 62px 1fr 108px 92px 96px; gap: 14px; align-items: baseline;
+  padding: 12px 6px 12px 0; border-bottom: 1px solid var(--rule); }
+.twr--head { padding: 8px 6px 7px 0; }
+.twr--today { border-left: 2px solid var(--red); padding-left: 11px; margin-left: -13px; background: var(--paper-elevated); }
+.twr--key { border-left: 2px solid var(--session); padding-left: 11px; margin-left: -13px; }
+.twr--none { color: var(--ink-3); }
+.twd { font-family: var(--font-label); font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); }
+.twt { font-family: var(--font-display); font-weight: var(--display-weight); text-transform: var(--display-case);
+  letter-spacing: var(--display-track); font-size: 16px; }
+.twn { font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: 15px; font-weight: 600; }
+.twm { font-family: var(--font-label); font-size: 9.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+@media (max-width: 780px) { .twr { grid-template-columns: 54px 1fr 76px; } .twr > :nth-child(n+4) { display: none; } .twr--head { display: none; } }
+
+/* Niggle rows carry the verbatim quote, because the extractor is not trustworthy */
+.ng { padding: 14px 0; border-bottom: 1px solid var(--rule); }
+.ng__top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.ng__n { font-family: var(--font-display); font-weight: var(--display-weight); text-transform: var(--display-case);
+  letter-spacing: var(--display-track); font-size: 17px; }
+.ng__d { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.ng__d span { font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: 10px; color: var(--ink-3);
+  border: 1px solid var(--rule); border-radius: var(--radius); padding: 3px 7px; }
+.ng__d span.on { color: var(--ink); border-color: var(--ink-3); }
+.flag { font-family: var(--font-accent); font-style: italic; font-size: 12.5px; color: var(--ink-3); margin-top: 10px; }
+
+
+/* Week flipper — arrows, a clickable strip, and the arrow keys. A week view
+   you cannot move through is a screenshot. */
+.trainbar { display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  margin-top: 20px; flex-wrap: wrap; }
+.wknav { display: flex; align-items: center; gap: 10px; }
+.wknav__b { font-family: var(--font-data); font-size: 17px; line-height: 1; width: 30px; height: 30px;
+  border: 1px solid var(--rule); border-radius: var(--radius); background: transparent;
+  color: var(--ink); cursor: pointer; }
+.wknav__b:hover:not(:disabled) { border-color: var(--ink); }
+.wknav__b:disabled { color: var(--ink-3); cursor: default; }
+.wknav__l { font-family: var(--font-label); font-size: 11px; font-weight: 600; letter-spacing: 0.12em;
+  text-transform: uppercase; min-width: 132px; text-align: center; }
+.wknav__now { font-family: var(--font-label); font-size: 9.5px; font-weight: 600; letter-spacing: 0.1em;
+  text-transform: uppercase; padding: 6px 10px; border: 1px solid var(--rule); border-radius: var(--radius);
+  background: transparent; color: var(--ink-2); cursor: pointer; }
+.wknav__now:hover { border-color: var(--ink); color: var(--ink); }
+
+.wkstrip { display: flex; align-items: flex-end; gap: 5px; height: 46px; margin-top: 20px;
+  border-bottom: 1px solid var(--rule); padding-bottom: 0; }
+.wkstrip button { flex: 1; background: var(--rule); border: 0; padding: 0; cursor: pointer;
+  min-height: 3px; position: relative; display: block; }
+.wkstrip button:hover { background: var(--ink-3); }
+.wkstrip button[aria-selected="true"] { background: var(--ink); }
+.wkstrip button b { position: absolute; top: -14px; left: 50%; transform: translateX(-50%);
+  font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: 9.5px;
+  font-weight: 600; color: var(--ink-3); }
+.wkstrip button[aria-selected="true"] b { color: var(--ink); }
+
+</style>
+</head>
+<body data-skin="editorial">
+
+<div class="shell">
+
+  <div class="plate">
+    <div class="plate__left">
+      <span class="plate__dot"></span>
+      <span class="eyebrow">Coach · The Athlete</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:18px">
+      <span class="eyebrow">Fri · Aug 28 · live data</span>
+      <div class="skinbar" role="group" aria-label="Skin">
+        <button aria-pressed="true"  onclick="setSkin('editorial',this)">Editorial</button>
+        <button aria-pressed="false" onclick="setSkin('wild',this)">Direction I</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="layout">
+
+  <nav class="rail" aria-label="Contents">
+    <span class="rail__who">Rio Reina</span>
+    <span class="rail__meta">47.9 mi · 8 sessions</span>
+    <span class="rail__flag">No active plan</span>
+    <div class="rail__list">
+      <a class="rail__item" href="#workout" aria-current="true"><i>01</i>The workout</a>
+      <a class="rail__item" href="#train"><i>02</i>Train</a>
+      <a class="rail__item" href="#body"><i>03</i>Niggles &amp; mood</a>
+      <a class="rail__item" href="#load"><i>04</i>Load</a>
+    </div>
+    <div class="rail__act">
+      <button class="btn">Write to Rio</button>
+    </div>
+    <p class="rail__note">Every figure on this page is a row in their log.</p>
+  </nav>
+
+  <div class="main">
+
+  <a class="back" href="#">← The desk</a>
+
+  <header class="masthead">
+    <div>
+      <span class="masthead__plan">Self-coached · no active plan · 306 logged sessions</span>
+      <h1 class="display">Rio Reina</h1>
+      <div class="mood-rule" style="background:var(--mood-positive)"></div>
+    </div>
+  </header>
+
+  <div class="anchors">
+    <div class="anchor">
+      <span class="eyebrow">This week</span>
+      <span class="anchor__v">47.9<span class="anchor__u">mi</span></span>
+      <span class="anchor__m">Mon – Fri · 8 sessions</span>
+    </div>
+    <div class="anchor">
+      <span class="eyebrow">4-week average</span>
+      <span class="anchor__v">68.0<span class="anchor__u">mi</span></span>
+      <span class="anchor__m">Jul 27 – Aug 23</span>
+    </div>
+    <div class="anchor">
+      <span class="eyebrow">Stress load · 7 day</span>
+      <span class="anchor__v">500</span>
+      <span class="anchor__m">595 chronic · weighted minutes</span>
+    </div>
+    <div class="anchor">
+      <span class="eyebrow">Acute : chronic</span>
+      <span class="anchor__v">0.84</span>
+      <span class="anchor__m">Inside 0.80 – 1.30</span>
+    </div>
+  </div>
+
+  <!-- 01 THE WORKOUT — the sheet, not a summary card ----------------- -->
+  <section class="sec" id="workout">
+    <div class="sec__head">
+      <span class="eyebrow"><span class="sec__n">01</span>The workout</span>
+      <span class="sec__note">The sheet as they'd see it, with their own notes under it.</span>
+    </div>
+
+    <div class="latest__top" style="margin-top:22px">
+      <span class="eyebrow">Tue · Aug 25 · 6:32 AM</span>
+      <span class="eyebrow eyebrow--blue">Keyed session · positive</span>
+    </div>
+    <h2 class="display" style="font-size:38px;margin-top:10px">6 × 1K / 600m</h2>
+
+    <div class="big3" style="margin-top:20px">
+      <div><span class="eyebrow">Dist</span><b>6.38<i>mi</i></b></div>
+      <div><span class="eyebrow">Time</span><b>38:26</b></div>
+      <div><span class="eyebrow">Pace</span><b>6:01<i>/mi</i></b></div>
+    </div>
+
+    <div class="recipe">
+      <span class="eyebrow eyebrow--blue">The session</span>
+      <p class="machine" style="margin-top:8px">
+        6 sets of (1K at half-marathon pace, 1 min rest, 600m at 10K pace, 1 min rest).
+      </p>
+      <span class="eyebrow eyebrow--3" style="display:block;margin-top:8px">Effort load 187 · density 73.3% · stress 135</span>
+    </div>
+
+    <div class="sp">
+      <div><b>6:18</b><span class="bar"></span><em>152</em><span>1</span></div>
+      <div class="fast"><b>5:51</b><span class="bar"></span><em>163</em><span>2</span></div>
+      <div class="fast"><b>5:59</b><span class="bar"></span><em>163</em><span>3</span></div>
+      <div><b>6:06</b><span class="bar"></span><em>165</em><span>4</span></div>
+      <div><b>6:08</b><span class="bar"></span><em>167</em><span>5</span></div>
+      <div><b>6:11</b><span class="bar"></span><em>170</em><span>6</span></div>
+      <div class="fast"><b>4:53</b><span class="bar"></span><em>172</em><span>0.38</span></div>
+    </div>
+    <span class="eyebrow eyebrow--3" style="display:block;margin-top:12px">
+      Mile splits · pace above, average HR below · fastest mile 5:51
+    </span>
+
+    <div class="cond">
+      <div><span class="eyebrow">Temp</span><b>77.3<i>°F</i></b></div>
+      <div><span class="eyebrow">Dew point</span><b class="hot">68.5<i>°F</i></b></div>
+      <div><span class="eyebrow">Heat cost</span><b>3.3<i>%</i></b></div>
+      <div><span class="eyebrow">Humidity</span><b>75<i>%</i></b></div>
+      <div><span class="eyebrow">Avg HR</span><b>165<i>bpm</i></b></div>
+    </div>
+
+    <p class="prose" style="margin-top:22px;max-width:70ch">
+      Pace drifted 5:51 → 6:11 across the six reps while heart rate climbed 152 → 172.
+      The dew point sat at 68.5&nbsp;°F, on the hot threshold, and the model charged the
+      session 3.3% for it.
+    </p>
+
+    <div class="memo" style="margin-top:24px;border-left:2px solid var(--rule);padding-left:16px">
+      <span class="eyebrow eyebrow--3" style="display:block;margin-bottom:9px">Training log · in their words</span>
+      <p class="voice">
+        “I completed a challenging interval workout today, doing six sets of alternating 1K
+        at half marathon pace and 600m at 10K pace, with a minute rest between each. Despite
+        missing a split early on, I felt strong and in control, thinking my paces were picking
+        up. The weather was cooler, and I considered it a solid workout, though I noted I need
+        more sleep before these sessions.”
+      </p>
+    </div>
+
+    <p class="prose" style="margin-top:18px;max-width:70ch">
+      The log reads “the weather was cooler.” It was the warmest keyed session of the week,
+      and the only one the heat model charged.
+    </p>
+  </section>
+
+  <!-- 02 TRAIN ------------------------------------------------------- -->
+  <section class="sec" id="train">
+    <div class="sec__head">
+      <span class="eyebrow"><span class="sec__n">02</span>Train</span>
+      <span class="sec__note">No plan on file — so this is what was run, not what was missed.</span>
+    </div>
+
+    <div class="trainbar">
+      <div class="seg" role="group" aria-label="Train mode">
+        <button aria-pressed="true">Current</button>
+        <button aria-pressed="false">Calendar</button>
+        <button aria-pressed="false">History</button>
+      </div>
+      <div class="wknav">
+        <button id="wkPrev" class="wknav__b" aria-label="Previous week">&#8249;</button>
+        <span class="wknav__l" id="wkLabel">Week of Aug 24</span>
+        <button id="wkNext" class="wknav__b" aria-label="Next week">&#8250;</button>
+        <button id="wkNow" class="wknav__now">This week</button>
+      </div>
+    </div>
+
+    <!-- The seven weeks double as the selector. Click a bar to go there. -->
+    <div class="wkstrip" id="wkStrip" role="tablist" aria-label="Weeks"></div>
+
+    <div class="block" id="wkStats"></div>
+
+    <div class="tw" id="wkTable"></div>
+
+    <p class="prose" id="wkRead" style="margin-top:18px;max-width:70ch"></p>
+  </section>
+
+  <!-- 03 NIGGLES & MOOD ---------------------------------------------- -->
+  <section class="sec" id="body">
+    <div class="sec__head">
+      <span class="eyebrow"><span class="sec__n">03</span>Niggles &amp; mood</span>
+      <span class="sec__note">Their words, verbatim. The extractor is not the record.</span>
+    </div>
+
+    <div class="bm">
+      <div class="bm__col">
+        <span class="eyebrow" style="display:block;margin-bottom:12px">Body mentions · 9 in 90 days</span>
+
+        <article class="ng">
+          <div class="ng__top">
+            <span class="ng__n">Left knee</span>
+            <span class="eyebrow eyebrow--red">7 mentions · May 24 → Aug 22</span>
+          </div>
+          <div class="ng__d">
+            <span>May 24</span><span>May 24</span><span>Jul 17</span><span>Jul 18</span>
+            <span class="on">Aug 13</span><span class="on">Aug 21</span><span class="on">Aug 22</span>
+          </div>
+          <p class="voice" style="margin-top:14px">
+            “my left knee felt a little bit tight, which i've been noticing for a couple…”
+          </p>
+          <span class="eyebrow eyebrow--3" style="display:block;margin-top:8px">Aug 13 · the longest-running thing in the log</span>
+          <p class="flag">
+            One of the seven is not a complaint — Aug 21 reads “my knee, which had been a
+            concern, felt good today,” and the extractor filed it as sore. Read the quotes,
+            not the count.
+          </p>
+        </article>
+
+        <article class="ng" style="border-bottom:0">
+          <div class="ng__top">
+            <span class="ng__n">Left ankle</span>
+            <span class="eyebrow">2 mentions · Aug 21, Aug 22</span>
+          </div>
+          <p class="voice" style="margin-top:12px">“my left ankle felt a little stiff”</p>
+          <span class="eyebrow eyebrow--3" style="display:block;margin-top:8px">Aug 21 · not mentioned since</span>
+        </article>
+      </div>
+
+      <div class="bm__col">
+        <span class="eyebrow" style="display:block;margin-bottom:14px">Mood · last 9 logged</span>
+        <div class="moods">
+          <span class="moodcol"><i style="background:var(--mood-tired)"></i><span>20</span></span>
+          <span class="moodcol"><i style="background:var(--mood-neutral)"></i><span>21</span></span>
+          <span class="moodcol"><i style="background:var(--mood-positive)"></i><span>22</span></span>
+          <span class="moodcol"><i style="background:var(--mood-neutral)"></i><span>22</span></span>
+          <span class="moodcol"><i style="background:var(--mood-positive)"></i><span>24</span></span>
+          <span class="moodcol"><i style="background:var(--mood-positive)"></i><span>25</span></span>
+          <span class="moodcol"><i style="background:var(--mood-tired)"></i><span>26</span></span>
+          <span class="moodcol"><i style="background:var(--rule)"></i><span>27</span></span>
+          <span class="moodcol"><i style="background:var(--rule)"></i><span>28</span></span>
+        </div>
+        <div class="mood-key">
+          <b><i style="background:var(--mood-positive)"></i>Positive</b>
+          <b><i style="background:var(--mood-neutral)"></i>Neutral</b>
+          <b><i style="background:var(--mood-tired)"></i>Tired</b>
+          <b><i style="background:var(--rule)"></i>Not logged</b>
+        </div>
+        <p class="prose" style="margin-top:20px">
+          Tired on Aug 20 and Aug 26, either side of a positive stretch. The last two days
+          carry no mood at all — the runs synced, the memo didn't.
+        </p>
+        <p class="prose" style="margin-top:14px">
+          The sick week shows up in the memos before it shows up anywhere else: Aug 20,
+          “first run back after being sick,” then Aug 22, “felt a little sick and not my best.”
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 04 LOAD --------------------------------------------------------- -->
+  <section class="sec" id="load">
+    <div class="sec__head">
+      <span class="eyebrow"><span class="sec__n">04</span>Load</span>
+      <span class="sec__note">Seven weeks of it, real numbers.</span>
+    </div>
+
+    <div class="vol" style="margin-top:24px">
+      <span class="eyebrow">Seven weeks</span>
+      <div class="vol__plot">
+        <span class="vol__bar" style="height:94%"><b>73</b></span>
+        <span class="vol__bar" style="height:78%"><b>60</b></span>
+        <span class="vol__bar" style="height:81%"><b>63</b></span>
+        <span class="vol__bar" style="height:100%"><b>77</b></span>
+        <span class="vol__bar" style="height:92%"><b>71</b></span>
+        <span class="vol__bar" style="height:80%"><b>62</b></span>
+        <span class="vol__bar vol__bar--now" style="height:62%"><b>48</b></span>
+      </div>
+      <p class="prose vol__read">
+        60–77 mi a week since mid-July. This week reads low at 48 because it is Friday,
+        not because the week backed off.
+      </p>
+    </div>
+
+    <div class="load" style="margin-top:28px;border-top:1px solid var(--rule)">
+      <div class="load__cell">
+        <span class="eyebrow">Stress load · 7 day</span>
+        <span class="load__v">500</span>
+        <span class="load__m">Weighted minutes</span>
+      </div>
+      <div class="load__cell">
+        <span class="eyebrow">Chronic · 28 day</span>
+        <span class="load__v">595</span>
+        <span class="load__m">Scaled to a week</span>
+      </div>
+      <div class="load__cell">
+        <span class="eyebrow">Acute : chronic</span>
+        <span class="load__v">0.84</span>
+        <div class="band">
+          <span class="band__safe" style="left:22%;width:46%"></span>
+          <span class="band__tick" style="left:38%"></span>
+          <span class="band__lab" style="left:22%">0.80</span>
+          <span class="band__lab" style="left:62%">1.30</span>
+        </div>
+      </div>
+      <div class="load__cell">
+        <span class="eyebrow">Sessions · 7 day</span>
+        <span class="load__v">8</span>
+        <span class="load__m">1 keyed · 3 recovery doubles</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="foot">
+    <p>Live rows, read 2026-08-28. No plan on file, so nothing here is measured against one.</p>
+  </div>
+
+  </div><!-- /main -->
+  </div><!-- /layout -->
+</div>
+
+<script>
+/* Scroll spy — the rail tracks where you are, so it reads as a contents
+   column rather than a menu you have to keep your place in yourself.
+   Last section whose head has crossed the line wins. */
+(function () {
+  var items = [].slice.call(document.querySelectorAll('.rail__item'));
+  var secs  = items.map(function (a) { return document.getElementById(a.hash.slice(1)); });
+  function spy() {
+    var line = 140, active = 0;
+    secs.forEach(function (el, i) {
+      if (el && el.getBoundingClientRect().top <= line) active = i;
+    });
+    items.forEach(function (a, i) {
+      if (i === active) a.setAttribute('aria-current', 'true');
+      else a.removeAttribute('aria-current');
+    });
+  }
+  addEventListener('scroll', spy, { passive: true });
+  addEventListener('resize', spy);
+  spy();
+})();
+
+
+/* ---- week flipper ------------------------------------------------- */
+var WK_DAYS = [{"d":"2026-07-13","n":1,"mi":6.01,"l":45,"t":"easy","m":null},{"d":"2026-07-14","n":4,"mi":13.02,"l":176,"t":"intervals","m":"positive"},{"d":"2026-07-15","n":1,"mi":7.0,"l":51,"t":"easy","m":null},{"d":"2026-07-16","n":1,"mi":7.0,"l":52,"t":"easy","m":null},{"d":"2026-07-17","n":1,"mi":6.48,"l":49,"t":"easy","m":"struggling"},{"d":"2026-07-18","n":2,"mi":26.98,"l":205,"t":"long_run","m":null},{"d":"2026-07-19","n":1,"mi":6.15,"l":47,"t":"easy","m":null},{"d":"2026-07-20","n":1,"mi":6.81,"l":53,"t":"easy","m":"tired"},{"d":"2026-07-21","n":4,"mi":14.43,"l":158,"t":"threshold","m":"positive"},{"d":"2026-07-22","n":1,"mi":9.76,"l":74,"t":"easy","m":null},{"d":"2026-07-23","n":1,"mi":7.32,"l":55,"t":"easy","m":null},{"d":"2026-07-24","n":2,"mi":8.75,"l":135,"t":"intervals","m":"positive"},{"d":"2026-07-25","n":1,"mi":13.12,"l":99,"t":"long_run","m":null},{"d":"2026-07-27","n":1,"mi":8.01,"l":58,"t":"easy","m":null},{"d":"2026-07-28","n":3,"mi":9.24,"l":132,"t":"threshold","m":"struggling"},{"d":"2026-07-29","n":1,"mi":7.07,"l":52,"t":"easy","m":null},{"d":"2026-07-30","n":1,"mi":9.65,"l":74,"t":"recovery","m":null},{"d":"2026-07-31","n":1,"mi":5.0,"l":37,"t":"easy","m":null},{"d":"2026-08-01","n":1,"mi":17.01,"l":140,"t":"long_run","m":"positive"},{"d":"2026-08-02","n":1,"mi":7.0,"l":51,"t":"easy","m":null},{"d":"2026-08-03","n":2,"mi":11.0,"l":81,"t":"easy","m":null},{"d":"2026-08-04","n":5,"mi":15.68,"l":151,"t":"threshold","m":"tired"},{"d":"2026-08-05","n":2,"mi":10.02,"l":77,"t":"recovery","m":null},{"d":"2026-08-06","n":3,"mi":7.36,"l":110,"t":"threshold","m":"positive"},{"d":"2026-08-07","n":1,"mi":7.0,"l":53,"t":"easy","m":null},{"d":"2026-08-08","n":2,"mi":20.34,"l":195,"t":"long_run","m":"positive"},{"d":"2026-08-09","n":1,"mi":6.02,"l":44,"t":"easy","m":null},{"d":"2026-08-10","n":2,"mi":13.03,"l":94,"t":"easy","m":null},{"d":"2026-08-11","n":3,"mi":10.21,"l":146,"t":"intervals","m":"positive"},{"d":"2026-08-12","n":2,"mi":12.03,"l":91,"t":"easy","m":null},{"d":"2026-08-13","n":2,"mi":13.02,"l":127,"t":"steady","m":"neutral"},{"d":"2026-08-14","n":2,"mi":2.0,"l":13,"t":"easy","m":null},{"d":"2026-08-15","n":1,"mi":4.0,"l":31,"t":"easy","m":null},{"d":"2026-08-16","n":1,"mi":17.13,"l":181,"t":"long_run","m":"struggling"},{"d":"2026-08-17","n":3,"mi":14.03,"l":103,"t":"easy","m":"tired"},{"d":"2026-08-18","n":3,"mi":10.29,"l":130,"t":"intervals","m":"struggling"},{"d":"2026-08-20","n":1,"mi":4.43,"l":32,"t":"easy","m":"tired"},{"d":"2026-08-21","n":2,"mi":14.97,"l":54,"t":"easy","m":"positive"},{"d":"2026-08-22","n":1,"mi":18.01,"l":164,"t":"long_run","m":"neutral"},{"d":"2026-08-24","n":1,"mi":10.01,"l":72,"t":"easy","m":"positive"},{"d":"2026-08-25","n":4,"mi":14.68,"l":201,"t":"intervals","m":"positive"},{"d":"2026-08-26","n":1,"mi":8.22,"l":116,"t":"easy","m":"tired"},{"d":"2026-08-27","n":1,"mi":8.01,"l":60,"t":"easy","m":null},{"d":"2026-08-28","n":1,"mi":7.0,"l":52,"t":"easy","m":null}];
+var TODAY = "2026-08-28";
+var LABEL = { easy:"Easy", recovery:"Recovery", steady:"Steady", intervals:"Intervals",
+              threshold:"Threshold", long_run:"Long run", fartlek:"Fartlek",
+              progression:"Progression", race:"Race", long_wo:"Long run workout" };
+/* Keyed = a session with real quality in it. Mirrors the intent of the
+   key-session ladder; the mockup has no quality_load to score against. */
+var KEYED = { intervals:1, threshold:1, long_run:1, steady:1, race:1, long_wo:1 };
+var DOW = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+var MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+function iso(d){ return d.toISOString().slice(0,10); }
+function parse(s){ var p = s.split("-"); return new Date(Date.UTC(+p[0], +p[1]-1, +p[2])); }
+function mondayOf(s){ var d = parse(s); var w = (d.getUTCDay() + 6) % 7; d.setUTCDate(d.getUTCDate() - w); return d; }
+function fmt(d){ return MON[d.getUTCMonth()] + " " + d.getUTCDate(); }
+
+var byDate = {};
+WK_DAYS.forEach(function (r) { byDate[r.d] = r; });
+
+/* Every Monday from the first logged week to the week containing today. */
+var WEEKS = (function () {
+  var start = mondayOf(WK_DAYS[0].d), end = mondayOf(TODAY), out = [], c = new Date(start);
+  while (c <= end) { out.push(iso(c)); c.setUTCDate(c.getUTCDate() + 7); }
+  return out;
+})();
+var cur = WEEKS.length - 1;
+/* ?week=YYYY-MM-DD opens on that week, so a link can point at one. */
+(function () {
+  var q = /[?&]week=(\d{4}-\d{2}-\d{2})/.exec(location.search);
+  if (!q) return;
+  var i = WEEKS.indexOf(q[1]);
+  if (i >= 0) cur = i;
+})();
+
+function weekRows(monIso) {
+  var m = parse(monIso), rows = [];
+  for (var i = 0; i < 7; i++) {
+    var d = new Date(m); d.setUTCDate(d.getUTCDate() + i);
+    var k = iso(d);
+    rows.push({ iso: k, dow: DOW[i], label: DOW[i] + " " + d.getUTCDate(),
+                row: byDate[k] || null, future: k > TODAY, today: k === TODAY });
+  }
+  return rows;
+}
+function weekTotals(rows) {
+  var mi = 0, load = 0, n = 0, quality = 0, longest = 0, longestDay = "", days = 0;
+  rows.forEach(function (r) {
+    if (!r.row) return;
+    mi += r.row.mi; load += r.row.l; n += r.row.n; days++;
+    if (KEYED[r.row.t]) quality++;
+    if (r.row.mi > longest) { longest = r.row.mi; longestDay = r.dow; }
+  });
+  return { mi: mi, load: load, n: n, quality: quality, longest: longest, longestDay: longestDay, days: days };
+}
+
+function render() {
+  var monIso = WEEKS[cur], rows = weekRows(monIso), t = weekTotals(rows);
+  var m = parse(monIso), sun = new Date(m); sun.setUTCDate(sun.getUTCDate() + 6);
+  var isNow = cur === WEEKS.length - 1;
+  var elapsed = rows.filter(function (r) { return !r.future; }).length;
+
+  document.getElementById("wkLabel").textContent = "Week of " + fmt(m);
+  document.getElementById("wkPrev").disabled = cur === 0;
+  document.getElementById("wkNext").disabled = isNow;
+  document.getElementById("wkNow").style.visibility = isNow ? "hidden" : "visible";
+
+  document.getElementById("wkStats").innerHTML =
+    cell("Miles", t.mi.toFixed(1), "", t.n + " sessions · " + t.days + " days") +
+    cell("Longest", t.longest ? t.longest.toFixed(1) : "None", t.longest ? "mi" : "",
+         t.longest ? t.longestDay : "No runs this week") +
+    cell("Quality", String(t.quality), "", t.quality ? "Keyed sessions" : "Nothing keyed") +
+    cell("Load", String(Math.round(t.load)), "", "Weighted minutes");
+
+  var html = '<div class="twr twr--head"><span class="eyebrow">Day</span>' +
+    '<span class="eyebrow">Session</span><span class="eyebrow">Miles</span>' +
+    '<span class="eyebrow">Load</span><span class="eyebrow">Mood</span></div>';
+
+  rows.forEach(function (r) {
+    var cls = "twr";
+    if (r.today) cls += " twr--today";
+    else if (r.row && KEYED[r.row.t]) cls += " twr--key";
+    if (!r.row) cls += " twr--none";
+
+    var title, sub = "", mi = "", load = "", mood = "";
+    if (r.row) {
+      title = LABEL[r.row.t] || r.row.t;
+      if (r.row.n > 1) sub = '<span class="log__sub">' + r.row.n + " sessions</span>";
+      mi = '<span class="twn">' + r.row.mi.toFixed(2) + "</span>";
+      load = '<span class="twn">' + Math.round(r.row.l) + "</span>";
+      mood = r.row.m
+        ? '<span class="twm" style="color:var(--mood-' + r.row.m + ')">' + r.row.m + "</span>"
+        : '<span class="twm twr--none">Not logged</span>';
+    } else {
+      /* A day with no row is not a zero. Before today it is rest; after it,
+         it simply has not happened. */
+      title = r.future ? "To come" : "Rest";
+    }
+
+    html += '<div class="' + cls + '"><span class="twd">' + r.label + "</span>" +
+      "<span>" + '<span class="twt"' + (r.row ? "" : ' style="color:var(--ink-3)"') + ">" + title + "</span>" + sub + "</span>" +
+      "<span>" + mi + "</span><span>" + load + "</span><span>" + mood + "</span></div>";
+  });
+
+  html += '<div class="twr" style="border-bottom:0"><span class="twd">Total</span><span></span>' +
+    '<span class="twn">' + t.mi.toFixed(2) + '</span><span class="twn">' + Math.round(t.load) +
+    "</span><span></span></div>";
+  document.getElementById("wkTable").innerHTML = html;
+
+  var read = "";
+  if (isNow) {
+    read = "Day " + elapsed + " of 7. " + t.mi.toFixed(1) + " mi so far across " + t.n +
+      " sessions — the week reads low against the others because it is not finished.";
+  } else {
+    read = t.mi.toFixed(1) + " mi across " + t.n + " sessions, " + t.quality +
+      (t.quality === 1 ? " keyed session." : " keyed sessions.");
+  }
+  var doubles = rows.filter(function (r) { return r.row && r.row.n > 1; });
+  if (doubles.length) {
+    read += " " + doubles.length + (doubles.length === 1 ? " day was" : " days were") +
+      " more than one run — " + doubles.map(function (r) { return r.dow + " ×" + r.row.n; }).join(", ") + ".";
+  }
+  var moods = rows.filter(function (r) { return r.row && r.row.m; }).length;
+  read += " Mood logged on " + moods + " of " + t.days + " running days.";
+  document.getElementById("wkRead").textContent = read;
+
+  [].forEach.call(document.querySelectorAll("#wkStrip button"), function (b, i) {
+    b.setAttribute("aria-selected", String(i === cur));
+  });
+}
+function cell(label, v, unit, meta) {
+  return '<div class="block__c"><span class="eyebrow">' + label + '</span>' +
+    '<span class="block__v">' + v + (unit ? '<span class="anchor__u">' + unit + "</span>" : "") + "</span>" +
+    '<span class="block__m">' + meta + "</span></div>";
+}
+
+(function initStrip() {
+  var strip = document.getElementById("wkStrip");
+  var totals = WEEKS.map(function (w) { return weekTotals(weekRows(w)).mi; });
+  var max = Math.max.apply(null, totals) || 1;
+  strip.innerHTML = WEEKS.map(function (w, i) {
+    var m = parse(w);
+    return '<button role="tab" aria-selected="false" style="height:' +
+      Math.max(4, (totals[i] / max) * 100) + '%" title="Week of ' + fmt(m) + ' · ' +
+      totals[i].toFixed(1) + ' mi"><b>' + Math.round(totals[i]) + "</b></button>";
+  }).join("");
+  [].forEach.call(strip.querySelectorAll("button"), function (b, i) {
+    b.addEventListener("click", function () { cur = i; render(); syncUrl(); });
+  });
+})();
+
+function syncUrl() {
+  if (!history.replaceState) return;
+  var u = new URL(location.href);
+  if (cur === WEEKS.length - 1) u.searchParams.delete("week");
+  else u.searchParams.set("week", WEEKS[cur]);
+  history.replaceState(null, "", u);
+}
+document.getElementById("wkPrev").addEventListener("click", function () { if (cur > 0) { cur--; render(); syncUrl(); } });
+document.getElementById("wkNext").addEventListener("click", function () { if (cur < WEEKS.length - 1) { cur++; render(); syncUrl(); } });
+document.getElementById("wkNow").addEventListener("click", function () { cur = WEEKS.length - 1; render(); syncUrl(); });
+document.addEventListener("keydown", function (e) {
+  if (e.target && /^(INPUT|TEXTAREA)$/.test(e.target.tagName)) return;
+  if (e.key === "ArrowLeft" && cur > 0) { cur--; render(); syncUrl(); }
+  if (e.key === "ArrowRight" && cur < WEEKS.length - 1) { cur++; render(); syncUrl(); }
+});
+render();
+
+function setSkin(skin, btn) {
+  document.body.dataset.skin = skin;
+  btn.parentElement.querySelectorAll('button').forEach(function (b) {
+    b.setAttribute('aria-pressed', String(b === btn));
+  });
+}
+</script>
+</body>
+</html>

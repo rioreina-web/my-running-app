@@ -1,0 +1,28 @@
+{
+  // ── Deno, scoped ────────────────────────────────────────────────────────
+  // supabase/functions/** is Deno; web/ is Node/Next 16. Enabling Deno
+  // globally breaks the web project's TS resolution, and leaving it off makes
+  // VS Code flag every `https://esm.sh/...` import in an edge function as an
+  // error. enablePaths is the only correct setting here.
+  "deno.enable": false,
+  "deno.enablePaths": ["supabase/functions"],
+  "deno.lint": true,
+
+  // ── No repo-wide autoformat ─────────────────────────────────────────────
+  // Deliberately absent: "editor.formatOnSave": true at the root. The long
+  // rationale comment blocks in Swift and the edge functions are hand-wrapped
+  // and a repo-wide formatter churns them. Opt in per folder instead.
+
+  "search.exclude": {
+    "**/node_modules": true,
+    "_to_delete/**": true,
+    ".claude/worktrees/**": true,
+    ".perf-worktree/**": true,
+    "**/DerivedData/**": true
+  },
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/DerivedData/**": true,
+    "_to_delete/**": true
+  }
+}

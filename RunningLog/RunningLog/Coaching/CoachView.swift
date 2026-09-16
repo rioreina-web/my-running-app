@@ -107,11 +107,30 @@ struct CoachView: View {
     var body: some View {
         mainContent
             .background(DripBackground().ignoresSafeArea())
+            // THE COMPOSER MUST STAY IN A SAFE-AREA INSET. Do not "simplify"
+            // this into `VStack { mainContent; ChatInputBar }` — that was
+            // tried on 2026-08-19 and SPUN THE APP AT 97% CPU. `ChatInputBar`
+            // holds a `TextField(axis: .vertical)` with `lineLimit(1...5)`,
+            // so it grows its own height; put it in a VStack opposite a
+            // ScrollView and the two negotiate height forever. It hung the
+            // moment a typed question wrapped to a second line. A safe-area
+            // inset is measured once and handed to the content, so it never
+            // enters that negotiation.
+            //
+            // The `.padding(.bottom, 56)` is what clears `DripTabBar`.
+            // `MainTabView` puts the bar in a `.safeAreaInset` on the ZStack,
+            // and that inset does NOT reach inside each tab's
+            // `NavigationStack` — which is why every other tab pads for the
+            // bar by hand (Trends 100pt, Sheet 40pt). Without it the composer
+            // draws UNDER the bar's opaque paper: you see the top edge of the
+            // field and half the send button, and cannot type. 56pt is the
+            // bar's own height (1pt rule + 10 top + ~33pt item + 12 bottom).
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 ChatInputBar(
                     text: $chat.inputText,
                     isLoading: chat.isLoading,
                     isFocused: $isInputFocused,
+                    placeholder: "Ask anything…",
                     onSend: {
                         chat.sendMessage(
                             workoutSummary: buildWorkoutSummary(),
@@ -120,6 +139,7 @@ struct CoachView: View {
                         )
                     }
                 )
+                .padding(.bottom, 56)
             }
             .navigationTitle("")
             .toolbar { toolbarContent }
@@ -185,8 +205,13 @@ struct CoachView: View {
     private var messagesListView: some View {
         LazyVStack(spacing: 16) {
             if chat.messages.isEmpty, !chat.isLoading {
-                WelcomeCard()
-                    .padding(.top, 40)
+                // Deliberately bare. `WelcomeCard` used to sit here with three
+                // pre-written questions and two navigation cards — removed
+                // 2026-08-19, because a canned rail teaches the athlete that
+                // only the listed questions work, which is the opposite of
+                // what this surface is for. It stays in the repo, unlinked.
+                askEmptyState
+                    .padding(.top, 48)
             }
 
             ForEach(chat.messages) { message in
@@ -207,6 +232,25 @@ struct CoachView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 20)
+    }
+
+    /// Empty state: what the surface is, in one line, and nothing to tap.
+    private var askEmptyState: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("AI INSIGHT")
+                .font(.dripEyebrow(10))
+                .tracking(1.3)
+                .foregroundStyle(Color.drip.coral)
+            Text("Ask anything.")
+                .font(.dripDisplay(24))
+                .foregroundStyle(Color.drip.textPrimary)
+            Text("Training, a session, how the block is going, whether to back off. It reads your own runs — no menu, no fixed list of questions.")
+                .font(.dripBody(14))
+                .lineSpacing(3)
+                .foregroundStyle(Color.drip.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Toolbar Content
@@ -242,12 +286,23 @@ struct CoachView: View {
 
     private var titleView: some View {
         VStack(spacing: 2) {
-            Text("COACH")
+            // Named AI INSIGHT, not COACH — 2026-08-19. "Coach" is a person
+            // in this product (the coach portal, a real human editing a real
+            // athlete's plan); using the same word for the model blurs the
+            // one distinction the app is careful about everywhere else.
+            Text("AI INSIGHT")
                 .font(.dripCaption(12))
                 .foregroundStyle(Color.drip.textSecondary)
                 .tracking(2)
 
-            if chat.rateLimit.remaining < 999 {
+            // Only when a real quota is in force. The old test was
+            // `remaining < 999`, which fires under `UNBOUND_USAGE`
+            // (coaching-agent/index.ts): the server hands back 999 and
+            // reports `remaining - 1` = 998, while `limit` sits at its
+            // default 5 because no quota response ever set it — so the
+            // header read "998/5 today". Comparing the two makes the line
+            // appear only once the server has sent a coherent pair.
+            if chat.rateLimit.remaining < chat.rateLimit.limit {
                 Text("\(chat.rateLimit.remaining)/\(chat.rateLimit.limit) today")
                     .font(.dripCaption(9))
                     .foregroundStyle(chat.rateLimit.remaining <= 1 ? Color.drip.coral : Color.drip.textTertiary)

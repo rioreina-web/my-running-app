@@ -22,3 +22,24 @@ supabase/.temp/
 
 # Claude Code local overrides
 .claude/settings.local.json
+
+# Local junk / editor + tooling artifacts
+__pycache__/
+.perf-worktree/
+.~lock.*#
+supabase/functions/_tmp_*.ts
+.fuse_hidden*
+
+# Superseded files staged for deletion — never tracked.
+_to_delete/
+
+# Keys, certs, signing material — never tracked (2026-09-03 audit)
+*.pem
+*.p8
+*.p12
+*.mobileprovision
+*.keystore
+**/signing_keys.json
+supabase/.branches/
+# Dashboard SQL snippets bypass the migration ledger (hard rule #9); keep them local.
+supabase/snippets/

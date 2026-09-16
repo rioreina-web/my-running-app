@@ -31,6 +31,8 @@ struct AdaptivePlanBuilderSheet: View {
     @State private var qualityOffsets: [Int] = [0, 3] // days after anchor
     @State private var longRunOffset: Int = 5
     @State private var weeklyMileage: Int = 35
+    @State private var restDaysPerWeek: Int = 1
+    @State private var xtDaysPerWeek: Int = 0
 
     // Step 3
     @State private var isActivating = false
@@ -165,6 +167,32 @@ struct AdaptivePlanBuilderSheet: View {
                         .frame(width: 60, alignment: .trailing)
                 }
             }
+
+            Section(header: BuilderSectionHeader("REST DAYS PER WEEK")) {
+                HStack(spacing: 8) {
+                    ForEach(0...3, id: \.self) { n in
+                        QualityCountButton(count: n, selected: restDaysPerWeek == n) {
+                            restDaysPerWeek = n
+                        }
+                    }
+                }
+                Text("Full rest — no running or cross-training.")
+                    .font(.dripCaption(11))
+                    .foregroundStyle(Color.drip.textTertiary)
+            }
+
+            Section(header: BuilderSectionHeader("CROSS-TRAINING DAYS PER WEEK")) {
+                HStack(spacing: 8) {
+                    ForEach(0...3, id: \.self) { n in
+                        QualityCountButton(count: n, selected: xtDaysPerWeek == n) {
+                            xtDaysPerWeek = n
+                        }
+                    }
+                }
+                Text("Bike, swim, elliptical — low-impact aerobic work instead of a run.")
+                    .font(.dripCaption(11))
+                    .foregroundStyle(Color.drip.textTertiary)
+            }
         }
         .padding(.horizontal, 20)
     }
@@ -198,6 +226,8 @@ struct AdaptivePlanBuilderSheet: View {
                 summaryRow(label: "Training weeks", value: "\(weeksUntilRace)")
                 summaryRow(label: "Quality days", value: "\(qualityCount) per week")
                 summaryRow(label: "Weekly mileage", value: "\(weeklyMileage) mi")
+                if restDaysPerWeek > 0 { summaryRow(label: "Rest days", value: "\(restDaysPerWeek) per week") }
+                if xtDaysPerWeek > 0 { summaryRow(label: "Cross-training", value: "\(xtDaysPerWeek) per week") }
                 if !goalTimeText.isEmpty { summaryRow(label: "Goal time", value: goalTimeText) }
             }
             .padding(16)
@@ -278,8 +308,14 @@ struct AdaptivePlanBuilderSheet: View {
 
     /// Generate the preview week — rotates the qualityOffsets pattern to start
     /// at anchorDay. Long run is placed at longRunOffset days after anchor.
+    /// Rest and cross-training days are carved out of the remaining days,
+    /// spread evenly across the week — mirrors `pickEvenlySpread` server-side.
     private var previewWeek: [PreviewDay] {
         let anchorIdx = anchorDay.index  // 0=Mon..6=Sun
+        let nonSpecialOffsets = (0..<7).filter { !qualityOffsets.contains($0) && $0 != longRunOffset }
+        let restOffsets = Set(Self.pickEvenlySpread(nonSpecialOffsets, restDaysPerWeek))
+        let xtOffsets = Set(Self.pickEvenlySpread(nonSpecialOffsets.filter { !restOffsets.contains($0) }, xtDaysPerWeek))
+
         var days: [PreviewDay] = []
         for i in 0..<7 {
             let weekday = Weekday.allCases[(anchorIdx + i) % 7]
@@ -291,8 +327,10 @@ struct AdaptivePlanBuilderSheet: View {
                 kind = .longRun
             } else if i == longRunOffset && qualityOffsets.contains(longRunOffset) {
                 kind = .qualityAndLong
-            } else if i == lastQualityOffset() + 1 {
-                kind = .recovery
+            } else if restOffsets.contains(i) {
+                kind = .rest
+            } else if xtOffsets.contains(i) {
+                kind = .crossTrain
             } else {
                 kind = .easy
             }
@@ -301,8 +339,16 @@ struct AdaptivePlanBuilderSheet: View {
         return days
     }
 
-    private func lastQualityOffset() -> Int {
-        qualityOffsets.max() ?? 0
+    /// Pick `count` entries spread evenly across `days`, in order, without repeats.
+    static func pickEvenlySpread(_ days: [Int], _ count: Int) -> [Int] {
+        guard count > 0, !days.isEmpty else { return [] }
+        let n = min(count, days.count)
+        var picked: [Int] = []
+        for i in 0..<n {
+            let d = days[(i * days.count) / n]
+            if !picked.contains(d) { picked.append(d) }
+        }
+        return picked
     }
 
     private func activate() async {
@@ -337,6 +383,8 @@ struct AdaptivePlanBuilderSheet: View {
         Long run day: \(Weekday.allCases[longRunDayIndex].fullName). \
         Weekly mileage target: \(weeklyMileage) miles. \
         Runs per week: \(qualityCount + 2). \
+        Rest days: \(restDaysPerWeek) per week. \
+        Cross-training days: \(xtDaysPerWeek) per week. \
         \(goalTimeText.isEmpty ? "" : "Goal time: \(goalTimeText). ")\
         Preferred long run day: \(Weekday.allCases[longRunDayIndex].fullName).
         """
@@ -349,7 +397,9 @@ struct AdaptivePlanBuilderSheet: View {
                 startDate: startDate,
                 raceDate: raceDate,
                 goalTimeSeconds: goalTimeSeconds,
-                currentWeeklyMileage: Double(weeklyMileage)
+                currentWeeklyMileage: Double(weeklyMileage),
+                restDaysPerWeek: restDaysPerWeek,
+                crossTrainDaysPerWeek: xtDaysPerWeek
             )
 
             guard let planData = response.planData else {
@@ -619,11 +669,13 @@ enum Weekday: Int, CaseIterable, Identifiable {
 // MARK: - Preview week model
 
 private enum WorkoutKind {
-    case easy, recovery, longRun, quality(label: String), qualityAndLong
+    case easy, recovery, rest, crossTrain, longRun, quality(label: String), qualityAndLong
     var label: String {
         switch self {
         case .easy: "Easy"
         case .recovery: "Recovery"
+        case .rest: "Rest"
+        case .crossTrain: "Cross-Training"
         case .longRun: "Long Run"
         case .quality(let l): l
         case .qualityAndLong: "Long Run + Quality"
@@ -633,6 +685,8 @@ private enum WorkoutKind {
         switch self {
         case .easy: "figure.run"
         case .recovery: "leaf.fill"
+        case .rest: "moon.zzz.fill"
+        case .crossTrain: "figure.pool.swim"
         case .longRun: "figure.walk.motion"
         case .quality, .qualityAndLong: "bolt.fill"
         }
@@ -641,6 +695,8 @@ private enum WorkoutKind {
         switch self {
         case .easy: .green.opacity(0.7)
         case .recovery: .gray
+        case .rest: .gray
+        case .crossTrain: .blue.opacity(0.6)
         case .longRun: .blue
         case .quality, .qualityAndLong: Color.drip.coral
         }

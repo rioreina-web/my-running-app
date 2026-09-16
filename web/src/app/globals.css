@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-@theme inline {
+@theme {
   /* Backgrounds - Warm paper tones */
   --color-bg-base: #F5F3F0;
   --color-bg-card: #FFFFFF;
@@ -12,14 +12,32 @@
   --color-coral-light: #E8764A;
   --color-coral-dark: #B84420;
 
-  /* Mood colors - Muted editorial tones */
+  /* Mood colors - Muted editorial tones (mood ONLY).
+     THE THREE-PALETTE RULE: blue = pace, warm = mood, coral = alert.
+     The three palettes never share hues. Green is mood-only (a "safe
+     zone" band goes neutral gray, never green); coral is alert-only. */
   --color-mood-energized: #2D8A4E;
   --color-mood-positive: #4A9E6B;
   --color-mood-neutral: #9B9590;
   --color-mood-tired: #C4873A;
   --color-mood-struggling: #C45A3A;
   --color-mood-injured: #B83A4A;
-  --color-mood-speed: #6B4A8A;
+
+  /* Pace colors - single-hue blue depth ramp, Easy -> Mile (ten canonical
+     zones). Pace reads as intensity (depth), never a rainbow. Source of
+     truth: RunningLog/Workouts/PaceSpectrum.swift. */
+  --color-pace-easy: #93B9D6;
+  --color-pace-moderate: #74A8CC;
+  --color-pace-steady: #578FC0;
+  --color-pace-mp: #3F7CB5;
+  --color-pace-hmp: #2F66A8;
+  --color-pace-lt: #27549B;
+  --color-pace-10k: #20448B;
+  --color-pace-5k: #1A3679;
+  --color-pace-3k: #142964;
+  --color-pace-mile: #0E1D4E;
+  --color-pace-fast: #0E1D4E; /* fast/Mile end (was --color-mood-speed: #6B4A8A) */
+  --color-pace-easy-text: #5E93BE; /* legibility-darkened Easy for small text */
 
   /* Text - Rich editorial contrast */
   --color-text-primary: #1A1815;
@@ -33,10 +51,15 @@
   --color-danger: #B83A4A;
   --color-warning: #C4873A;
 
-  /* Fonts */
-  --font-display: var(--font-playfair-display), "Georgia", serif;
-  --font-mono: var(--font-jetbrains-mono), "Courier New", monospace;
-  --font-body: var(--font-dm-sans), "Helvetica Neue", sans-serif;
+  /* Fonts — the iOS app's canonical families, self-hosted via next/font/local
+     in app/layout.tsx (the same TTFs as design-system/fonts). Crimson Pro
+     (display serif), PT Serif (body + italic quotes). The mono stack matches
+     design-system/colors_and_type.css exactly: system monospace for uppercase
+     labels, eyebrows, and tabular stats (SF Mono on Apple, ui-monospace
+     elsewhere). */
+  --font-display: var(--font-crimson-pro), "Georgia", serif;
+  --font-mono: ui-monospace, "SF Mono", "SFMono-Regular", "JetBrains Mono", Menlo, "Consolas", monospace;
+  --font-body: var(--font-pt-serif), "Georgia", serif;
 }
 
 body {
@@ -60,9 +83,9 @@ body {
   background: var(--color-text-tertiary);
 }
 
-/* Editorial display rules — Playfair leans visually heavier than DM Sans
-   at the same size, so headlines get a -0.01em tracking nudge and a tuned
-   line-height so they sit alongside body copy without dominating. */
+/* Editorial display rules — Crimson Pro headlines get a -0.01em tracking
+   nudge and a tuned line-height so they sit alongside PT Serif body copy
+   without dominating. */
 .font-display {
   letter-spacing: -0.01em;
   line-height: 1.1;
@@ -84,4 +107,143 @@ body {
   color: var(--color-text-secondary);
   border-left: 2px solid var(--color-divider);
   padding-left: 0.875rem;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   DIRECTION I · the locked system
+   design-system/colors_and_type.css, and the `wild` branch of
+   RunningLog/App/DripTheme.swift. White stock, one red, four type
+   roles, cards are rules rather than boxes.
+
+   SCOPED ON PURPOSE. Only a [data-skin="wild"] subtree resolves these.
+   The @theme block above is still what every other surface renders,
+   so repainting the coach portal cannot repaint Log, Trends, or Plan.
+   DripTheme.swift makes the same call and says why: going global is
+   "a separate, deliberate pass — it repaints all six tabs at once."
+   ═══════════════════════════════════════════════════════════════════ */
+[data-skin="wild"] {
+  /* Surfaces — white page, hairlines do the work */
+  --color-bg-base:     #FFFFFF;
+  --color-bg-card:     #FFFFFF;
+  --color-bg-elevated: #FAFAFA;
+  --color-bg-calendar: #F2F2F2;
+  --paper-deep:        #F2F2F2;
+  --rule:              #EBEBEB;
+  --rule-strong:       #111111;
+
+  /* Ink. ink-3 is hairlines and disabled ONLY — 2.8:1, never text. */
+  --color-text-primary:   #111111;
+  --color-text-secondary: #6B6B6B;
+  --color-text-tertiary:  #9A9A9A;
+  --color-divider:        #EBEBEB;
+  --color-divider-soft:   #F4F4F4;
+
+  /* One red. It points; it never fills a large surface. */
+  --color-coral:       #EE2B24;
+  --color-coral-light: #F1524C;
+  --color-coral-dark:  #B81810;
+  --red:               #EE2B24;
+  --red-text:          #D31F19;
+  --red-wash:          rgba(238, 43, 36, 0.10);
+
+  /* Names a keyed session. Text only, never a fill, never a chip. */
+  --session: #1F4FA8;
+
+  /* Mood ramp — green good, grey nothing, orange tired, two reds.
+     Always type or a rule, never a bare swatch. */
+  --color-mood-energized:  #12703A;
+  --color-mood-positive:   #1F7A41;
+  --color-mood-neutral:    #6B6B6B;
+  --color-mood-tired:      #A8560A;
+  --color-mood-struggling: #B3261E;
+  --color-mood-injured:    #8E1219;
+  --color-success: #1F7A41;
+  --color-danger:  #B3261E;
+  --color-warning: #A8560A;
+
+  /* Four roles, one face each. Never introduce a fifth family.
+     Weights match WildFace in DripTheme.swift exactly. */
+  --font-display: var(--font-instrument-sans), "Helvetica Neue", Arial, sans-serif;
+  --font-label:   var(--font-schibsted), "Helvetica Neue", Arial, sans-serif;
+  --font-prose:   var(--font-crimson-pro), Georgia, serif;
+  --font-data:    var(--font-inter), "Helvetica Neue", Arial, sans-serif;
+  --font-mono:    var(--font-jetbrains), ui-monospace, Menlo, monospace;
+  --font-body:    var(--font-inter), "Helvetica Neue", Arial, sans-serif;
+  /* The dek, and only the dek. The one serif in the interface. */
+  --font-accent:  "Times New Roman", Times, serif;
+
+  background: var(--color-bg-base);
+  color: var(--color-text-primary);
+  font-family: var(--font-body);
+}
+
+/* Cards are rules, not boxes: no radius, no shadow, no tint. */
+[data-skin="wild"] .rounded-lg,
+[data-skin="wild"] .rounded-xl,
+[data-skin="wild"] .rounded-md { border-radius: 0; }
+[data-skin="wild"] .shadow-sm,
+[data-skin="wild"] .shadow,
+[data-skin="wild"] .shadow-md { box-shadow: none; }
+
+/* Direction I type roles. Class names mirror colors_and_type.css so a
+   callsite reads the same on both platforms. */
+[data-skin="wild"] .drip-eyebrow {
+  font-family: var(--font-label);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+[data-skin="wild"] .drip-eyebrow--red { color: var(--red-text); }
+
+[data-skin="wild"] .drip-display {
+  font-family: var(--font-display);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: var(--color-text-primary);
+}
+/* Entry titles — sentence case, not uppercase. */
+[data-skin="wild"] .drip-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+  color: var(--color-text-primary);
+}
+[data-skin="wild"] .drip-stat {
+  font-family: var(--font-data);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  color: var(--color-text-primary);
+}
+[data-skin="wild"] .drip-prose {
+  font-family: var(--font-prose);
+  font-weight: 400;
+  color: var(--color-text-primary);
+  text-wrap: pretty;
+}
+/* Italic mono is the athlete, verbatim. */
+[data-skin="wild"] .drip-voice {
+  font-family: var(--font-mono);
+  font-style: italic;
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
+}
+/* Roman mono is the machine. Never italic — that is the whole tell. */
+[data-skin="wild"] .drip-ai {
+  font-family: var(--font-mono);
+  font-style: normal;
+  letter-spacing: -0.005em;
+  color: var(--color-text-primary);
+}
+/* The dek — one line, italic Times, and this is its only role. */
+[data-skin="wild"] .drip-dek {
+  font-family: var(--font-accent);
+  font-style: italic;
+  color: var(--color-text-secondary);
 }

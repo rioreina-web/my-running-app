@@ -1,0 +1,30 @@
+diff --git a/RunningLog/RunningLog/Workouts/VoiceLogView.swift b/RunningLog/RunningLog/Workouts/VoiceLogView.swift
+index c0046cd..b187a17 100644
+--- a/RunningLog/RunningLog/Workouts/VoiceLogView.swift
++++ b/RunningLog/RunningLog/Workouts/VoiceLogView.swift
+@@ -644,6 +658,25 @@ struct VoiceLogView: View {
+                 Spacer()
+             }
+             .padding(.vertical, 32)
++        } else if viewModel.historyLogs.isEmpty && viewModel.loadFailed {
++            // A load error — NOT genuinely empty. Never show "No entries yet"
++            // here: it reads as data loss when the rows are safe on the server.
++            VStack(alignment: .leading, spacing: 10) {
++                Text("Couldn't load your journal. Your entries are safe — this is a connection hiccup.")
++                    .font(.system(size: 14, design: .serif).italic())
++                    .foregroundStyle(Color.drip.textSecondary)
++                Button {
++                    Task { await viewModel.loadHistory() }
++                } label: {
++                    Text("Tap to retry")
++                        .font(.dripLabel(13))
++                        .foregroundStyle(Color.drip.coral)
++                }
++                .buttonStyle(.plain)
++            }
++            .frame(maxWidth: .infinity, alignment: .leading)
++            .padding(.horizontal, 24)
++            .padding(.vertical, 24)
+         } else if viewModel.historyLogs.isEmpty {
+             Text("No entries yet — record or type to start your journal.")
+                 .font(.system(size: 14, design: .serif).italic())

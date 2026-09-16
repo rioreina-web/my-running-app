@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect, notFound } from "next/navigation";
 import { PlanBuilderClient } from "@/components/coach/plan-builder-client";
+import { fetchPreviewAthletes } from "@/lib/coach/preview-athletes";
 
 export default async function EditPlanBuilderPage({
   params,
@@ -38,11 +39,14 @@ export default async function EditPlanBuilderPage({
     .eq("coach_id", coachProfile.id)
     .order("use_count", { ascending: false });
 
+  const previewAthletes = await fetchPreviewAthletes(supabase, coachProfile.id);
+
   return (
     <PlanBuilderClient
       coachId={coachProfile.id}
       workoutTemplates={workoutTemplates ?? []}
       existingPlan={plan}
+      previewAthletes={previewAthletes}
     />
   );
 }

@@ -1,0 +1,26 @@
+{
+  "id": "002-prediction-range-only",
+  "prompt_name": "daily-read.v4",
+  "description": "PLAN_MODE with a marathon goal and a fitness prediction RANGE in the state (3:08–3:14, HIGH). If the Read references predicted race time, it MUST use the range — never a single seconds- or minute-precision finish time (e.g. '3:11:30', '3:11', 'projected 3:10:45'). A bare point estimate is a hard failure (rule #7).",
+  "vars": {},
+  "input": "## Coaching mode\nPLAN_MODE — the athlete has an uploaded training plan with a goal race. Evaluate execution against the plan. Prescriptive language is allowed.\n\n## Goal race\nMarathon plan · target: marathon · goal time: 3:16:00 · race date: 2026-10-11\n\n=== ATHLETE STATE ===\nLevel: advanced\n\nTraining Load (7d): 52 mi, 6 runs (2 hard, 4 easy)\n28d avg: 49 mpw\nVolume × Intensity load (7d): 96 weighted-min · 28d: 388\nTime in zone (7d): easy 70% · moderate 6% · threshold 16% · hard 8% (polarized)\n\nPredicted race times (quote the RANGE, never a single time):\n  5K: 19:10–19:34\n  10K: 39:50–40:40\n  Half Marathon: 1:28:30–1:30:10\n  Marathon: 3:08:00–3:14:00\n  Confidence: HIGH (7 workouts)\nFitness trend: building\n\nRecent quality sessions (did they land?):\n  2026-06-09 interval — 5 reps [5:18, 5:20, 5:19, 5:17, 5:15] · negative split · HR drift +2.1%\n\nRecent runs (trust user notes + work pace over avg pace):\n  2026-06-09 5K-reps 6.6mi work @ 5:18/mi\n  2026-06-07 MP 8.0mi work @ 7:24/mi\n\n## Citable workouts (cite by the bracketed id ONLY)\n- [33333333-3333-3333-3333-333333333333] 2026-06-09 · 6.6mi (62m) ★quality\n- [44444444-4444-4444-4444-444444444444] 2026-06-07 · 8.0mi (61m) ★quality\n\nGenerate today's Read for this athlete.",
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": [
+      "headline",
+      "paragraph",
+      "sources",
+      "confidence"
+    ],
+    "forbidden_patterns": [
+      "(?i)(projected|predicted|estimat[a-z]*|finish[a-z]*|will run)[^.]{0,25}(?<![–\\-])\\b[23]:[0-5][0-9]:[0-5][0-9]\\b(?!\\s*[–\\-])",
+      "(?<![–\\-])\\b3:1[0-3]\\b(?!\\s*[–\\-])"
+    ],
+    "required_patterns": [
+      "[0-9]:[0-9]{2}[–-][0-9]"
+    ]
+  },
+  "recorded_response": "```json\n{\n  \"headline\": \"Fitness is building, ahead of plan.\",\n  \"paragraph\": \"Your fitness is clearly building, with recent quality sessions landing strong. The 5K reps on Tuesday showed a negative split across all five intervals, with minimal HR drift {\\\"workout_id\\\":\\\"33333333-3333-3333-3333-333333333333\\\"}. This follows a solid 8-mile MP effort at 7:24/mi on Sunday {\\\"workout_id\\\":\\\"44444444-4444-4444-4444-444444444444\\\"}. Your current marathon fitness is tracking 3:08:00–3:14:00, which is ahead of your 3:16:00 goal. Keep this momentum going into today's planned session.\",\n  \"cant_see\": null,\n  \"sources\": {\n    \"workout_ids\": [\n      \"33333333-3333-3333-3333-333333333333\",\n      \"44444444-4444-4444-4444-444444444444\"\n    ],\n    \"doc_ids\": [],\n    \"memos\": []\n  },\n  \"confidence\": {\n    \"level\": \"HIGH\",\n    \"sub\": \"Strong recent data and clear fitness trend.\"\n  }\n}\n```",
+  "recorded_at": "2026-06-12T22:14:15.561Z",
+  "model": "gemini-2.5-flash"
+}

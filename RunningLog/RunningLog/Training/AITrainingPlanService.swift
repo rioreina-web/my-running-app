@@ -96,7 +96,9 @@ final class AITrainingPlanService {
         raceDate: Date? = nil,
         goalTimeSeconds: Int? = nil,
         currentWeeklyMileage: Double? = nil,
-        assessment: [String: Any]? = nil
+        assessment: [String: Any]? = nil,
+        restDaysPerWeek: Int? = nil,
+        crossTrainDaysPerWeek: Int? = nil
     ) async throws -> AIPlanChatResponse {
         isLoading = true
         error = nil
@@ -130,6 +132,12 @@ final class AITrainingPlanService {
             }
             if let assessment {
                 body["assessment"] = assessment
+            }
+            if let restDaysPerWeek {
+                body["restDaysPerWeek"] = restDaysPerWeek
+            }
+            if let crossTrainDaysPerWeek {
+                body["crossTrainDaysPerWeek"] = crossTrainDaysPerWeek
             }
         }
 

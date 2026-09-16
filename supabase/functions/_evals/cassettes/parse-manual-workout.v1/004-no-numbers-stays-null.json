@@ -1,0 +1,22 @@
+{
+  "id": "004-no-numbers-stays-null",
+  "prompt_name": "parse-manual-workout.v1",
+  "description": "Negative control for hallucinated stats. The note states an intervals session and a feeling but NO distance, duration, or pace. The parser must leave those fields null rather than invent numbers — this protects the training context, since manual runs count in volume/ACWR exactly like synced runs. Type should read as a quality/interval run, not easy.",
+  "vars": {},
+  "input": "\n\n## Athlete's note\n\"hard track session, 5x1000 at about 5k effort, felt strong\"",
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": ["activity", "workout_type", "distance_miles", "duration_minutes", "pace_per_mile"],
+    "required_patterns": [
+      "\"activity\":\\s*\"run\"",
+      "\"distance_miles\":\\s*null",
+      "\"duration_minutes\":\\s*null"
+    ],
+    "forbidden_patterns": [
+      "\"workout_type\":\\s*\"easy\""
+    ]
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-flash"
+}

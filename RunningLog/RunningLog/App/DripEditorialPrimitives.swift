@@ -114,26 +114,33 @@ struct DripStatStrip: View {
     var body: some View {
         HStack(spacing: 0) {
             ForEach(Array(stats.enumerated()), id: \.offset) { idx, stat in
-                VStack(spacing: 6) {
+                // Caption 9pt / .12em, value 20pt / 600, unit inline at 10pt —
+                // the handoff's stat-strip spec. All three were previously set
+                // in `.dripCaption`, which is PT Serif: the numerals in the
+                // one strip whose whole job is numerals were rendering in the
+                // body serif rather than mono. `DripStatStrip` has exactly one
+                // call site (the log detail sheet), so this is a local fix,
+                // not a system-wide retypeset. (2026-08-10)
+                VStack(spacing: 7) {
                     Text(stat.label)
-                        .font(.dripCaption(9))
-                        .tracking(1.2)
+                        .font(.dripEyebrow(9))
+                        .tracking(1.08)          // 9 × 0.12em
                         .foregroundStyle(Color.drip.textTertiary)
                     HStack(alignment: .firstTextBaseline, spacing: 2) {
                         Text(stat.value)
-                            .font(.dripCaption(18))
-                            .fontWeight(.semibold)
+                            .font(.dripStat(20))
                             .monospacedDigit()
                             .foregroundStyle(Color.drip.textPrimary)
                         if let unit = stat.unit {
                             Text(unit)
-                                .font(.dripCaption(10))
+                                .font(.dripEyebrow(10))
                                 .foregroundStyle(Color.drip.textTertiary)
                         }
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
+                .padding(.top, 12)
+                .padding(.bottom, 11)
                 if idx < stats.count - 1 {
                     Rectangle()
                         .fill(Color.drip.divider)
@@ -266,7 +273,7 @@ struct DripSection<Content: View>: View {
 // the older `StatCard` in DesignSystem.swift (icon + value + label, no
 // delta slot, no unit). New surfaces should prefer this one.
 
-enum DripDeltaTone { case positive, negative }
+enum DripDeltaTone { case positive, negative, neutral }
 
 struct DripStatTile: View {
     let label: String
@@ -293,7 +300,7 @@ struct DripStatTile: View {
                 KitEyebrow(
                     text: delta,
                     size: 10, em: 0.10,
-                    color: deltaTone == .positive ? Color.drip.energized : Color.drip.coral
+                    color: deltaColor
                 )
             }
         }
@@ -303,6 +310,14 @@ struct DripStatTile: View {
         .background(Color.drip.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 2)
+    }
+
+    private var deltaColor: Color {
+        switch deltaTone {
+        case .positive: return Color.drip.energized
+        case .negative: return Color.drip.coral
+        case .neutral:  return Color.drip.textSecondary
+        }
     }
 }
 

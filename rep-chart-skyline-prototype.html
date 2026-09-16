@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rep chart — the skyline fix</title>
+<style>
+:root{
+  --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF; --paper-deep:#E8E4DF;
+  --rule:#E8E4E0; --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-wash:rgba(212,89,42,.12);
+  --font-display:"Crimson Pro",Georgia,"Times New Roman",serif;
+  --font-body:"PT Serif",Georgia,"Times New Roman",serif;
+  --font-mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font-body);
+     -webkit-font-smoothing:antialiased;padding:32px 16px 80px}
+.wrap{max-width:460px;margin:0 auto}
+h1{font-family:var(--font-display);font-weight:600;font-size:32px;line-height:1.08;margin:0 0 8px;letter-spacing:-.01em}
+.sub{font-size:13.5px;color:var(--ink-2);margin:0;line-height:1.55}
+.rule{height:1px;background:var(--ink);opacity:.85;margin:20px 0 24px}
+.eyebrow{font-family:var(--font-mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2)}
+.plate{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:16px 14px 13px;margin:0 0 20px}
+.plate.pick{border-color:var(--coral);box-shadow:0 0 0 3px var(--coral-wash)}
+.phead{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:0 0 2px}
+.ptitle{font-family:var(--font-display);font-size:22px;font-weight:600;letter-spacing:-.01em}
+.tag{font-family:var(--font-mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;
+     padding:3px 7px;border-radius:20px;background:var(--paper-deep);color:var(--ink-2);white-space:nowrap}
+.tag.rec{background:var(--coral);color:#fff}
+.note{font-size:13.5px;line-height:1.55;color:var(--ink-2);margin:7px 0 12px}
+.note b{color:var(--ink);font-weight:400;box-shadow:inset 0 -6px 0 var(--coral-wash)}
+.fill{display:flex;align-items:center;gap:8px;margin:11px 0 0;padding-top:10px;border-top:1px solid var(--rule)}
+.fillbar{flex:1;height:7px;border-radius:4px;background:var(--paper-deep);overflow:hidden}
+.fillbar i{display:block;height:100%;border-radius:4px}
+.fillnum{font-family:var(--font-mono);font-size:10px;letter-spacing:.06em;color:var(--ink-2);white-space:nowrap}
+.chartbox{background:var(--paper-elevated);border-radius:8px;padding:10px 6px 4px;overflow:hidden}
+.legendrow{display:flex;align-items:center;justify-content:space-between;padding:0 8px 8px;
+           font-family:var(--font-mono);font-size:9.5px;letter-spacing:.08em;color:var(--ink-3);text-transform:uppercase}
+.ramp{height:5px;border-radius:3px;margin:0 8px 9px;
+      background:linear-gradient(90deg,#93B9D6,#578FC0,#3F7CB5,#27549B,#1A3679,#0E1D4E)}
+svg{display:block;width:100%;height:auto}
+.callout{background:var(--paper-deep);border-radius:10px;padding:13px 15px;margin:0 0 22px;font-size:13.5px;line-height:1.6;color:var(--ink-2)}
+.callout b{color:var(--ink);font-weight:700}
+.callout .lede{display:block;margin-bottom:6px}
+.math{background:var(--card);border:1px solid var(--rule);border-radius:10px;padding:14px 15px;margin:0 0 22px}
+.math .k{font-family:var(--font-mono);font-size:9px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3);display:block;margin-bottom:7px}
+.math table{width:100%;border-collapse:collapse;font-family:var(--font-mono);font-size:11.5px;color:var(--ink-2)}
+.math td{padding:4px 0;border-bottom:1px solid var(--rule)}
+.math tr:last-child td{border-bottom:0}
+.math td:last-child{text-align:right;color:var(--ink)}
+.math .win td:last-child{color:var(--coral)}
+.foot{font-size:12px;color:var(--ink-3);line-height:1.55;margin-top:6px}
+code{font-family:var(--font-mono);font-size:11.5px;background:var(--paper-deep);padding:1px 5px;border-radius:4px;color:var(--ink-2)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="eyebrow">Post Run Drip · workout detail</div>
+  <h1>Yes. And it's<br>one number.</h1>
+  <p class="sub">Strava isn't using a different chart type — it's the same pace bars measured up from an axis floor. The only thing they do differently is choose where that floor sits. Get that one number right and the bars stop being sad.</p>
+  <div class="rule"></div>
+
+  <div class="math">
+    <span class="k">Bar fill · slowest rep, share of plot height</span>
+    <table>
+      <tr><td>Strava — axis 5:00→6:15, 75s span</td><td>63%</td></tr>
+      <tr><td>Post Run Drip — axis 3:00→6:00, 180s span</td><td>23%</td></tr>
+      <tr class="win"><td>Fix — axis 5:00→6:00, 60s span</td><td>63%</td></tr>
+    </table>
+  </div>
+
+  <div class="callout">
+    <span class="lede"><b>The rule they're following:</b> make the axis span about five times the spread of the reps.</span>
+    Your reps spread 12 seconds (5:10 → 5:22). Five times that is 60 seconds, snapped to clean 15-second gridlines: <b>5:00 to 6:00</b>. Bars land at 63–83% of the plot, tops sit clear of the ceiling, and nothing is stretched. Today's axis is 180 seconds — fifteen times the spread — which is the whole bug.
+  </div>
+
+  <!-- A -->
+  <div class="plate">
+    <div class="phead"><span class="ptitle">Today</span><span class="tag">Shipping</span></div>
+    <p class="note">Axis 3:00–6:00 because a 0.01 mi auto-lap reading 3:28/mi sets the floor. Bars fill <b>23%</b>. Recovery laps drawn as 3&nbsp;px nubs chop the rhythm into fragments.</p>
+    <div class="chartbox">
+      <div class="legendrow"><span>Rep avg 5:18</span><span>Span 180 s · 15× the spread</span></div>
+      <div class="ramp"></div>
+      <svg id="chartA" viewBox="0 0 400 196"></svg>
+    </div>
+    <div class="fill"><span class="fillnum">FILL</span><div class="fillbar"><i style="width:23%;background:#3F7CB5"></i></div><span class="fillnum">23%</span></div>
+  </div>
+
+  <!-- E -->
+  <div class="plate pick">
+    <div class="phead"><span class="ptitle">Skyline</span><span class="tag rec">Recommended</span></div>
+    <p class="note">Span = 5× the rep spread, snapped to round gridlines. Work reps only — recoveries become the gap, not a nub. Fat bars, 4&nbsp;px apart, <b>bleeding off the bottom edge with no baseline drawn</b>, so the eye reads the skyline of tops against the gridlines instead of comparing bar areas.</p>
+    <div class="chartbox">
+      <div class="legendrow"><span>Rep avg 5:18</span><span>Span 60 s · 5× the spread</span></div>
+      <div class="ramp"></div>
+      <svg id="chartE" viewBox="0 0 400 196"></svg>
+    </div>
+    <div class="fill"><span class="fillnum">FILL</span><div class="fillbar"><i style="width:63%;background:#1A3679"></i></div><span class="fillnum">63%</span></div>
+  </div>
+
+  <!-- C -->
+  <div class="plate">
+    <div class="phead"><span class="ptitle">Deviation</span><span class="tag">Rejected</span></div>
+    <p class="note">Bar length finally means a real quantity. And it's still wrong for this screen: <b>the better you execute, the smaller your bars get</b>. A perfectly even set — the thing you actually train for — renders as ten stubs around a line. Nobody finishes 10 × 1K and wants to see nothing. Truth isn't the only job the hero chart has.</p>
+    <div class="chartbox">
+      <div class="legendrow"><span>Baseline = rep avg 5:18</span><span>±8 sec</span></div>
+      <div class="ramp"></div>
+      <svg id="chartC" viewBox="0 0 400 206"></svg>
+    </div>
+    <div class="fill"><span class="fillnum">FILL</span><div class="fillbar"><i style="width:88%;background:#27549B"></i></div><span class="fillnum">88%</span></div>
+  </div>
+
+  <div class="callout">
+    <span class="lede"><b>Straight answer on the trade:</b></span>
+    Skyline is a truncated baseline — the sin I flagged last round. I was optimising for the wrong thing. This is the screen a runner opens straight off a hard session, and <b>mass on the page is the reward</b>. Tall bars say the work happened. Strava gets away with the truncation because the baseline is hidden off-frame and the span is bounded at 5× the spread, so the exaggeration can never run away — the reps stay honestly ranked against each other, they just aren't shrunk into the corner. Ship Skyline.
+  </div>
+
+  <p class="foot">System serif stand-in — Crimson Pro / PT Serif aren't loaded here. Blues are the Post Run Drip pace ramp (<code>#93B9D6</code> → <code>#0E1D4E</code>); coral stays punctuation only.</p>
+
+</div>
+
+<script>
+const SW=400, AXIS_W=36, PLOT_H=152, PAD_T=10, LABEL_H=16;
+const PLOT_W=SW-AXIS_W-8;
+
+const REP_PACES=[319,310,315,317,321,318,320,319,322,319];
+const REP_DIST =[.62,.63,.63,.62,.62,.63,.62,.62,.63,.62];
+const REC_DUR  =[67,66,66,67,65,64,65,63,64,66];
+const AVG=REP_PACES.reduce((a,b)=>a+b,0)/REP_PACES.length;   // 318 = 5:18
+
+const laps=[];
+REP_PACES.forEach((p,i)=>{
+  laps.push({kind:'work',pace:p,dist:REP_DIST[i],id:i+1});
+  const d=0.05-(i===3?0.02:0)+(i===2?0.01:0);
+  laps.push({kind:'rec',pace:REC_DUR[i]/d,dist:d,id:'rec'});
+});
+laps.push({kind:'glitch',pace:208,dist:0.01,id:'·'});
+
+const fmt=s=>{s=Math.round(s);return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')};
+const STOPS=['#93B9D6','#74A8CC','#578FC0','#3F7CB5','#2F66A8','#27549B','#20448B','#1A3679','#142964','#0E1D4E'];
+function mix(a,b,t){const h=c=>[1,3,5].map(i=>parseInt(c.substr(i,2),16));const A=h(a),B=h(b);
+  return '#'+A.map((v,i)=>Math.round(v+(B[i]-v)*t).toString(16).padStart(2,'0')).join('')}
+function rampAt(t){t=Math.min(Math.max(t,0),1);const s=t*(STOPS.length-1),i=Math.min(Math.floor(s),STOPS.length-2);
+  return mix(STOPS[i],STOPS[i+1],s-i)}
+const paceColor=p=>rampAt((390-p)/(390-300));
+const el=(n,a)=>{const e=document.createElementNS('http://www.w3.org/2000/svg',n);for(const k in a)e.setAttribute(k,a[k]);return e};
+const MONO='ui-monospace, SF Mono, Menlo, Consolas, monospace';
+
+function axisAndGrid(g,ticks,y,base){
+  ticks.forEach(t=>{
+    g.appendChild(el('line',{x1:AXIS_W,x2:SW-8,y1:y(t),y2:y(t),stroke:'#E8E4E0','stroke-width':0.7}));
+    const tx=el('text',{x:AXIS_W-7,y:y(t)+3,'text-anchor':'end',fill:'#9B9590','font-family':MONO,'font-size':8.5});
+    tx.textContent=fmt(t); g.appendChild(tx);
+  });
+}
+// bar with rounded top, flat bottom
+function topBar(x,y0,w,h,r){
+  r=Math.min(r,w/2,h);
+  return `M${x} ${y0+h} L${x} ${y0+r} Q${x} ${y0} ${x+r} ${y0} L${x+w-r} ${y0} Q${x+w} ${y0} ${x+w} ${y0+r} L${x+w} ${y0+h} Z`;
+}
+
+// ---------- A · today ----------
+(function(){
+  const svg=document.getElementById('chartA'),g=el('g',{});svg.appendChild(g);
+  const aMin=180,aMax=360,step=45,ticks=[];for(let v=aMin;v<=aMax;v+=step)ticks.push(v);
+  const y=p=>PAD_T+(p-aMin)/(aMax-aMin)*PLOT_H, baseY=PAD_T+PLOT_H;
+  axisAndGrid(g,ticks,y);
+  const gap=2,sum=laps.reduce((a,l)=>a+l.dist,0),scale=(PLOT_W-gap*(laps.length-1))/sum;
+  let x=AXIS_W;
+  laps.forEach(l=>{
+    const w=Math.max(l.dist*scale,2), top=Math.min(y(l.pace),baseY-3), h=Math.max(baseY-top,3);
+    g.appendChild(el('path',{d:topBar(x,top,w,h,2.5),
+      fill:l.kind==='work'?paceColor(l.pace):(l.kind==='glitch'?'#0E1D4E':'#9B9590'),
+      'fill-opacity':l.kind==='work'?0.72:0.5}));
+    if(l.kind==='work'){const t=el('text',{x:x+w/2,y:baseY+11,'text-anchor':'middle',fill:'#9B9590','font-family':MONO,'font-size':8});
+      t.textContent=l.id;g.appendChild(t)}
+    x+=w+gap;
+  });
+  g.appendChild(el('line',{x1:AXIS_W,x2:SW-8,y1:baseY,y2:baseY,stroke:'#6B6560','stroke-width':1,'stroke-opacity':.5}));
+  const gx=x-2-2;
+  g.appendChild(el('line',{x1:gx,x2:gx,y1:y(208),y2:baseY,stroke:'#D4592A','stroke-width':1.4}));
+  g.appendChild(el('circle',{cx:gx,cy:y(208),r:2.6,fill:'#D4592A'}));
+  const a1=el('text',{x:SW-10,y:y(208)-7,'text-anchor':'end',fill:'#D4592A','font-family':MONO,'font-size':8,'letter-spacing':'.06em'});
+  a1.textContent='0.01 MI LAP · 3:28 — OWNS THE AXIS';g.appendChild(a1);
+  const d=el('text',{x:AXIS_W+8,y:PAD_T+50,fill:'#9B9590','font-family':MONO,'font-size':8,'letter-spacing':'.08em'});
+  d.textContent='— DEAD SPACE —';g.appendChild(d);
+})();
+
+// ---------- shared work layout ----------
+function workLayout(gap){
+  const reps=laps.filter(l=>l.kind==='work');
+  const durs=reps.map(r=>r.pace*r.dist);
+  const restUnits=REC_DUR.slice(0,-1).reduce((a,r,i)=>a+reps[i].dist*(r/durs[i]),0);
+  const sum=reps.reduce((a,r)=>a+r.dist,0)+restUnits;
+  const scale=(PLOT_W-gap*(reps.length-1))/sum;
+  const out=[];let x=AXIS_W;
+  reps.forEach((r,i)=>{const w=r.dist*scale;out.push({...r,x,w});
+    x+=w+gap+(i<reps.length-1?reps[i].dist*(REC_DUR[i]/durs[i])*scale:0)});
+  return out;
+}
+
+// ---------- E · skyline ----------
+(function(){
+  const svg=document.getElementById('chartE'),g=el('g',{});svg.appendChild(g);
+  const L=workLayout(4);
+  // span = 5x spread, snapped to round gridlines
+  const fast=Math.min(...REP_PACES), slow=Math.max(...REP_PACES);
+  const aMin=300,aMax=360,step=15,ticks=[];for(let v=aMin;v<=aMax;v+=step)ticks.push(v);
+  const y=p=>PAD_T+(p-aMin)/(aMax-aMin)*PLOT_H, baseY=PAD_T+PLOT_H;
+
+  const clip=el('clipPath',{id:'cE'});
+  clip.appendChild(el('rect',{x:0,y:0,width:SW,height:baseY}));
+  svg.appendChild(clip);
+  axisAndGrid(g,ticks,y);
+
+  const ghost=el('g',{'clip-path':'url(#cE)'});g.appendChild(ghost);
+  let gd='M'+AXIS_W+' '+baseY;
+  L.forEach((r,i)=>{const cx=r.x+r.w/2, amp=[10,26,14,12,18,16,30,22,34,28][i];
+    gd+=` L${r.x} ${baseY-amp*0.5} L${cx} ${baseY-amp*1.9} L${r.x+r.w} ${baseY-amp*0.6}`});
+  gd+=` L${SW-8} ${baseY} Z`;
+  ghost.appendChild(el('path',{d:gd,fill:'#9B9590','fill-opacity':.20}));
+
+  const bars=el('g',{'clip-path':'url(#cE)'});g.appendChild(bars);
+  L.forEach(r=>{
+    const top=y(r.pace);
+    bars.appendChild(el('path',{d:topBar(r.x,top,r.w,baseY-top+10,4),fill:paceColor(r.pace),'fill-opacity':.88}));
+    const t=el('text',{x:r.x+r.w/2,y:baseY+12,'text-anchor':'middle',fill:'#9B9590','font-family':MONO,'font-size':8});
+    t.textContent=r.id;g.appendChild(t);
+  });
+  g.appendChild(el('line',{x1:AXIS_W,x2:SW-8,y1:y(AVG),y2:y(AVG),stroke:'#1A1815',
+    'stroke-width':1,'stroke-dasharray':'4 3','stroke-opacity':.5}));
+  const lab=el('text',{x:SW-10,y:y(AVG)-6,'text-anchor':'end',fill:'#6B6560','font-family':MONO,'font-size':8,'letter-spacing':'.1em'});
+  lab.textContent='AVG 5:18';g.appendChild(lab);
+  const l2=el('text',{x:AXIS_W,y:baseY+29,fill:'#9B9590','font-family':MONO,'font-size':8,'letter-spacing':'.1em'});
+  l2.textContent='GAP = FLOAT · 1:05 AVG';g.appendChild(l2);
+})();
+
+// ---------- C · deviation ----------
+(function(){
+  const svg=document.getElementById('chartC'),g=el('g',{});svg.appendChild(g);
+  const L=workLayout(4);
+  const SPAN=8,H=PLOT_H,mid=PAD_T+H/2;
+  const y=d=>mid+(d/SPAN)*(H/2);
+  [-8,-4,0,4,8].forEach(t=>{
+    g.appendChild(el('line',{x1:AXIS_W,x2:SW-8,y1:y(t),y2:y(t),
+      stroke:t===0?'#1A1815':'#E8E4E0','stroke-width':t===0?1:0.7,'stroke-opacity':t===0?.7:1}));
+    const tx=el('text',{x:AXIS_W-7,y:y(t)+3,'text-anchor':'end',fill:t===0?'#6B6560':'#9B9590','font-family':MONO,'font-size':8.5});
+    tx.textContent=t===0?'5:18':(t<0?'−':'+')+Math.abs(t)+'s';g.appendChild(tx);
+  });
+  L.forEach(r=>{
+    const d=r.pace-AVG,yy=y(d),top=Math.min(yy,y(0)),h=Math.max(Math.abs(yy-y(0)),2.5);
+    g.appendChild(el('rect',{x:r.x,y:top,width:r.w,height:h,rx:2.5,fill:paceColor(r.pace),'fill-opacity':d<=0?.88:.5}));
+    const t=el('text',{x:r.x+r.w/2,y:PAD_T+H+13,'text-anchor':'middle',fill:'#9B9590','font-family':MONO,'font-size':8});
+    t.textContent=r.id;g.appendChild(t);
+    const v=el('text',{x:r.x+r.w/2,y:d<=0?top-4:top+h+9,'text-anchor':'middle',fill:'#6B6560','font-family':MONO,'font-size':7.5});
+    v.textContent=(d<=0?'−':'+')+Math.abs(Math.round(d));g.appendChild(v);
+  });
+  const l2=el('text',{x:AXIS_W,y:PAD_T+H+30,fill:'#D4592A','font-family':MONO,'font-size':8,'letter-spacing':'.1em'});
+  l2.textContent='LAST 3 REPS DRIFT +3s';g.appendChild(l2);
+})();
+</script>
+</body>
+</html>

@@ -1,5 +1,7 @@
 "use client";
 
+import { X } from "lucide-react";
+
 /**
  * Move-day sheet — athlete picks a new day for a scheduled workout within
  * the current Mon–Sun week.
@@ -16,6 +18,19 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+// One-tap reason chips. Optional — a move with no reason is fine. Codes
+// mirror the shift-day closed vocabulary (spec §R4). "feeling_good" earns
+// its place: moving quality up a day because the legs are there is a real
+// and common move.
+const REASONS: Array<{ code: string; label: string }> = [
+  { code: "work", label: "Work" },
+  { code: "fatigue", label: "Fatigue" },
+  { code: "schedule_conflict", label: "Schedule" },
+  { code: "weather", label: "Weather" },
+  { code: "travel", label: "Travel" },
+  { code: "feeling_good", label: "Feeling good" },
+];
 
 export interface MoveDaySheetWorkout {
   id: string;
@@ -59,6 +74,7 @@ export function MoveDaySheet({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const [reason, setReason] = useState<string | null>(null);
 
   // Seven days of the current week, each with flags.
   const days = Array.from({ length: 7 }, (_, i) => {
@@ -79,6 +95,7 @@ export function MoveDaySheet({
     setWasOpen(open);
     if (open) {
       setSelected(null);
+      setReason(null);
       setError(null);
     }
   }
@@ -102,6 +119,7 @@ export function MoveDaySheet({
           body: JSON.stringify({
             scheduled_workout_id: workout.id,
             new_date: selected,
+            ...(reason ? { reason_code: reason } : {}),
           }),
         });
         const data = await res.json().catch(() => ({}));
@@ -133,9 +151,10 @@ export function MoveDaySheet({
           <button
             type="button"
             onClick={onClose}
-            className="text-text-tertiary hover:text-text-primary text-sm"
+            className="text-text-tertiary hover:text-text-primary"
+            aria-label="Close"
           >
-            ✕
+            <X size={16} strokeWidth={2} aria-hidden />
           </button>
         </div>
 
@@ -202,8 +221,35 @@ export function MoveDaySheet({
           </div>
         </div>
 
+        {/* Reason chips — optional, one tap. Coach sees "Tue → Wed (work)"
+            in their adjustments feed instead of a bare date change. */}
+        <div className="px-5 pb-4">
+          <div className="font-mono text-[10px] uppercase tracking-wider text-text-tertiary mb-2">
+            Why? <span className="normal-case tracking-normal opacity-70">(optional)</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {REASONS.map((r) => {
+              const active = reason === r.code;
+              return (
+                <button
+                  key={r.code}
+                  type="button"
+                  onClick={() => setReason(active ? null : r.code)}
+                  className={`rounded-full px-3 py-1 text-xs transition ${
+                    active
+                      ? "bg-text-primary text-white"
+                      : "bg-bg-elevated text-text-secondary hover:text-text-primary"
+                  }`}
+                >
+                  {r.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         {error && (
-          <div className="mx-5 mb-3 rounded-md border border-red-400/30 bg-red-50 px-3 py-2 text-xs text-red-700">
+          <div className="mx-5 mb-3 rounded-md border border-coral/30 bg-coral/8 px-3 py-2 text-xs text-coral-dark">
             {error}
           </div>
         )}

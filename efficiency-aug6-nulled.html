@@ -1,0 +1,219 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Efficiency · Aug 6 excluded</title><style>
+:root{--paper:#F5F3F0;--card:#fff;--rule:#E8E4E0;--ink:#1A1815;--ink-2:#6B6560;--ink-3:#9B9590;--coral:#D4592A}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--paper);color:var(--ink);font-family:"PT Serif",Georgia,serif;padding:18px 14px 80px;overflow-x:hidden}
+.wrap{max-width:540px;margin:0 auto}
+h1{font-family:"Crimson Pro",Georgia,serif;font-size:23px;font-weight:600;letter-spacing:-.01em}
+.lede{color:var(--ink-2);font-size:13.5px;line-height:1.6;margin-top:7px}
+.card{background:var(--card);border-radius:16px;padding:18px;margin-top:18px;box-shadow:0 2px 14px rgba(0,0,0,.07)}
+.eyebrow{font-family:ui-monospace,Menlo,monospace;font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-2)}
+.headline{font-family:"Crimson Pro",Georgia,serif;font-size:21px;line-height:1.26;font-weight:500;margin-top:8px}
+.sub{font-size:12.5px;font-style:italic;color:var(--ink-3);line-height:1.5;margin-top:7px}
+.rule{height:1px;background:var(--rule);margin:14px 0}
+svg{display:block;width:100%;height:auto;overflow:visible}
+.ax{font-family:ui-monospace,Menlo,monospace;font-size:8.5px;fill:var(--ink-3)}
+.toggle{display:flex;gap:6px;margin-top:12px}
+.toggle button{flex:1;font-family:ui-monospace,Menlo,monospace;font-size:9px;letter-spacing:.08em;
+text-transform:uppercase;padding:9px 5px;border:0;border-radius:20px;background:#EFECE8;color:var(--ink-2);cursor:pointer;min-height:38px}
+.toggle button.on{background:var(--ink);color:#fff}
+.key{font-family:ui-monospace,Menlo,monospace;font-size:8.5px;letter-spacing:.07em;text-transform:uppercase;
+color:var(--ink-3);margin-top:11px;display:flex;gap:11px;flex-wrap:wrap;align-items:center}
+.key u{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;vertical-align:middle;text-decoration:none}
+.key i{display:inline-block;width:12px;height:2px;margin-right:4px;vertical-align:middle}
+.scroll{max-height:320px;overflow-y:auto;-webkit-overflow-scrolling:touch;margin-top:10px;border:1px solid var(--rule);border-radius:9px}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+thead th{position:sticky;top:0;background:#fff;font-family:ui-monospace,Menlo,monospace;font-size:8px;
+letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);font-weight:400;text-align:left;padding:8px 5px;
+border-bottom:1px solid var(--rule);z-index:2}
+tbody tr{cursor:pointer}tbody tr:active{background:#FAF7F3}tbody tr.sel{background:#FBF0EA}
+tbody tr.ex td{color:var(--ink-3);font-style:italic}
+td{padding:9px 5px;border-bottom:1px solid #F2EFEB;color:var(--ink-2)}
+td.n{font-family:ui-monospace,Menlo,monospace;text-align:right;color:var(--ink)}
+tr.ex td.n{color:var(--ink-3);text-decoration:line-through}
+td.b{font-weight:700}.chev{color:var(--ink-3);font-size:11px}
+#detail{position:fixed;left:0;right:0;bottom:0;max-height:84vh;background:#fff;z-index:50;border-radius:18px 18px 0 0;
+box-shadow:0 -6px 30px rgba(0,0,0,.2);transform:translateY(102%);transition:transform .25s;display:flex;flex-direction:column}
+#detail.open{transform:translateY(0)}
+.dhead{padding:16px 18px 12px;border-bottom:1px solid var(--rule);flex:0 0 auto;position:relative}
+.dbody{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 18px 34px;flex:1 1 auto}
+.close{position:absolute;right:14px;top:12px;background:#EFECE8;border:0;border-radius:50%;width:32px;height:32px;font-size:16px;color:var(--ink-2)}
+.grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:4px}
+.stat{background:#FAF8F6;border-radius:9px;padding:9px 10px}
+.stat b{display:block;font-family:"Crimson Pro",Georgia,serif;font-size:18px;font-weight:600;line-height:1.1}
+.stat span{font-family:ui-monospace,Menlo,monospace;font-size:7.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);display:block;margin-top:3px}
+.shade{position:fixed;inset:0;background:rgba(26,24,21,.35);opacity:0;pointer-events:none;transition:opacity .25s;z-index:49}
+.shade.on{opacity:1;pointer-events:auto}
+.note{border-left:2px solid rgba(212,89,42,.5);padding-left:11px;margin-top:15px}
+.note div:first-child{font-family:ui-monospace,Menlo,monospace;font-size:8.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);margin-bottom:4px}
+.note div:last-child{font-size:13px;line-height:1.55}
+.warn{background:#FBF0EA;border-radius:9px;padding:11px 12px;margin-top:12px;font-size:12.5px;line-height:1.5;color:var(--ink-2)}
+.warn b{color:var(--coral);font-family:ui-monospace,Menlo,monospace;font-size:9px;letter-spacing:.09em;text-transform:uppercase;display:block;margin-bottom:4px}
+h2{font-family:"Crimson Pro",Georgia,serif;font-size:16px;font-weight:600;margin-bottom:8px}
+p.body{font-size:13px;line-height:1.68;color:var(--ink-2)}p.body+p.body{margin-top:8px}p.body b{color:var(--ink)}
+</style></head><body><div class="wrap">
+<h1>Aug 6 nulled</h1>
+<p class="lede">Excluded from the fit and the trend, still visible and still tappable &mdash; a filter that
+silently deletes running is a filter that lies.</p>
+
+<div class="card">
+  <div class="eyebrow">Threshold efficiency · 15 sessions</div>
+  <div class="headline" id="hl">Still flat, but the read is cleaner.</div>
+  <div class="sub" id="sb">One bad heart-rate file was doing a lot of work.</div>
+  <div class="toggle">
+    <button id="bOut" class="on">Aug 6 excluded</button>
+    <button id="bIn">Include it</button>
+  </div>
+  <div class="rule"></div>
+  <div id="chart"></div>
+  <div class="key"><span><u style="background:#1A1815"></u>intervals</span>
+    <span><u style="border:1.5px solid #1A1815"></u>long run</span>
+    <span><u style="background:#D4D0CB"></u>not counted</span>
+    <span><i style="background:#6B6560"></i>trend</span>
+    <span><i style="background:rgba(107,101,96,.3);height:8px"></i>could really be</span></div>
+  <div class="note"><div>What the data says</div><div id="nt"></div></div>
+</div>
+
+<div class="card">
+  <div class="eyebrow">The sessions</div>
+  <div class="headline" style="font-size:18px">Tap any row.</div>
+  <div class="scroll"><table><thead><tr><th>date</th><th>type</th>
+  <th style="text-align:right">work</th><th style="text-align:right">adj</th>
+  <th style="text-align:right">hr</th><th style="text-align:right">index</th><th></th></tr></thead>
+  <tbody id="rows"></tbody></table></div>
+  <div class="note"><div>Not counted</div>
+  <div>1 session &mdash; Aug 6, erratic heart rate. It stays on the chart in grey so the log still
+  shows every run you did.</div></div>
+</div>
+
+<div class="card">
+  <h2>What nulling it changed</h2>
+  <p class="body"><b>The curve got much tighter.</b> R&sup2; went from 0.910 to <b>0.952</b>, and
+  session-to-session scatter fell from 2.3 index points to <b>1.6</b>. One session was adding almost
+  a third of the noise.</p>
+  <p class="body"><b>It flipped the direction.</b> With Aug 6 the trend read +0.4 points a month.
+  Without it, &minus;0.4. Both still cross zero, so neither is a finding &mdash; but a single bad
+  heart-rate file was steering the story. Hit &ldquo;Include it&rdquo; above and watch the line tilt.</p>
+  <p class="body"><b>Your automatic gate would have caught this one.</b> Scored against a fit that never
+  saw it, Aug 6 lands at z = 4.75, past the 4.0 threshold, with the next-worst session at 1.67 &mdash;
+  clean separation. The prototype had it in because my crude pre-filter only looked for heart rates
+  under 150; the real algorithm in <code>EfficiencyIndexModels.swift</code> is smarter than my
+  shortcut was.</p>
+  <p class="body"><b>Ship the manual control anyway.</b> Athletes know when a strap misbehaved, and no
+  gate catches everything. Excluded sessions should stay visible, say why, and be reversible.</p>
+</div>
+</div>
+
+<div class="shade" id="shade"></div>
+<div id="detail"><div class="dhead"><button class="close" id="x">&times;</button>
+<div class="eyebrow" id="dDate"></div><div class="headline" style="font-size:20px" id="dTitle"></div></div>
+<div class="dbody" id="dBody"></div></div>
+
+<script>
+const S=[{"date": "2026-06-23", "kind": "Intervals", "miles": 4.85, "psec": 315.0, "hr": 164.0, "dew": 76.5, "pen": 2.7, "name": "Workout: 3k tempo \u00b7 Followed by: 3x1k @ 10k pace \u00b7 Followed by: 600m @ 5k pace \u00b7 Recoveries: 200m walk with extra breaks", "adj": 306.495, "day": 1.0, "speed": 315.0480105711349, "mpb": 1.921024454702042, "idx": 100.25576776218124, "elev": 289.0, "miles_tot": 10.53, "ftmi": 27.44539411206078, "gap": 300.45701329534666, "speed_gap": 321.3792180816286, "mpb_gap": 1.959629378546516, "idx_heat": 100.25576776218124, "idx_both": 100.24019331968209, "ix": 101.09793690319952, "reps": [{"rep": 1, "miles": 0.62, "pace": "5:23", "hr": 147.0, "maxhr": 166.0, "adj": 315.0}, {"rep": 2, "miles": 0.62, "pace": "5:40", "hr": 166.0, "maxhr": 168.0, "adj": 330.7}, {"rep": 3, "miles": 0.62, "pace": "5:54", "hr": 155.0, "maxhr": 161.0, "adj": 344.8}, {"rep": 4, "miles": 0.62, "pace": "5:09", "hr": 164.0, "maxhr": 171.0, "adj": 300.9}, {"rep": 5, "miles": 0.37, "pace": "5:01", "hr": 167.0, "maxhr": 173.0, "adj": 292.9}, {"rep": 6, "miles": 0.62, "pace": "5:03", "hr": 170.0, "maxhr": 176.0, "adj": 294.6}, {"rep": 7, "miles": 0.37, "pace": "4:57", "hr": 170.0, "maxhr": 177.0, "adj": 289.5}, {"rep": 8, "miles": 0.62, "pace": "5:03", "hr": 170.0, "maxhr": 177.0, "adj": 294.6}, {"rep": 9, "miles": 0.37, "pace": "4:38", "hr": 169.0, "maxhr": 183.0, "adj": 270.9}], "meta": {"miles": 10.53, "moving": 84.5, "pace": "8:02", "temp": 79.4, "dew": 76.5, "rh": 91.0, "heat": "heavy", "elev": 289.0, "fastmi": 4.85, "fastmin": 25.4, "maxhr": 183.0, "avghr": 146.0, "planned": "Workout: 3k tempo \u00b7 Followed by: 3x1k @ 10k pace \u00b7 Followed by: 600m @ 5k pace \u00b7 Recoveries: 200m walk with extra breaks", "memo": "I completed a tough workout today, but the heat and humidity made it incredibly challenging. I struggled throughout the session and never really felt great. The conditions significantly impacted my performance.", "mood": "struggling", "rpe": 9}, "excluded": false}, {"date": "2026-06-27", "kind": "Long run", "miles": 1.6, "psec": 384.0, "hr": 161.0, "dew": 72.5, "pen": 4.65, "name": "Forgot to turn it off Ks again", "adj": 366.144, "day": 5.0, "speed": 263.7231253277399, "mpb": 1.6380318343337883, "idx": 100.17445003481613, "elev": 525.0, "miles_tot": 17.77, "ftmi": 29.544175576814858, "gap": 359.64428137310074, "speed_gap": 268.48929623275853, "mpb_gap": 1.6676353803276927, "idx_heat": 100.17445003481613, "idx_both": 100.12882395728899, "ix": 100.16808218956861, "reps": [{"rep": 1, "miles": 0.89, "pace": "6:19", "hr": 161.0, "maxhr": 168.0, "adj": 362.5}, {"rep": 2, "miles": 0.36, "pace": "6:32", "hr": 164.0, "maxhr": 169.0, "adj": 375.1}, {"rep": 3, "miles": 0.35, "pace": "6:27", "hr": 159.0, "maxhr": 161.0, "adj": 369.5}], "meta": {"miles": 17.77, "moving": 120.8, "pace": "6:48", "temp": 78.2, "dew": 72.5, "rh": 83.0, "heat": "heavy", "elev": 525.0, "fastmi": 1.6, "fastmin": 10.2, "maxhr": 172.0, "avghr": 158.0, "planned": null, "memo": null, "mood": null, "rpe": null}, "excluded": false}, {"date": "2026-07-04", "kind": "Steady", "miles": 7.82, "psec": 362.0, "hr": 168.0, "dew": 74.5, "pen": 4.65, "name": "Cooked US", "adj": 345.16700000000003, "day": 12.0, "speed": 279.7504975852268, "mpb": 1.6651815332453976, "idx": 96.64932988672861, "elev": 682.0, "miles_tot": 12.44, "ftmi": 54.82315112540193, "gap": 333.1059067524116, "speed_gap": 289.8796990464983, "mpb_gap": 1.7254743990862993, "idx_heat": 96.64932988672861, "idx_both": 96.79807307383574, "ix": 96.92571658372052, "reps": [{"rep": 1, "miles": 0.44, "pace": "6:23", "hr": 162.0, "maxhr": 167.0, "adj": 366.3}, {"rep": 2, "miles": 0.52, "pace": "6:07", "hr": 167.0, "maxhr": 174.0, "adj": 350.3}, {"rep": 3, "miles": 1.22, "pace": "6:10", "hr": 173.0, "maxhr": 178.0, "adj": 353.3}, {"rep": 4, "miles": 0.88, "pace": "6:09", "hr": 164.0, "maxhr": 172.0, "adj": 353.0}, {"rep": 5, "miles": 0.76, "pace": "6:14", "hr": 167.0, "maxhr": 173.0, "adj": 357.4}, {"rep": 6, "miles": 1.94, "pace": "5:45", "hr": 172.0, "maxhr": 179.0, "adj": 330.0}, {"rep": 7, "miles": 2.05, "pace": "6:01", "hr": 172.0, "maxhr": 182.0, "adj": 344.7}], "meta": {"miles": 12.44, "moving": 78.9, "pace": "6:20", "temp": 76.7, "dew": 74.5, "rh": 93.0, "heat": "heavy", "elev": 682.0, "fastmi": 7.82, "fastmin": 47.2, "maxhr": 182.0, "avghr": 163.0, "planned": null, "memo": null, "mood": null, "rpe": null}, "excluded": false}, {"date": "2026-07-08", "kind": "Intervals", "miles": 6.01, "psec": 315.0, "hr": 166.0, "dew": 73.8, "pen": 2.33, "name": "Intervals: 10x1k (7th and 8th reps run shorter)", "adj": 307.6605, "day": 16.0, "speed": 313.85452471149205, "mpb": 1.8906899079005546, "idx": 99.01021898056666, "elev": 223.0, "miles_tot": 8.97, "ftmi": 24.860646599777034, "gap": 302.1911577480491, "speed_gap": 319.5349616434083, "mpb_gap": 1.9249094074904114, "idx_heat": 99.01021898056666, "idx_both": 98.97515917542103, "ix": 99.82510061410113, "reps": [{"rep": 1, "miles": 0.62, "pace": "5:19", "hr": 157.0, "maxhr": 170.0, "adj": 311.4}, {"rep": 2, "miles": 0.62, "pace": "5:12", "hr": 166.0, "maxhr": 172.0, "adj": 305.1}, {"rep": 3, "miles": 0.62, "pace": "5:12", "hr": 166.0, "maxhr": 173.0, "adj": 305.1}, {"rep": 4, "miles": 0.62, "pace": "5:12", "hr": 168.0, "maxhr": 173.0, "adj": 305.1}, {"rep": 5, "miles": 0.62, "pace": "5:09", "hr": 168.0, "maxhr": 175.0, "adj": 302.0}, {"rep": 6, "miles": 0.62, "pace": "5:06", "hr": 170.0, "maxhr": 176.0, "adj": 298.8}, {"rep": 7, "miles": 0.51, "pace": "5:22", "hr": 165.0, "maxhr": 172.0, "adj": 314.5}, {"rep": 8, "miles": 0.53, "pace": "5:17", "hr": 168.0, "maxhr": 172.0, "adj": 309.9}, {"rep": 9, "miles": 0.62, "pace": "5:28", "hr": 165.0, "maxhr": 170.0, "adj": 320.8}, {"rep": 10, "miles": 0.62, "pace": "5:15", "hr": 168.0, "maxhr": 175.0, "adj": 308.2}], "meta": {"miles": 8.97, "moving": 58.7, "pace": "6:32", "temp": 77.1, "dew": 73.8, "rh": 89.0, "heat": "heavy", "elev": 223.0, "fastmi": 6.01, "fastmin": 31.6, "maxhr": 176.0, "avghr": 153.0, "planned": "Intervals: 10x1k (7th and 8th reps run shorter)", "memo": "I did a workout that was mostly 10 reps, though the seventh and eighth were run a bit shorter due to content creation. I was really struggling today, with the heat and humidity being intense. I felt overheated and fell off pace towards the end, and it definitely didn't feel like the threshold workout it was supposed to be.", "mood": "struggling", "rpe": 9}, "excluded": false}, {"date": "2026-07-11", "kind": "Long run", "miles": 1.09, "psec": 382.0, "hr": 157.0, "dew": 73.9, "pen": 4.5, "name": "Long run", "adj": 364.81, "day": 19.0, "speed": 264.6874811545736, "mpb": 1.685907523277539, "idx": 102.77053892528222, "elev": 823.0, "miles_tot": 14.99, "ftmi": 54.903268845897266, "gap": 352.7312808539026, "speed_gap": 273.7512810495374, "mpb_gap": 1.7436387327996012, "idx_heat": 102.77053892528222, "idx_both": 102.91286695636603, "ix": 102.78293907307886, "reps": [{"rep": 1, "miles": 0.46, "pace": "6:20", "hr": 160.0, "maxhr": 167.0, "adj": 364.0}, {"rep": 2, "miles": 0.34, "pace": "6:18", "hr": 151.0, "maxhr": 155.0, "adj": 362.0}, {"rep": 3, "miles": 0.29, "pace": "6:28", "hr": 161.0, "maxhr": 163.0, "adj": 371.0}], "meta": {"miles": 14.99, "moving": 102.6, "pace": "6:51", "temp": 76.0, "dew": 73.9, "rh": 93.0, "heat": "heavy", "elev": 823.0, "fastmi": 1.09, "fastmin": 7.0, "maxhr": 174.0, "avghr": 158.0, "planned": null, "memo": "I had an extremely warm run on a hilly loop and felt like I was dying, despite trying to pace myself. I cut my planned 2 hour 15 minute run short as it wasn't a good run at all. I'm focusing on recovery today, Sunday, and hoping for a better week.", "mood": "struggling", "rpe": 10}, "excluded": false}, {"date": "2026-07-14", "kind": "Intervals", "miles": 4.5, "psec": 301.0, "hr": 167.0, "dew": 73.9, "pen": 2.1, "name": "Intervals: 3 sets of (1200m @ HMP w/ 1 min rest, 800m @ 10K pace w/ 1 min rest, 400m @ 5K pace) w/ 400m jog recovery between sets", "adj": 294.679, "day": 22.0, "speed": 327.6807644928889, "mpb": 1.9621602664244844, "idx": 98.83577373879572, "elev": 164.0, "miles_tot": 8.98, "ftmi": 18.262806236080177, "gap": 290.6611826280623, "speed_gap": 332.21030454404206, "mpb_gap": 1.9892832607427668, "idx_heat": 98.83577373879572, "idx_both": 98.76257036126889, "ix": 99.83733135159292, "reps": [{"rep": 1, "miles": 0.75, "pace": "5:16", "hr": 162.0, "maxhr": 174.0, "adj": 309.3}, {"rep": 2, "miles": 0.5, "pace": "5:08", "hr": 167.0, "maxhr": 177.0, "adj": 302.1}, {"rep": 3, "miles": 0.25, "pace": "4:53", "hr": 164.0, "maxhr": 173.0, "adj": 287.4}, {"rep": 4, "miles": 0.75, "pace": "4:56", "hr": 178.0, "maxhr": 184.0, "adj": 290.2}, {"rep": 5, "miles": 0.5, "pace": "4:57", "hr": 175.0, "maxhr": 181.0, "adj": 290.9}, {"rep": 6, "miles": 0.25, "pace": "4:52", "hr": 158.0, "maxhr": 177.0, "adj": 286.1}, {"rep": 7, "miles": 0.75, "pace": "5:06", "hr": 177.0, "maxhr": 181.0, "adj": 299.4}, {"rep": 8, "miles": 0.5, "pace": "4:52", "hr": 172.0, "maxhr": 184.0, "adj": 286.1}, {"rep": 9, "miles": 0.25, "pace": "4:46", "hr": 154.0, "maxhr": 176.0, "adj": 280.1}], "meta": {"miles": 8.98, "moving": 63.9, "pace": "7:07", "temp": 74.5, "dew": 73.9, "rh": 98.0, "heat": "heavy", "elev": 164.0, "fastmi": 4.5, "fastmin": 22.6, "maxhr": 184.0, "avghr": 149.0, "planned": "Intervals: 3 sets of (1200m @ HMP w/ 1 min rest, 800m @ 10K pace w/ 1 min rest, 400m @ 5K pace) w/ 400m jog recovery between sets", "memo": "I completed three sets of a complex interval workout, running much faster than the prescribed paces, though I had aimed for four. Despite feeling a bit sick this morning, I felt surprisingly good during the workout, and it turned out to be a solid session.", "mood": "positive", "rpe": 8}, "excluded": false}, {"date": "2026-07-18", "kind": "Long run", "miles": 3.59, "psec": 380.0, "hr": 159.0, "dew": 76.1, "pen": 5.1, "name": "Long run", "adj": 360.62, "day": 26.0, "speed": 267.7628528645111, "mpb": 1.6840430997767994, "idx": 101.61413922793498, "elev": 574.0, "miles_tot": 13.49, "ftmi": 42.550037064492216, "gap": 351.2589918458117, "speed_gap": 274.8986993687728, "mpb_gap": 1.7289226375394515, "idx_heat": 101.61413922793498, "idx_both": 101.66749707891738, "ix": 101.68534713869339, "reps": [{"rep": 1, "miles": 1.3, "pace": "6:02", "hr": 156.0, "maxhr": 162.0, "adj": 344.4}, {"rep": 2, "miles": 0.31, "pace": "6:57", "hr": 144.0, "maxhr": 153.0, "adj": 396.7}, {"rep": 3, "miles": 0.61, "pace": "6:24", "hr": 162.0, "maxhr": 166.0, "adj": 365.1}, {"rep": 4, "miles": 0.55, "pace": "6:28", "hr": 164.0, "maxhr": 167.0, "adj": 369.0}, {"rep": 5, "miles": 0.35, "pace": "6:17", "hr": 161.0, "maxhr": 167.0, "adj": 358.3}, {"rep": 6, "miles": 0.47, "pace": "6:34", "hr": 166.0, "maxhr": 170.0, "adj": 375.4}], "meta": {"miles": 13.49, "moving": 91.5, "pace": "6:47", "temp": 77.4, "dew": 76.1, "rh": 96.0, "heat": "heavy", "elev": 574.0, "fastmi": 3.59, "fastmin": 22.7, "maxhr": 170.0, "avghr": 155.0, "planned": null, "memo": null, "mood": null, "rpe": null}, "excluded": false}, {"date": "2026-07-21", "kind": "Intervals", "miles": 6.0, "psec": 328.0, "hr": 166.0, "dew": 73.0, "pen": 2.02, "name": "Intervals: 6x1 mile @ Marathon pace dropping to Half Marathon pace w/ 0.25 mile recoveries", "adj": 321.3744, "day": 29.0, "speed": 300.46151778113006, "mpb": 1.8100091432598195, "idx": 98.5693728077212, "elev": 223.0, "miles_tot": 10.53, "ftmi": 21.17758784425451, "gap": 316.715330674264, "speed_gap": 304.8814839320515, "mpb_gap": 1.836635445373804, "idx_heat": 98.5693728077212, "idx_both": 98.49766512530192, "ix": 99.1849111937688, "reps": [{"rep": 1, "miles": 1.0, "pace": "5:28", "hr": 160.0, "maxhr": 168.0, "adj": 321.5}, {"rep": 2, "miles": 1.0, "pace": "5:25", "hr": 165.0, "maxhr": 168.0, "adj": 318.6}, {"rep": 3, "miles": 1.0, "pace": "5:33", "hr": 166.0, "maxhr": 168.0, "adj": 326.4}, {"rep": 4, "miles": 1.0, "pace": "5:34", "hr": 167.0, "maxhr": 171.0, "adj": 327.4}, {"rep": 5, "miles": 1.0, "pace": "5:16", "hr": 170.0, "maxhr": 173.0, "adj": 309.7}, {"rep": 6, "miles": 1.0, "pace": "5:31", "hr": 169.0, "maxhr": 172.0, "adj": 324.4}], "meta": {"miles": 10.53, "moving": 67.2, "pace": "6:23", "temp": 74.1, "dew": 73.0, "rh": 96.0, "heat": "heavy", "elev": 223.0, "fastmi": 6.0, "fastmin": 32.8, "maxhr": 173.0, "avghr": 153.0, "planned": "Intervals: 6x1 mile @ Marathon pace dropping to Half Marathon pace w/ 0.25 mile recoveries", "memo": "I completed an interval workout of six miles, starting at marathon pace and dropping to half marathon pace, with .25 mile recoveries. I took a short water break mid-workout. Despite my legs feeling good, the workout felt harder and the pace tougher than I expected, likely due to the humidity and hills. Overall, I finished strong and felt it was a solid session.", "mood": "positive", "rpe": 8}, "excluded": false}, {"date": "2026-07-25", "kind": "Long run", "miles": 0.77, "psec": 382.0, "hr": 160.0, "dew": 74.4, "pen": 4.5, "name": "Long run", "adj": 364.81, "day": 33.0, "speed": 264.6874811545736, "mpb": 1.6542967572160852, "idx": 100.84359132043319, "elev": 358.0, "miles_tot": 13.12, "ftmi": 27.28658536585366, "gap": 358.8069512195122, "speed_gap": 269.1158565122831, "mpb_gap": 1.6819741032017692, "idx_heat": 100.84359132043319, "idx_both": 100.7822655509412, "ix": 100.85575896545863, "reps": [{"rep": 1, "miles": 0.52, "pace": "6:20", "hr": 159.0, "maxhr": 161.0, "adj": 363.6}, {"rep": 2, "miles": 0.25, "pace": "6:25", "hr": 162.0, "maxhr": 163.0, "adj": 368.7}], "meta": {"miles": 13.12, "moving": 89.2, "pace": "6:48", "temp": 76.0, "dew": 74.4, "rh": 95.0, "heat": "heavy", "elev": 358.0, "fastmi": 0.77, "fastmin": 4.9, "maxhr": 163.0, "avghr": 151.0, "planned": null, "memo": null, "mood": null, "rpe": null}, "excluded": false}, {"date": "2026-07-28", "kind": "Intervals", "miles": 5.01, "psec": 315.0, "hr": 164.0, "dew": 73.4, "pen": 2.25, "name": "1600m @ 5:08 + 2\u00d7800m @ 2:33 + 1600m @ 5:13 + 2\u00d7800m @ 2:45 + 1600m @ 5:20 w/ 90s rec", "adj": 307.9125, "day": 36.0, "speed": 313.597661673365, "mpb": 1.9121808638619817, "idx": 100.20942511394904, "elev": 154.0, "miles_tot": 9.24, "ftmi": 16.666666666666668, "gap": 304.24583333333334, "speed_gap": 317.37703337487505, "mpb_gap": 1.9352258132614333, "idx_heat": 100.20942511394904, "idx_both": 100.11351603196408, "ix": 101.03049718297872, "reps": [{"rep": 1, "miles": 1.0, "pace": "5:08", "hr": 162.0, "maxhr": 175.0, "adj": 301.2}, {"rep": 2, "miles": 0.5, "pace": "5:01", "hr": 159.0, "maxhr": 176.0, "adj": 294.7}, {"rep": 3, "miles": 0.5, "pace": "5:11", "hr": 160.0, "maxhr": 174.0, "adj": 304.4}, {"rep": 4, "miles": 1.0, "pace": "5:14", "hr": 168.0, "maxhr": 177.0, "adj": 307.0}, {"rep": 5, "miles": 0.5, "pace": "5:13", "hr": 165.0, "maxhr": 178.0, "adj": 306.3}, {"rep": 6, "miles": 0.52, "pace": "5:35", "hr": 163.0, "maxhr": 175.0, "adj": 327.4}, {"rep": 7, "miles": 1.0, "pace": "5:22", "hr": 170.0, "maxhr": 177.0, "adj": 314.5}], "meta": {"miles": 9.24, "moving": 65.0, "pace": "7:02", "temp": 77.0, "dew": 73.4, "rh": 89.0, "heat": "heavy", "elev": 154.0, "fastmi": 5.01, "fastmin": 26.3, "maxhr": 178.0, "avghr": 150.0, "planned": "1600m @ 5:08 + 2\u00d7800m @ 2:33 + 1600m @ 5:13 + 2\u00d7800m @ 2:45 + 1600m @ 5:20 w/ 90s rec", "memo": "Had a tough interval session today. It was really hot, and I felt overheated throughout the workout.", "mood": "struggling", "rpe": 8}, "excluded": false}, {"date": "2026-08-01", "kind": "Long run", "miles": 5.0, "psec": 362.0, "hr": 164.0, "dew": 72.5, "pen": 2.25, "name": "Warmup: 3 miles \u00b7 Intervals: 4 sets of (1 mile @ ~6:00/mi, 400m recovery, 2 miles @ ~6:25/mi, 400m recovery) \u00b7 Distance: 17 miles (total) \u00b7 Cooldown: Quick (2 miles)", "adj": 353.855, "day": 40.0, "speed": 272.8819431688121, "mpb": 1.663914287614708, "idx": 98.73027120018901, "elev": 371.0, "miles_tot": 17.01, "ftmi": 21.810699588477366, "gap": 349.056646090535, "speed_gap": 276.6331513279796, "mpb_gap": 1.6867875080974366, "idx_heat": 98.73027120018901, "idx_both": 98.6392178702464, "ix": 98.8923975963534, "reps": [{"rep": 1, "miles": 1.0, "pace": "6:00", "hr": 155.0, "maxhr": 163.0, "adj": 352.1}, {"rep": 2, "miles": 1.0, "pace": "5:59", "hr": 163.0, "maxhr": 169.0, "adj": 351.1}, {"rep": 3, "miles": 1.0, "pace": "6:02", "hr": 165.0, "maxhr": 171.0, "adj": 354.0}, {"rep": 4, "miles": 1.0, "pace": "6:14", "hr": 166.0, "maxhr": 169.0, "adj": 365.8}, {"rep": 5, "miles": 1.0, "pace": "5:56", "hr": 170.0, "maxhr": 173.0, "adj": 348.2}], "meta": {"miles": 17.01, "moving": 112.8, "pace": "6:38", "temp": 77.5, "dew": 72.5, "rh": 85.0, "heat": "heavy", "elev": 371.0, "fastmi": 5.0, "fastmin": 30.2, "maxhr": 173.0, "avghr": 156.0, "planned": "Warmup: 3 miles \u00b7 Intervals: 4 sets of (1 mile @ ~6:00/mi, 400m recovery, 2 miles @ ~6:25/mi, 400m recovery) \u00b7 Distance: 17 miles (total) \u00b7 Cooldown: Quick (2 miles)", "memo": "Completed a challenging workout with Mark, Ryan, and Jared, including a 3-mile warm-up and a quick cool-down, totaling 17 miles. The main work consisted of four repeated sets of 1 mile at a 6-minute pace followed by 2 miles at a 6:25 pace, with 400m recovery after each segment. My heart rate was high, and the session felt pretty fatiguing, especially with the warmer weather.", "mood": "positive", "rpe": 8}, "excluded": false}, {"date": "2026-08-04", "kind": "Intervals", "miles": 5.69, "psec": 339.0, "hr": 168.0, "dew": 75.9, "pen": 2.47, "name": "Interval structure: 6 minutes steady, 2 minutes easy, 2 minutes fast, 2 minutes easy \u00b7 Steady pace: 5:30-5:40/mi \u00b7 Course: Hilly \u00b7 Weather: Humid", "adj": 330.62669999999997, "day": 43.0, "speed": 292.05336411124694, "mpb": 1.7384128816145652, "idx": 97.10422957294274, "elev": 577.0, "miles_tot": 10.72, "ftmi": 53.82462686567164, "gap": 318.7852820895522, "speed_gap": 302.9018133054037, "mpb_gap": 1.8029869839607364, "idx_heat": 97.10422957294274, "idx_both": 97.2582030401074, "ix": 97.58193004335926, "reps": [{"rep": 1, "miles": 1.06, "pace": "5:40", "hr": 160.0, "maxhr": 169.0, "adj": 331.4}, {"rep": 2, "miles": 0.37, "pace": "5:27", "hr": 169.0, "maxhr": 173.0, "adj": 318.9}, {"rep": 3, "miles": 1.08, "pace": "5:34", "hr": 165.0, "maxhr": 171.0, "adj": 325.5}, {"rep": 4, "miles": 0.36, "pace": "5:36", "hr": 170.0, "maxhr": 173.0, "adj": 327.7}, {"rep": 5, "miles": 1.07, "pace": "5:37", "hr": 167.0, "maxhr": 171.0, "adj": 328.9}, {"rep": 6, "miles": 0.36, "pace": "5:40", "hr": 170.0, "maxhr": 174.0, "adj": 331.6}, {"rep": 7, "miles": 1.03, "pace": "5:52", "hr": 169.0, "maxhr": 173.0, "adj": 343.4}, {"rep": 8, "miles": 0.36, "pace": "5:40", "hr": 171.0, "maxhr": 175.0, "adj": 331.9}], "meta": {"miles": 10.72, "moving": 71.1, "pace": "6:38", "temp": 77.3, "dew": 75.9, "rh": 96.0, "heat": "heavy", "elev": 577.0, "fastmi": 5.69, "fastmin": 32.1, "maxhr": 175.0, "avghr": 156.0, "planned": "Interval structure: 6 minutes steady, 2 minutes easy, 2 minutes fast, 2 minutes easy \u00b7 Steady pace: 5:30-5:40/mi \u00b7 Course: Hilly \u00b7 Weather: Humid", "memo": "I ran a session with steady, easy, and fast intervals on a hilly and humid course. I felt like I wasn't moving very fast and my fitness isn't quite where I want it to be, especially on the fast segments. Despite this, I felt healthy overall, and a previous knee issue resolved itself.", "mood": "tired", "rpe": 7}, "excluded": false}, {"date": "2026-08-06", "kind": "Intervals", "miles": 3.75, "psec": 320.0, "hr": 155.0, "dew": 76.1, "pen": 2.62, "name": "5x4 min", "adj": 311.616, "day": 45.0, "speed": 309.8706099815157, "mpb": 1.9991652256871981, "idx": 105.90014079535459, "elev": 279.0, "miles_tot": 7.36, "ftmi": 37.90760869565217, "gap": 303.2763260869565, "speed_gap": 318.39161745949724, "mpb_gap": 2.0541394674806273, "idx_heat": 105.90014079535459, "idx_both": 105.96082378254167, "ix": 105.90014079535459, "reps": [{"rep": 1, "miles": 0.76, "pace": "5:18", "hr": 156.0, "maxhr": 164.0, "adj": 309.5}, {"rep": 2, "miles": 0.75, "pace": "5:22", "hr": 171.0, "maxhr": 179.0, "adj": 313.7}, {"rep": 3, "miles": 0.76, "pace": "5:18", "hr": 143.0, "maxhr": 154.0, "adj": 309.5}, {"rep": 4, "miles": 0.74, "pace": "5:21", "hr": 150.0, "maxhr": 160.0, "adj": 312.7}, {"rep": 5, "miles": 0.74, "pace": "5:23", "hr": 155.0, "maxhr": 166.0, "adj": 315.2}], "meta": {"miles": 7.36, "moving": 63.5, "pace": "8:37", "temp": 78.8, "dew": 76.1, "rh": 91.0, "heat": "heavy", "elev": 279.0, "fastmi": 3.75, "fastmin": 20.0, "maxhr": 179.0, "avghr": 144.0, "planned": "Intervals: 5x4 minutes w/ 90s-2 min jog recovery", "memo": "I completed a threshold session today with 5x4 minute efforts and jog recovery. I managed to hold a consistent pace, though it felt slightly harder than I anticipated. My legs felt healthy, despite some general fatigue from a 90-minute strength session. Overall, it felt like a solid workout.", "mood": "positive", "rpe": 8}, "excluded": true}, {"date": "2026-08-08", "kind": "Long run", "miles": 4.33, "psec": 379.0, "hr": 160.0, "dew": 73.0, "pen": 4.5, "name": "The Action is the Juice", "adj": 361.945, "day": 47.0, "speed": 266.782632720441, "mpb": 1.6673914545027562, "idx": 100.93617528015862, "elev": 758.0, "miles_tot": 18.1, "ftmi": 41.87845303867403, "gap": 352.7317403314917, "speed_gap": 273.7509244539599, "mpb_gap": 1.7109432778372493, "idx_heat": 100.93617528015862, "idx_both": 100.98323547095656, "ix": 100.988367270077, "reps": [{"rep": 1, "miles": 0.58, "pace": "6:19", "hr": 158.0, "maxhr": 162.0, "adj": 362.5}, {"rep": 2, "miles": 0.31, "pace": "6:29", "hr": 158.0, "maxhr": 160.0, "adj": 372.2}, {"rep": 3, "miles": 0.45, "pace": "6:21", "hr": 158.0, "maxhr": 164.0, "adj": 364.4}, {"rep": 4, "miles": 0.47, "pace": "6:17", "hr": 155.0, "maxhr": 162.0, "adj": 360.6}, {"rep": 5, "miles": 0.27, "pace": "6:20", "hr": 158.0, "maxhr": 159.0, "adj": 363.5}, {"rep": 6, "miles": 0.42, "pace": "6:19", "hr": 161.0, "maxhr": 165.0, "adj": 362.4}, {"rep": 7, "miles": 0.85, "pace": "6:15", "hr": 158.0, "maxhr": 166.0, "adj": 358.9}, {"rep": 8, "miles": 0.31, "pace": "6:24", "hr": 161.0, "maxhr": 162.0, "adj": 367.8}, {"rep": 9, "miles": 0.33, "pace": "6:17", "hr": 164.0, "maxhr": 165.0, "adj": 360.3}, {"rep": 10, "miles": 0.34, "pace": "6:17", "hr": 166.0, "maxhr": 168.0, "adj": 361.0}], "meta": {"miles": 18.1, "moving": 120.1, "pace": "6:38", "temp": 76.9, "dew": 73.0, "rh": 88.0, "heat": "heavy", "elev": 758.0, "fastmi": 4.33, "fastmin": 27.3, "maxhr": 169.0, "avghr": 155.0, "planned": "Distance: 18.1 miles \u00b7 Duration: 2:00 \u00b7 Pace: 6:38/mi \u00b7 Moderate pace mostly", "memo": "I felt pretty comfortable on this moderate long run, taking two gels. Everything felt good overall. My knee, which I noticed a little between miles 9 and 12, eventually backed off, and I finished feeling strong and healthy, with a consistent heart rate.", "mood": "positive", "rpe": null}, "excluded": false}, {"date": "2026-08-11", "kind": "Intervals", "miles": 6.21, "psec": 318.0, "hr": 164.0, "dew": 75.3, "pen": 2.55, "name": "Intervals: 10x1K @ 3:15-3:23 pace w/ 60s rest \u00b7 Total Distance: 6.6 miles \u00b7 Total Duration: 40 minutes \u00b7 Average Pace: 6:00/mi \u00b7  \u00b7 Threshold pace was the goal", "adj": 309.891, "day": 50.0, "speed": 311.59549648102075, "mpb": 1.8999725395184193, "idx": 100.14481315206558, "elev": 213.0, "miles_tot": 10.2, "ftmi": 20.88235294117647, "gap": 305.29688235294117, "speed_gap": 316.28439588312017, "mpb_gap": 1.9285633895312206, "idx_heat": 100.14481315206558, "idx_both": 100.07843144691685, "ix": 100.93651732815245, "reps": [{"rep": 1, "miles": 0.62, "pace": "5:19", "hr": 157.0, "maxhr": 167.0, "adj": 310.9}, {"rep": 2, "miles": 0.63, "pace": "5:10", "hr": 165.0, "maxhr": 172.0, "adj": 302.4}, {"rep": 3, "miles": 0.63, "pace": "5:15", "hr": 161.0, "maxhr": 170.0, "adj": 307.4}, {"rep": 4, "miles": 0.62, "pace": "5:17", "hr": 162.0, "maxhr": 172.0, "adj": 309.0}, {"rep": 5, "miles": 0.62, "pace": "5:21", "hr": 165.0, "maxhr": 171.0, "adj": 312.8}, {"rep": 6, "miles": 0.63, "pace": "5:17", "hr": 166.0, "maxhr": 173.0, "adj": 309.6}, {"rep": 7, "miles": 0.62, "pace": "5:21", "hr": 165.0, "maxhr": 173.0, "adj": 312.8}, {"rep": 8, "miles": 0.62, "pace": "5:19", "hr": 165.0, "maxhr": 174.0, "adj": 311.2}, {"rep": 9, "miles": 0.62, "pace": "5:30", "hr": 166.0, "maxhr": 172.0, "adj": 321.5}, {"rep": 10, "miles": 0.62, "pace": "5:15", "hr": 170.0, "maxhr": 176.0, "adj": 306.9}], "meta": {"miles": 10.2, "moving": 70.9, "pace": "6:57", "temp": 78.4, "dew": 75.3, "rh": 90.0, "heat": "heavy", "elev": 213.0, "fastmi": 6.21, "fastmin": 33.0, "maxhr": 176.0, "avghr": 149.0, "planned": "Intervals: 10x1K @ 3:15-3:23 pace w/ 60s rest \u00b7 Total Distance: 6.6 miles \u00b7 Total Duration: 40 minutes \u00b7 Average Pace: 6:00/mi \u00b7  \u00b7 Threshold pace was the goal", "memo": "Completed 10 intervals today. The conditions were hot and humid, and I felt I wasn't fully rested, but physically I felt good during the work. I took a longer break after rep 6 and managed a good quality threshold session without feeling overly taxed at the end.", "mood": "positive", "rpe": null}, "excluded": false}, {"date": "2026-08-16", "kind": "Long run", "miles": 0.64, "psec": 387.0, "hr": 164.0, "dew": 73.9, "pen": 4.8, "name": "Workout Type: Steady long run \u00b7 Distance: 17.1 miles \u00b7 Duration: 1:54 (planned for 2:00) \u00b7 Pace: 6:42/mi average \u00b7 Fueling: 3 gels (24g carbs each) at 30, 60, and 90 minutes", "adj": 368.424, "day": 55.0, "speed": 262.09106898573384, "mpb": 1.598116274303255, "idx": 98.27028781648752, "elev": 495.0, "miles_tot": 17.13, "ftmi": 28.896672504378284, "gap": 362.0667320490368, "speed_gap": 266.6929365576792, "mpb_gap": 1.6261764424248732, "idx_heat": 98.27028781648752, "idx_both": 98.21927840210047, "ix": 98.23314988806749, "reps": [{"rep": 1, "miles": 0.26, "pace": "6:43", "hr": 157.0, "maxhr": 161.0, "adj": 384.2}, {"rep": 2, "miles": 0.38, "pace": "6:17", "hr": 170.0, "maxhr": 171.0, "adj": 359.4}], "meta": {"miles": 17.13, "moving": 114.7, "pace": "6:42", "temp": 77.9, "dew": 73.9, "rh": 87.0, "heat": "heavy", "elev": 495.0, "fastmi": 0.64, "fastmin": 4.1, "maxhr": 171.0, "avghr": 155.0, "planned": "Workout Type: Steady long run \u00b7 Distance: 17.1 miles \u00b7 Duration: 1:54 (planned for 2:00) \u00b7 Pace: 6:42/mi average \u00b7 Fueling: 3 gels (24g carbs each) at 30, 60, and 90 minutes", "memo": "Completed a steady long run, but the heat and humidity became a significant factor after about 90 minutes, leading me to take walk breaks in the second half. I managed my fueling with three gels throughout the run. Despite the challenging conditions, my knee felt solid, which was a positive.", "mood": "struggling", "rpe": null}, "excluded": false}];
+let useAll=false, sel=null;
+const fmt=s=>Math.floor(s/60)+':'+String(Math.round(s%60)).padStart(2,'0');
+const active=()=>S.filter(s=>useAll||!s.excluded);
+function curve(rows){
+  const n=rows.length; let sx=0,sy=0,sxx=0,sxy=0;
+  rows.forEach(r=>{sx+=r.speed;sy+=r.mpb;sxx+=r.speed*r.speed;sxy+=r.speed*r.mpb;});
+  const m=(n*sxy-sx*sy)/(n*sxx-sx*sx); return {m,b:(sy-m*sx)/n};
+}
+function idx(){
+  const c=curve(active());
+  S.forEach(s=>s.ix=100*s.mpb/(c.b+c.m*s.speed));
+}
+function lin(rows){
+  const n=rows.length; let sx=0,sy=0,sxx=0,sxy=0;
+  rows.forEach(r=>{sx+=r.day;sy+=r.ix;sxx+=r.day*r.day;sxy+=r.day*r.ix;});
+  const m=(n*sxy-sx*sy)/(n*sxx-sx*sx); return {m,b:(sy-m*sx)/n,mx:sx/n,my:sy/n};
+}
+const W=340,H=195,PL=40,PR=14,PT=16,PB=34;
+function draw(){
+  idx(); const A=active(), f=lin(A);
+  const d0=Math.min(...S.map(s=>s.day)), d1=Math.max(...S.map(s=>s.day));
+  const ylo=94,yhi=108;
+  const X=v=>PL+(W-PL-PR)*(v-d0)/(d1-d0), Y=v=>PT+(H-PT-PB)*(1-(v-ylo)/(yhi-ylo));
+  const ci=useAll?[-1.41/30,2.79/30]:[-1.94/30,1.28/30];
+  const band=s=>[[X(d0),Y(f.my+s*(d0-f.mx))],[X(d1),Y(f.my+s*(d1-f.mx))]];
+  const bl=band(ci[0]), bh=band(ci[1]);
+  let g=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Efficiency index">`;
+  g+=`<polygon points="${bl[0]} ${bl[1]} ${bh[1]} ${bh[0]}" fill="rgba(107,101,96,.14)"/>`;
+  g+=`<line x1="${PL}" y1="${Y(100)}" x2="${W-PR}" y2="${Y(100)}" stroke="#9B9590"/>`;
+  g+=`<line x1="${X(d0)}" y1="${Y(f.m*d0+f.b)}" x2="${X(d1)}" y2="${Y(f.m*d1+f.b)}" stroke="#6B6560" stroke-width="1.8" stroke-dasharray="5 3"/>`;
+  S.forEach((s,i)=>{
+    const off=s.excluded&&!useAll, on=sel===i;
+    const fill=off?'#D4D0CB':(s.kind==='Intervals'?'#1A1815':'none');
+    g+=`<circle cx="${X(s.day)}" cy="${Y(s.ix)}" r="16" fill="transparent" data-i="${i}" style="cursor:pointer"/>`;
+    g+=`<circle cx="${X(s.day)}" cy="${Y(s.ix)}" r="${on?6:4}" fill="${fill}"
+      stroke="${off?'#D4D0CB':(s.kind==='Intervals'?'none':'#1A1815')}" stroke-width="1.6"
+      stroke-dasharray="${off?'2 2':''}" data-i="${i}" style="cursor:pointer"/>`;
+  });
+  g+=`<text class="ax" x="4" y="${Y(100)+3}">100</text>`;
+  g+=`<text class="ax" x="${PL}" y="${H-12}">JUN 23</text><text class="ax" x="${W-PR-42}" y="${H-12}">AUG 16</text></svg>`;
+  document.getElementById('chart').innerHTML=g;
+  document.querySelectorAll('#chart circle').forEach(c=>c.onclick=()=>open_(+c.dataset.i));
+  const sl=f.m*30;
+  document.getElementById('nt').innerHTML = useAll
+   ? `Aug 6 back in: trend <b>+0.40</b> points a month, band \u22121.4 to +2.8, scatter 2.3.
+      One erratic heart-rate file tilts the line upward.`
+   : `Trend <b>${sl.toFixed(2)}</b> points a month, band \u22121.9 to +1.3, scatter 1.6.
+      Still contains zero, so still not a finding \u2014 but the curve now fits at R\u00b2 0.95.`;
+  document.getElementById('hl').textContent = useAll ? 'One bad file, one different story.' : 'Still flat, but the read is cleaner.';
+}
+function rows(){
+  document.getElementById('rows').innerHTML=S.map((s,i)=>{
+    const off=s.excluded&&!useAll;
+    return `<tr data-i="${i}" class="${sel===i?'sel':''} ${off?'ex':''}">
+      <td>${s.date.slice(5)}</td><td>${s.kind}${off?' \u00b7 not counted':''}</td>
+      <td class="n">${fmt(s.psec)}</td><td class="n">${fmt(s.adj)}</td>
+      <td class="n">${Math.round(s.hr)}</td><td class="n b">${s.ix.toFixed(1)}</td>
+      <td class="chev">&rsaquo;</td></tr>`;}).join('');
+  document.querySelectorAll('#rows tr').forEach(r=>r.onclick=()=>open_(+r.dataset.i));
+}
+function open_(i){
+  sel=i; const s=S[i], m=s.meta||{};
+  document.getElementById('dDate').textContent=s.date+' \u00b7 '+s.kind+(s.excluded?' \u00b7 NOT COUNTED':'');
+  document.getElementById('dTitle').textContent=(s.reps.length?s.reps.length+' reps \u00b7 ':'')+fmt(s.psec)+' work pace';
+  let h='';
+  if(s.excluded) h+=`<div class="warn"><b>Why this one is nulled</b>
+    Heart rate swung from 143 to 171 bpm across five reps run at 5:18&ndash;5:23 &mdash; the same effort
+    five times. That is a strap misreading, not physiology. Scored against a curve fit without it,
+    this session lands 4.75 standard deviations out; the next-worst is 1.67.</div>`;
+  h+=`<div class="grid">
+    <div class="stat"><b>${s.ix.toFixed(1)}</b><span>index</span></div>
+    <div class="stat"><b>${Math.round(s.hr)}</b><span>work hr</span></div>
+    <div class="stat"><b>${fmt(s.adj)}</b><span>heat-adj</span></div>
+    <div class="stat"><b>${(m.miles??0).toFixed?.(1)??m.miles}</b><span>total mi</span></div>
+    <div class="stat"><b>${Math.round(m.dew??0)}\u00b0</b><span>dew point</span></div>
+    <div class="stat"><b>${Math.round(s.ftmi)}</b><span>ft / mile</span></div></div>`;
+  if(m.heat) h+=`<div class="note"><div>Conditions</div><div>${Math.round(m.temp)}\u00b0F,
+    dew ${Math.round(m.dew)}\u00b0, ${m.rh}% humidity \u2014 heat load <b>${m.heat}</b>.
+    Session pace ${m.pace}, ${Math.round(m.elev)} ft climbing.</div></div>`;
+  if(s.reps.length){
+    h+=`<div class="eyebrow" style="margin-top:18px">Every rep</div>
+      <div class="scroll" style="max-height:250px"><table><thead><tr><th>#</th>
+      <th style="text-align:right">mi</th><th style="text-align:right">pace</th>
+      <th style="text-align:right">hr</th><th style="text-align:right">max</th></tr></thead><tbody>`;
+    s.reps.forEach(r=>{h+=`<tr><td>${r.rep}</td><td class="n">${(r.miles??0).toFixed(2)}</td>
+      <td class="n b">${r.pace}</td><td class="n">${r.hr?Math.round(r.hr):''}</td>
+      <td class="n">${r.maxhr?Math.round(r.maxhr):''}</td></tr>`;});
+    h+='</tbody></table></div>';
+  }
+  document.getElementById('dBody').innerHTML=h;
+  document.getElementById('detail').classList.add('open');
+  document.getElementById('shade').classList.add('on');
+  draw(); rows();
+}
+const close_=()=>{document.getElementById('detail').classList.remove('open');
+  document.getElementById('shade').classList.remove('on');};
+document.getElementById('x').onclick=close_;
+document.getElementById('shade').onclick=close_;
+document.getElementById('bOut').onclick=()=>{useAll=false;
+  document.getElementById('bOut').classList.add('on');document.getElementById('bIn').classList.remove('on');draw();rows();};
+document.getElementById('bIn').onclick=()=>{useAll=true;
+  document.getElementById('bIn').classList.add('on');document.getElementById('bOut').classList.remove('on');draw();rows();};
+draw();rows();
+</script></body></html>

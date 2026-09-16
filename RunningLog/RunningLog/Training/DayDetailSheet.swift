@@ -61,6 +61,10 @@ struct DayDetailSheet: View {
     @State private var showWorkoutChat = false
     @State private var showReschedule = false
 
+    // Workout builder (structured step editor) + duplicate-to-day picker
+    @State private var showWorkoutBuilder = false
+    @State private var showDuplicatePicker = false
+
     // Workshop mode (for creating/replacing workouts)
     @State private var showWorkshop = false
     @State private var workshopTab: WorkshopTab = .build
@@ -73,6 +77,11 @@ struct DayDetailSheet: View {
     @State private var completedVitalWorkouts: [RunningWorkout] = []
     @State private var showVitalDetail = false
     @State private var selectedVitalWorkout: RunningWorkout?
+    /// The `training_logs` row id for `selectedVitalWorkout`. NOT the same as
+    /// `selectedVitalWorkout.id`, which is a HealthKit/Vital device UUID — see
+    /// `resolveAndPresentDetail`.
+    @State private var resolvedDetailLogId: UUID?
+    @State private var resolvingDetail = false
 
     /// Server-generated coaching insight for the linked training_logs row.
     /// Populated in `.task` when the sheet appears. Trimmed to a single
@@ -313,12 +322,15 @@ struct DayDetailSheet: View {
                                 DD22ActionStrip(
                                     workout: scheduledWorkout,
                                     isExporting: isExporting,
+                                    isCoachIssued: isCoachIssuedWorkout,
                                     onMarkComplete: { markComplete() },
                                     onSkip: { markSkipped() },
                                     onSwap: { showSwapPicker = true },
                                     onRestructure: { showWorkshop = true },
                                     onReschedule: { showReschedule = true },
-                                    onExport: { exportWorkout() }
+                                    onExport: { exportWorkout() },
+                                    onEditWorkout: { showWorkoutBuilder = true },
+                                    onDuplicate: { showDuplicatePicker = true }
                                 )
                                 .padding(.horizontal, 20)
                             }
@@ -340,7 +352,10 @@ struct DayDetailSheet: View {
                                 ForEach(completedVitalWorkouts) { vitalWorkout in
                                     Button {
                                         selectedVitalWorkout = vitalWorkout
-                                        showVitalDetail = true
+                                        // Resolve the DEVICE workout to its
+                                        // training_logs row before opening —
+                                        // see resolveAndPresentDetail.
+                                        Task { await resolveAndPresentDetail(vitalWorkout) }
                                     } label: {
                                         VStack(spacing: 12) {
                                             HStack(spacing: 0) {
@@ -465,6 +480,32 @@ struct DayDetailSheet: View {
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
             }
+            .sheet(isPresented: $showWorkoutBuilder) {
+                // Structured builder — edit (self-coached) or customize
+                // (coach-issued; the sheet shows the coach-visibility line).
+                // Saves route through edit-scheduled-workout so the change
+                // is audited either way.
+                WorkoutBuilderSheet(
+                    viewModel: viewModel,
+                    scheduledWorkout: scheduledWorkout,
+                    racePaceSeconds: racePaceSeconds,
+                    onSaved: { dismiss() }
+                )
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+            }
+            .sheet(isPresented: $showDuplicatePicker) {
+                DuplicateDayPickerSheet(
+                    sourceWorkout: scheduledWorkout,
+                    scheduled: viewModel.allScheduledWorkouts,
+                    onPick: { date in
+                        Task {
+                            let ok = await viewModel.duplicateWorkout(scheduledWorkout, to: date)
+                            if ok { dismiss() }
+                        }
+                    }
+                )
+            }
             .alert("Delete Workout", isPresented: $showDeleteConfirmation) {
                 Button("Cancel", role: .cancel) {}
                 Button("Convert to Rest Day", role: .destructive) {
@@ -479,12 +520,9 @@ struct DayDetailSheet: View {
                 Text(exportErrorMessage ?? "An error occurred while exporting")
             }
             .sheet(isPresented: $showVitalDetail) {
-                if let vitalWorkout = selectedVitalWorkout,
-                   let vitalId = vitalWorkout.vitalWorkoutId
-                {
-                    VitalWorkoutDetailView(workout: vitalWorkout, vitalWorkoutId: vitalId)
-                        .presentationDetents([.large])
-                        .presentationDragIndicator(.visible)
+                if let rowId = resolvedDetailLogId {
+                    // Canonical workout detail — rep-by-rep chart, notes, splits.
+                    WorkoutRepDetailSheet(workoutId: rowId)
                 }
             }
             .task {
@@ -506,6 +544,29 @@ struct DayDetailSheet: View {
                 }
             }
         }
+    }
+
+    // MARK: - Workout detail
+
+    /// Open the canonical workout detail for a completed run on this day.
+    ///
+    /// `completedVitalWorkouts` comes from `VitalManager.fetchRunningWorkouts`,
+    /// so each element's `id` is a **HealthKit/Vital device UUID**. This sheet
+    /// used to hand that straight to `WorkoutRepDetailSheet`, which documents
+    /// its parameter as "the `training_logs` row id" and queries `training_logs`
+    /// with it. No row has a device UUID for an id, so the receipt opened
+    /// blank — silently, since both types are `UUID` and nothing errors.
+    ///
+    /// Resolve to the real row first (2026-08-07, S2). If the run hasn't been
+    /// imported yet there is no row to open, so we don't present an empty
+    /// sheet — that's a real state, not a failure.
+    @MainActor
+    private func resolveAndPresentDetail(_ workout: RunningWorkout) async {
+        guard !resolvingDetail else { return }
+        resolvingDetail = true
+        defer { resolvingDetail = false }
+        resolvedDetailLogId = await HistoryDetailViewModel.streamLogId(matching: workout)
+        if resolvedDetailLogId != nil { showVitalDetail = true }
     }
 
     // MARK: - Insight fetch
@@ -590,6 +651,14 @@ struct DayDetailSheet: View {
 
     // MARK: - Edit Mode
 
+    /// Coach-issued when the row is a coach prescription (two-lane
+    /// `coach_locked` source) or the whole plan came from a coach template.
+    /// Drives the "Customize" label + coach-visibility notice in the builder.
+    private var isCoachIssuedWorkout: Bool {
+        scheduledWorkout.source == "coach_locked"
+            || (viewModel.activePlan?.isCoachPlan ?? false)
+    }
+
     private var defaultEquivalentPaces: EquivalentPaces {
         EquivalentPaces(raceDistance: .marathon, goalTimeSeconds: 14400)
     }
@@ -667,11 +736,16 @@ struct DayDetailSheet: View {
         updatedScheduled.workout = updatedWorkout
         updatedScheduled.status = .modified
 
-        await viewModel.updateWorkout(updatedScheduled)
+        // Route through the audited edge function so the coach is flagged
+        // (yellow-tier plan_adjustment). Keep the sheet in edit mode if it
+        // fails so the athlete doesn't lose their changes.
+        let ok = await viewModel.submitWorkoutEdit(updatedScheduled)
 
         isSavingEdits = false
-        withAnimation(.spring(response: 0.3)) {
-            isEditing = false
+        if ok {
+            withAnimation(.spring(response: 0.3)) {
+                isEditing = false
+            }
         }
     }
 }
@@ -989,6 +1063,50 @@ struct ShorthandParseResult: Codable {
     let name: String
     let description: String
     let errors: [String]
+    /// The canonical shape, present whenever the server ran its model layer.
+    ///
+    /// `steps` is a legacy projection: its pace vocabulary is a bare zone name
+    /// ("marathon"), so an offset — "MP-3%", "MP-10" — has nowhere to live and
+    /// is dropped in transit. A perfect parse of "16 x K alternating MP-3% &
+    /// MP+5%" still arrived here as sixteen plain marathon-pace kilometres.
+    /// Prefer this when it is there.
+    let structuredSteps: [ShorthandStructuredStep]?
+    /// Steps that were built but rest on an assumption the coach never wrote.
+    let warnings: [String]?
+    /// Fragments the parser could not turn into a step at all.
+    let unparsed: [String]?
+}
+
+/// A step as `_shared/workout-step-validator.ts` defines it — the shape both
+/// the grammar and the model are normalised into, and the only one that can
+/// express a pace as a zone PLUS an offset.
+struct ShorthandStructuredStep: Codable {
+    let stepType: String
+    let durationType: String
+    let durationValue: Double
+    /// null is legal and meaningful: the coach wrote no pace. Never defaulted
+    /// on this side either — see `unresolvedReason`.
+    let paceZone: String?
+    let paceAdjustment: Adjustment?
+    let exactPaceSecPerMile: Double?
+    let repeats: Int?
+    let recovery: Recovery?
+    let note: String?
+    /// Why the pace is unknown, as a closed code the UI can ask a question about.
+    let unresolvedReason: String?
+
+    struct Adjustment: Codable {
+        /// "percent" or "seconds_per_mile".
+        let type: String
+        /// Positive = slower, negative = faster. Same convention as PaceSelection.
+        let value: Double
+    }
+
+    struct Recovery: Codable {
+        let durationType: String
+        let durationValue: Double
+        let isJog: Bool
+    }
 }
 
 struct ShorthandStep: Codable, Identifiable {
@@ -999,6 +1117,11 @@ struct ShorthandStep: Codable, Identifiable {
     let paceReference: String?
     let paceRangeHigh: String?
     let pacePercentage: Double?
+    /// Seconds per mile, when the coach wrote a number instead of a zone
+    /// ("4mi @ 6:00", "6x800 @ 3:00"). Optional because the deterministic
+    /// grammar never emits one and older deploys of the function don't send
+    /// the key at all.
+    let absolutePaceSecPerMile: Double?
     let notes: String?
     let order: Int
     let repCount: Int?
@@ -1320,6 +1443,14 @@ struct WorkshopView: View {
                 let body: [String: Any] = [
                     "input": input,
                     "paceZones": paceZones,
+                    // Without this the server answers from its own deterministic
+                    // grammar, which scores 12% against this coach's real plans
+                    // and cannot represent a pace offset at all — and, because
+                    // it never emits `structuredSteps`, the apply below had no
+                    // shape to read a pace out of. Cost is bounded server-side
+                    // by `llmBudgetAllows`, which falls back to the grammar
+                    // rather than failing, so the button always does something.
+                    "useModel": true,
                 ]
 
                 let data = try await callEdgeFunction(name: "parse-workout-shorthand", body: body)
@@ -1340,37 +1471,33 @@ struct WorkshopView: View {
     private func applyShorthandWorkout(_ result: ShorthandParseResult) async {
         isApplying = true
 
-        let steps = result.steps.enumerated().map { index, step in
-            let stepType: PlannedWorkoutStep.StepType = {
-                switch step.stepType {
-                case "warmup": return .warmup
-                case "cooldown": return .cooldown
-                case "recovery", "rest": return .recovery
-                default: return .active
-                }
-            }()
+        // Read through the shared wire → editor mapping, then lower to the
+        // persisted shape the same way the builder sheet does.
+        //
+        // This used to build PlannedWorkoutStep by hand and derive the pace from
+        // `step.pacePercentage`, which the server hardcodes to null — so the
+        // `.map` never fired and every step saved from here had no zone, no
+        // offset and no intensity, with "@ marathon pace" in `notes` as its only
+        // trace of a prescription. Going through EditableWorkoutStep keeps the
+        // zone, the offset, an absolute written pace, the rep count and the
+        // recovery, all of which the hand-rolled version dropped.
+        let equiv = viewModel.equivalentPaces
+            ?? EquivalentPaces(raceDistance: .marathon, goalTimeSeconds: 14400)
+        let steps = EditableWorkoutStep
+            .steps(fromShorthand: result)
+            .map { $0.toWorkoutStep(racePaceSeconds: racePaceSeconds, equivalentPaces: equiv) }
 
-            let durationType: PlannedWorkoutStep.DurationType = {
-                switch step.durationType {
-                case "distance_meters": return .distanceMeters
-                case "time_seconds": return .timeSeconds
-                default: return .distanceMiles
-                }
-            }()
-
-            return PlannedWorkoutStep(
-                id: UUID(),
-                stepType: stepType,
-                durationType: durationType,
-                durationValue: step.durationValue,
-                // TODO(adaptive-plan-1.8): STOP constructing PaceIntensity from a percentage here.
-                //   Use step.paceSecondsPerKm or resolve via AthletePaceProfileService when only
-                //   a pace_reference is set. See: adaptive-plan-loop-prompts.md § Prompt 1.8
-                targetPaceIntensity: step.pacePercentage.map { PaceIntensity(percentage: $0 / 100.0) },
-                notes: [step.notes, step.paceReference.map { "@ \($0) pace" }]
-                    .compactMap { $0 }.joined(separator: " "),
-                order: index
-            )
+        // Never overwrite a real workout with a failed parse.
+        //
+        // The server's own grammar answers whenever the model is unavailable —
+        // no key, exhausted budget, a timeout — and on this coach's plans it is
+        // very weak: 125 of 137 real workouts came back with zero total
+        // distance. Applying that replaces a prescribed session with an empty
+        // one, and the coach's text is still sitting in the box either way, so
+        // doing nothing is strictly better than doing that.
+        guard !steps.isEmpty, steps.contains(where: { $0.durationValue > 0 }) else {
+            isApplying = false
+            return
         }
 
         let workoutType = ScheduledWorkoutType(rawValue: result.workoutType) ?? .intervals

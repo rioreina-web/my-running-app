@@ -12,8 +12,9 @@ import {
 // is the action — the coach reviews source workouts, sends a message, etc.
 // before flipping status); tap "Dismiss" to close it without a follow-up.
 //
-// Severity colors: low = slate, med = amber, high = rose. The left stripe
-// is the only severity affordance — keeps the card itself readable.
+// Severity colors: low = neutral gray, med = amber warning, high = coral
+// (coral is the alert color — three-palette rule). The left stripe is the
+// only severity affordance — keeps the card itself readable.
 //
 // Spec: docs/specs/coachable_moment.md
 
@@ -36,9 +37,9 @@ const SEVERITY_META: Record<
   CoachableMomentRow["severity"],
   { stripe: string; tag: string; label: string }
 > = {
-  low:  { stripe: "bg-slate-300",   tag: "text-slate-700 bg-slate-100",   label: "Low priority" },
-  med:  { stripe: "bg-amber-400",   tag: "text-amber-700 bg-amber-100",   label: "Medium priority" },
-  high: { stripe: "bg-rose-500",    tag: "text-rose-700 bg-rose-100",     label: "Needs attention" },
+  low:  { stripe: "bg-text-tertiary", tag: "text-text-secondary bg-bg-calendar", label: "Low priority" },
+  med:  { stripe: "bg-warning",       tag: "text-warning bg-warning/12",         label: "Medium priority" },
+  high: { stripe: "bg-coral",         tag: "text-coral-dark bg-coral/12",        label: "Needs attention" },
 };
 
 const ACTION_LABEL: Record<CoachableMomentRow["action_type"], string> = {

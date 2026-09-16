@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Coach · Workout drawer, re-cut — Jul 11 long run</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400..800;1,400..600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF; --paper-deep:#E8E4DF; --rule:#E8E4E0;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-light:#E8764A; --coral-deep:#B84420; --coral-wash:rgba(212,89,42,.12);
+  --m-energized:#2D8A4E; --m-positive:#4A9E6B; --m-neutral:#9B9590; --m-tired:#C4873A; --m-struggling:#C45A3A; --m-injured:#B83A4A;
+  --p-easy:#93B9D6; --p-moderate:#74A8CC; --p-steady:#578FC0; --p-mp:#3F7CB5; --p-hmp:#2F66A8;
+  --p-lt:#27549B; --p-10k:#20448B; --p-5k:#1A3679; --p-3k:#142964; --p-mile:#0E1D4E; --p-easy-text:#5E93BE;
+  --fd:"Crimson Pro",Georgia,serif; --fb:"PT Serif",Georgia,serif; --fm:"JetBrains Mono",ui-monospace,Menlo,monospace;
+}
+*{box-sizing:border-box;}
+body{margin:0;background:#EDEAE4;font-family:var(--fb);color:var(--ink);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;padding:26px 18px 80px;}
+.wrap{max-width:940px;margin:0 auto;}
+
+/* ---- page chrome ---- */
+.plate-strip{display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid var(--ink);padding-bottom:10px;margin-bottom:8px;}
+.plate-strip .l,.plate-strip .r{font-family:var(--fm);font-size:11px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2);}
+.intro{font-family:var(--fb);font-size:13.5px;font-style:italic;color:var(--ink-2);line-height:1.55;max-width:640px;margin:10px 0 30px;}
+
+.cols{display:grid;grid-template-columns:452px 1fr;gap:34px;align-items:start;}
+@media (max-width:820px){.cols{grid-template-columns:1fr;}}
+
+/* ---- the drawer ---- */
+.drawer{width:452px;max-width:100%;background:var(--paper);box-shadow:-8px 0 30px rgba(0,0,0,.16),0 2px 8px rgba(0,0,0,.08);position:relative;padding:28px 28px 26px;}
+.eyebrow{font-family:var(--fm);font-size:10px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);}
+.eyebrow-sm{font-family:var(--fm);font-size:9px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);}
+.stat{font-family:var(--fm);font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums;line-height:1;}
+.hairline{border:0;border-top:1px solid var(--rule);margin:0;}
+.close{position:absolute;right:20px;top:20px;width:30px;height:30px;border-radius:999px;background:var(--paper-deep);border:0;font-family:var(--fm);font-size:13px;color:var(--ink-2);display:flex;align-items:center;justify-content:center;cursor:pointer;}
+
+.key-row{display:flex;align-items:center;gap:8px;}
+.key-pill{background:var(--ink);color:#fff;border-radius:999px;padding:3px 8px;font-family:var(--fm);font-size:9px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;}
+.key-date{font-family:var(--fm);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);}
+
+h1.title{font-family:var(--fd);font-weight:700;font-size:28px;line-height:1.05;letter-spacing:-.01em;margin:12px 0 0;}
+.sub-row{display:flex;align-items:center;flex-wrap:wrap;gap:7px;margin-top:8px;font-family:var(--fm);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);}
+.zone-dot{width:9px;height:9px;border-radius:999px;background:var(--p-moderate);display:inline-block;}
+.cut-chip{background:var(--coral-wash);color:var(--coral-deep);border-radius:999px;padding:2px 8px;font-family:var(--fm);font-size:9.5px;font-weight:600;letter-spacing:.08em;}
+
+/* headline 4-stat strip (Plate 23 pattern) */
+.stats4{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);margin-top:18px;padding:13px 0;}
+.stats4 .cell{display:flex;flex-direction:column;gap:4px;padding:0 10px;border-right:1px solid var(--rule);}
+.stats4 .cell:first-child{padding-left:0;}
+.stats4 .cell:last-child{border-right:0;}
+.stats4 .v{font-size:19px;}
+.stats4 .v .u{font-size:9px;color:var(--ink-2);margin-left:1px;font-weight:500;}
+.stats4 .sub{font-family:var(--fm);font-size:8.5px;letter-spacing:.05em;color:var(--ink-3);text-transform:uppercase;}
+.stats4 .sub b{color:var(--ink-2);font-weight:600;}
+
+/* sections */
+.sec{margin-top:22px;}
+.sec-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;}
+.chart-cap{font-family:var(--fb);font-style:italic;font-size:12.5px;color:var(--ink-2);line-height:1.5;margin:9px 0 0;}
+.legend{display:flex;gap:14px;margin-top:8px;font-family:var(--fm);font-size:8.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);flex-wrap:wrap;}
+.legend .sw{display:inline-block;vertical-align:-1px;margin-right:4px;}
+
+/* telemetry readout (Plate 23 pattern) */
+.readout{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:8px;overflow:hidden;margin-bottom:10px;}
+.ro-cell{background:var(--paper-elevated);padding:7px 9px;display:flex;flex-direction:column;gap:3px;}
+.ro-cell .k{font-family:var(--fm);font-size:8px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);}
+.ro-cell .v{font-family:var(--fm);font-weight:600;font-size:13.5px;font-variant-numeric:tabular-nums;color:var(--ink);}
+.ro-cell .v small{font-size:8.5px;color:var(--ink-3);font-weight:500;margin-left:2px;}
+
+/* conditions strip */
+.strip5{display:grid;grid-template-columns:repeat(5,1fr);border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);padding:11px 0;}
+.strip5 .cell{display:flex;flex-direction:column;align-items:center;gap:3px;border-right:1px solid var(--rule);}
+.strip5 .cell:last-child{border-right:0;}
+.strip5 .v{font-size:14px;}
+.strip5 .v.alert{color:var(--coral);}
+.strip5 .u{font-family:var(--fm);font-size:8.5px;color:var(--ink-3);letter-spacing:.04em;text-transform:uppercase;}
+.cond-read{font-family:var(--fb);font-style:italic;font-size:12.5px;color:var(--ink-2);margin:9px 0 0;line-height:1.5;}
+
+/* splits */
+.split-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--rule);}
+.split-row:first-of-type{border-top:0;}
+.split-dot{width:8px;height:8px;border-radius:999px;flex:none;}
+.split-name{flex:1;font-family:var(--fb);font-size:13.5px;color:var(--ink);}
+.split-adj{font-family:var(--fm);font-size:10px;color:var(--p-easy-text);letter-spacing:.02em;}
+.split-pace{font-family:var(--fm);font-size:14px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--ink);min-width:44px;text-align:right;}
+.split-pace.ghost{color:var(--ink-3);font-weight:400;font-size:12px;}
+.split-foot{font-family:var(--fm);font-size:8.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);margin-top:7px;}
+
+/* voice */
+.mood-pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:4px 11px;font-family:var(--fm);font-size:9.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;background:rgba(196,90,58,.14);color:var(--m-struggling);}
+.mood-pill .dot{width:7px;height:7px;border-radius:999px;background:var(--m-struggling);}
+blockquote.voice{margin:10px 0 0;background:var(--paper-elevated);border-radius:10px;padding:14px 16px;font-family:var(--fb);font-style:italic;font-size:14px;line-height:1.65;color:var(--ink);}
+.voice-cap{font-family:var(--fm);font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);margin-top:8px;}
+.voice-cap b{color:var(--ink-2);font-weight:600;}
+
+/* body / niggles */
+.body-line{font-family:var(--fb);font-size:13.5px;color:var(--ink);margin:0;}
+.body-sub{font-family:var(--fb);font-size:12px;font-style:italic;color:var(--ink-3);margin:4px 0 0;}
+
+/* week & load */
+.load-line{font-family:var(--fb);font-size:13.5px;color:var(--ink);margin:0 0 10px;}
+.load-line b{font-family:var(--fm);font-weight:600;font-size:12.5px;}
+.acwr-bar{position:relative;height:8px;border-radius:4px;overflow:hidden;display:flex;}
+.acwr-bar .seg{height:100%;}
+.acwr-marker{position:absolute;top:-3px;width:2px;height:14px;background:var(--ink);}
+.next-line{font-family:var(--fm);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);margin-top:12px;}
+.next-line .zone-dot{width:7px;height:7px;background:var(--p-mp);}
+
+/* the read */
+.read{border-top:2px solid var(--ink);padding-top:12px;}
+.read p{font-family:var(--fb);font-size:14px;line-height:1.65;color:var(--ink);margin:8px 0 0;}
+.read p.q{font-style:italic;color:var(--ink-2);}
+
+/* footer actions */
+.actions{display:flex;align-items:center;justify-content:space-between;margin-top:24px;padding-top:16px;border-top:1px solid var(--rule);}
+.btn-coral{background:var(--coral);color:#fff;border:0;border-radius:10px;padding:10px 18px;font-family:var(--fd);font-weight:600;font-size:14.5px;cursor:pointer;box-shadow:0 4px 12px rgba(212,89,42,.3);}
+.link-quiet{font-family:var(--fd);font-weight:600;font-size:13.5px;color:var(--ink-2);text-decoration:none;border-bottom:1px solid var(--rule);padding-bottom:1px;}
+
+/* ---- annotation column ---- */
+.notes h2{font-family:var(--fd);font-weight:700;font-size:20px;margin:0 0 4px;}
+.notes .lede{font-family:var(--fb);font-size:12.5px;font-style:italic;color:var(--ink-2);margin:0 0 18px;line-height:1.55;}
+.note{display:flex;gap:10px;padding:10px 0;border-top:1px solid var(--rule);}
+.note .n{flex:none;width:18px;height:18px;border-radius:999px;border:1px solid var(--ink);font-family:var(--fm);font-size:9.5px;font-weight:600;display:flex;align-items:center;justify-content:center;margin-top:1px;}
+.note .t{font-family:var(--fb);font-size:12.5px;line-height:1.55;color:var(--ink);}
+.note .t b{font-weight:700;}
+.note .src{display:block;font-family:var(--fm);font-size:8.5px;letter-spacing:.04em;color:var(--ink-3);margin-top:3px;text-transform:uppercase;line-height:1.6;}
+.callout{flex:none;width:18px;height:18px;border-radius:999px;background:var(--ink);color:#fff;font-family:var(--fm);font-size:9.5px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;position:absolute;left:-46px;}
+.acwr-wrap{position:relative;}
+.acwr-abs{position:absolute;font-family:var(--fm);font-size:8px;letter-spacing:.05em;color:var(--ink-3);text-transform:uppercase;top:0;transform:translateX(-50%);white-space:nowrap;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="plate-strip">
+    <span class="l">POST RUN DRIP · COACH PORTAL — WORKOUT DRAWER, RE-CUT</span>
+    <span class="r">FIG. 24 · JUL 2026</span>
+  </div>
+  <p class="intro">The key-session drill-down, rebuilt to answer the coach's five questions in order: what was asked vs. what happened · how hard was it really · what did the athlete say · is the body flagging · where does it sit in the week. Same 452&nbsp;px drawer, same data model — every number below exists in the schema today. Numbered notes at right map each section to its source.</p>
+
+  <div class="cols">
+
+    <!-- ============ THE DRAWER ============ -->
+    <aside class="drawer">
+      <button class="close" aria-label="Close">✕</button>
+
+      <!-- ① header -->
+      <div style="position:relative;">
+        <span class="callout" style="top:0;">1</span>
+        <div class="key-row">
+          <span class="key-pill">★ Key session</span>
+          <span class="key-date">Jul 11 · Sat · Week 6</span>
+        </div>
+        <h1 class="title">Long run, cut at 15.</h1>
+        <div class="sub-row">
+          <span class="zone-dot"></span>
+          <span>Long · prescribed 16 mi · 8:55–9:25</span>
+          <span class="cut-chip">CUT AT 15 · −1.0 MI</span>
+        </div>
+      </div>
+
+      <!-- ② headline stats -->
+      <div style="position:relative;">
+        <span class="callout" style="top:26px;">2</span>
+        <div class="stats4">
+          <div class="cell">
+            <span class="eyebrow-sm">Distance</span>
+            <span class="stat v">15.0<span class="u">mi</span></span>
+            <span class="sub">of <b>16</b> planned</span>
+          </div>
+          <div class="cell">
+            <span class="eyebrow-sm">Time</span>
+            <span class="stat v">2:22<span class="u">:28</span></span>
+            <span class="sub">planned <b>~2:15</b></span>
+          </div>
+          <div class="cell">
+            <span class="eyebrow-sm">Pace</span>
+            <span class="stat v">9:30<span class="u">/mi</span></span>
+            <span class="sub">vs <b>8:55–9:25</b></span>
+          </div>
+          <div class="cell">
+            <span class="eyebrow-sm">Heat-adj</span>
+            <span class="stat v" style="color:var(--p-steady);">8:59<span class="u">/mi</span></span>
+            <span class="sub"><b>−31s</b> · in band</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ③ telemetry — Plate 23 Combined, coach-layered -->
+      <div class="sec" style="position:relative;">
+        <span class="callout" style="top:-2px;">3</span>
+        <div class="sec-head">
+          <span class="eyebrow">Telemetry · pace × HR × elevation</span>
+          <span class="eyebrow-sm">Drag to scrub</span>
+        </div>
+        <div class="readout" id="ro">
+          <div class="ro-cell"><span class="k">Distance</span><span class="v" id="ro-d">10.00<small>mi</small></span></div>
+          <div class="ro-cell"><span class="k">Pace</span><span class="v" id="ro-p" style="color:var(--p-steady);">9:26<small>/mi</small></span></div>
+          <div class="ro-cell"><span class="k">Heart rate</span><span class="v" id="ro-h">152<small>· Z4</small></span></div>
+          <div class="ro-cell"><span class="k">Elevation</span><span class="v" id="ro-e">64<small>ft</small></span></div>
+        </div>
+        <svg id="tele" viewBox="0 0 392 186" width="100%" style="display:block;touch-action:none;cursor:crosshair;"></svg>
+        <div class="legend">
+          <span><span class="sw" style="width:14px;height:2px;background:#578FC0;"></span>pace</span>
+          <span><span class="sw" style="width:14px;height:2px;background:#B83A4A;"></span>heart rate</span>
+          <span><span class="sw" style="width:10px;height:8px;background:#E3DED7;"></span>elevation</span>
+          <span><span class="sw" style="width:10px;height:8px;background:rgba(147,185,214,.26);"></span>8:55–9:25</span>
+          <span><span class="sw" style="width:14px;height:0;border-top:1.5px dashed #9B9590;"></span>not run</span>
+        </div>
+        <p class="chart-cap">In the band through 10 on rolling climbs, then the fade — the last 5 all over 9:45 as the morning warmed, HR still climbing at falling pace. Stopped at 15 with 2:15 already gone.</p>
+      </div>
+
+      <!-- ④ conditions -->
+      <div class="sec" style="position:relative;">
+        <span class="callout" style="top:-2px;">4</span>
+        <div class="sec-head">
+          <span class="eyebrow">Conditions · 9:41 AM start</span>
+        </div>
+        <div class="strip5">
+          <div class="cell"><span class="eyebrow-sm">Temp</span><span class="stat v">84°</span><span class="u">F</span></div>
+          <div class="cell"><span class="eyebrow-sm">Dew pt</span><span class="stat v alert">71°</span><span class="u">Hot band</span></div>
+          <div class="cell"><span class="eyebrow-sm">Climb</span><span class="stat v">1,240</span><span class="u">ft</span></div>
+          <div class="cell"><span class="eyebrow-sm">HR avg</span><span class="stat v">148</span><span class="u">Z3</span></div>
+          <div class="cell"><span class="eyebrow-sm">Drift</span><span class="stat v">+8.4%</span><span class="u">Pa:HR</span></div>
+        </div>
+        <p class="cond-read">Dew point 71° sits past the 68° hot threshold — every lap carried a heat adjustment. HR drifted +8.4% in the back half at falling pace.</p>
+      </div>
+
+      <!-- ⑤ splits -->
+      <div class="sec" style="position:relative;">
+        <span class="callout" style="top:-2px;">5</span>
+        <div class="sec-head">
+          <span class="eyebrow">Splits · vs 8:55–9:25</span>
+          <span class="eyebrow-sm">Heat-adj · raw</span>
+        </div>
+        <div class="split-row">
+          <span class="split-dot" style="background:var(--p-moderate);"></span>
+          <span class="split-name">Miles 1–5</span>
+          <span class="split-adj">8:46</span>
+          <span class="split-pace">9:04</span>
+        </div>
+        <div class="split-row">
+          <span class="split-dot" style="background:var(--p-moderate);"></span>
+          <span class="split-name">Miles 6–10</span>
+          <span class="split-adj">8:54</span>
+          <span class="split-pace">9:22</span>
+        </div>
+        <div class="split-row">
+          <span class="split-dot" style="background:var(--ink-3);"></span>
+          <span class="split-name">Miles 11–15</span>
+          <span class="split-adj">9:21</span>
+          <span class="split-pace">10:04</span>
+        </div>
+        <div class="split-row">
+          <span class="split-dot" style="background:transparent;border:1px solid var(--ink-3);box-sizing:border-box;"></span>
+          <span class="split-name" style="color:var(--ink-3);">Mile 16</span>
+          <span class="split-pace ghost">not run</span>
+        </div>
+        <div class="split-foot">Blue = inside band · gray = over · adj = heat-adjusted</div>
+      </div>
+
+      <hr class="hairline" style="margin-top:22px;">
+
+      <!-- ⑥ voice -->
+      <div class="sec" style="position:relative;">
+        <span class="callout" style="top:-2px;">6</span>
+        <div class="sec-head">
+          <span class="eyebrow">Voice note · verbatim</span>
+          <span class="mood-pill"><span class="dot"></span>Struggling</span>
+        </div>
+        <blockquote class="voice">“I had an extremely warm run on a hilly loop and felt like I was dying, despite trying to pace myself. I cut my planned 2 hour 15 minute run short as it wasn’t a good run at all. I’m focusing on recovery today, Sunday, and hoping for a better week.”</blockquote>
+        <p class="voice-cap"><b>2nd struggling in 8 days</b> — both on key sessions. Positive or energized on the easy days between.</p>
+      </div>
+
+      <!-- ⑦ body -->
+      <div class="sec" style="position:relative;">
+        <span class="callout" style="top:-2px;">7</span>
+        <div class="sec-head">
+          <span class="eyebrow">Body · niggles</span>
+        </div>
+        <p class="body-line">No niggles mentioned on this run.</p>
+        <p class="body-sub">Left calf last flagged Jul 3 — quiet for 8 days.</p>
+      </div>
+
+      <!-- ⑧ week & load -->
+      <div class="sec" style="position:relative;">
+        <span class="callout" style="top:-2px;">8</span>
+        <div class="sec-head">
+          <span class="eyebrow">Where it sits · Week 6</span>
+        </div>
+        <p class="load-line">Run 5 of 6 this week · <b>38.0 of 44 mi</b> planned. This run brought ACWR to <b>1.24</b> — high end of the sweet band.</p>
+        <div class="acwr-bar">
+          <div class="seg" style="flex:0.6;background:#DDD8D2;"></div>
+          <div class="seg" style="flex:0.2;background:#CFC9C2;"></div>
+          <div class="seg" style="flex:0.5;background:#BDB6AE;"></div>
+          <div class="seg" style="flex:0.2;background:#CFC9C2;"></div>
+          <div class="seg" style="flex:0.5;background:#DDD8D2;"></div>
+          <span class="acwr-marker" style="left:62%;"></span>
+        </div>
+        <div class="acwr-wrap" style="height:14px;margin-top:5px;">
+          <span class="acwr-abs" style="left:40%;">0.8</span>
+          <span class="acwr-abs" style="left:52.5%;color:var(--ink-2);">sweet</span>
+          <span class="acwr-abs" style="left:65%;">1.3</span>
+          <span class="acwr-abs" style="left:75%;">1.5</span>
+          <span class="acwr-abs" style="left:87.5%;">spike</span>
+        </div>
+        <div class="next-line"><span class="zone-dot"></span>&nbsp;Next key session · MP 8 mi · Tue Jul 14</div>
+      </div>
+
+      <!-- ⑨ the read -->
+      <div class="sec read" style="position:relative;">
+        <span class="callout" style="top:10px;">9</span>
+        <span class="eyebrow">The read · AI observation</span>
+        <p>Heat, not fitness. The raw 9:30 reads like a miss, but heat-adjusted he ran 8:59 — inside the long-run band — and the fade tracks the 71° dew point more than the hills. He made the call to stop at 15 himself, and had already penciled his own recovery day before you saw this.</p>
+        <p class="q">Second struggling mood on a key day this block, both in heat — worth asking how he’s sleeping before Tuesday’s MP session?</p>
+      </div>
+
+      <!-- ⑩ actions -->
+      <div class="actions" style="position:relative;">
+        <span class="callout" style="top:24px;">10</span>
+        <a class="link-quiet" href="#">Open full log</a>
+        <button class="btn-coral">Adjust this week</button>
+      </div>
+    </aside>
+
+    <!-- ============ ANNOTATIONS ============ -->
+    <section class="notes">
+      <h2>What changed, and where it comes from.</h2>
+      <p class="lede">The current drawer promises “prescribed vs. actual” and delivers distance, type, and mood. Every section below is a question the coach already asks — answered from tables that exist today.</p>
+
+      <div class="note"><span class="n">1</span><div class="t"><b>The verdict is the title.</b> “Long run, cut at 15.” — what happened, in five words, before a single number. Prescribed line + cut chip make the gap explicit. Coral chip = the one alert in this cluster.
+        <span class="src">scheduled_workouts.workout_data ↔ training_logs (linked via scheduled_workout_id)</span></div></div>
+
+      <div class="note"><span class="n">2</span><div class="t"><b>Every stat carries its target.</b> Plate 23’s 4-stat strip, but each cell shows planned vs. ran. Heat-adjusted pace is the honest headline: 8:59, in band — the effort was right, the day was hot.
+        <span class="src">training_logs · running_workout_laps.heat_adjusted_pace_sec_per_mile</span></div></div>
+
+      <div class="note"><span class="n">3</span><div class="t"><b>The app’s own telemetry, coach-layered.</b> Plate 23’s Combined chart — readout chips, pace + HR lines over the elevation terrain, HR-zone ribbon, drag-to-scrub — plus two layers the athlete view doesn’t have: the prescribed target band and the cut marker with unrun distance ghosted. Pace line renders blue per the three-palette rule; the athlete JSX still draws it coral and gets re-inked when ported.
+        <span class="src">port charts-analytics.jsx CombinedChart · running_workout_laps (pace, HR, elevation per lap)</span></div></div>
+
+      <div class="note"><span class="n">4</span><div class="t"><b>Conditions get a strip, not a footnote.</b> This run’s voice note is about heat — the drawer should already know. Dew point past 68° renders in coral (alert palette); the read cites the threshold.
+        <span class="src">training_logs.weather_actual · lap temp_f / dew_point_f / heat_category · HR from laps</span></div></div>
+
+      <div class="note"><span class="n">5</span><div class="t"><b>Splits keep the raw/adjusted pair.</b> Thirds for a long run (reps for a quality day — the fixture pattern survives). Zone-blue when inside the band, ink-gray when over, dashed ghost for what wasn’t run. Never an em-dash.
+        <span class="src">running_workout_laps bucketed by third · WorkoutSplit type extended with adj</span></div></div>
+
+      <div class="note"><span class="n">6</span><div class="t"><b>Voice and mood live together.</b> The mood pill moves up next to the note it belongs to — “mood that day” as its own KPI cell was noise. Caption places this mood in the 28-day pattern, with numbers.
+        <span class="src">training_logs.mood + cleaned_notes (verbatim, always) · mood strip context</span></div></div>
+
+      <div class="note"><span class="n">7</span><div class="t"><b>Body: absence is information.</b> “No niggles mentioned · calf quiet for 8 days” answers the coach’s next question without a tap. Surface, never interpret — recency only, no diagnosis.
+        <span class="src">body_mentions by training_log_id + latest per body_area</span></div></div>
+
+      <div class="note"><span class="n">8</span><div class="t"><b>The run in its week.</b> Volume vs. plan, ACWR after this run on the banded bar (grays only — coral is reserved for the spike band), and the next key session so the coach thinks forward, not just back.
+        <span class="src">athlete_state.acwr · weekly_mileage_targets · scheduled_workouts (next key)</span></div></div>
+
+      <div class="note"><span class="n">9</span><div class="t"><b>The read synthesizes, last.</b> Observation in the coach-voice register: feeling first, every claim cites a number, ends on a soft question. Never a directive — the coach owns the call.
+        <span class="src">New coaching prompt (non-golden family — manual review vs. principles.md)</span></div></div>
+
+      <div class="note"><span class="n">10</span><div class="t"><b>One action, one link.</b> The drawer ends where the coach acts: adjust the upcoming week in the plan builder. One coral button per the punctuation rule.
+        <span class="src">Deep link → plan builder week view · full log page for raw detail</span></div></div>
+    </section>
+
+  </div>
+</div>
+
+<script>
+/* Telemetry — Plate 23 "Combined" grammar (readout · pace + HR lines over
+   elevation terrain · HR-zone ribbon · drag-to-scrub crosshair), with two
+   coach layers on top: the prescribed target band and the cut marker.
+   Pace line is BLUE per the three-palette rule (2026-07-03); the athlete-side
+   JSX still draws it coral and should be re-inked when ported. */
+(function(){
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.getElementById("tele");
+  const W=392, padL=30, padR=20, padT=14, plotB=132, ribY=140, ribH=8, axisY=162;
+  const MI=15, MI_PLAN=16;
+  const x = d => padL + d*(W-padL-padR)/MI_PLAN;
+
+  // per-mile raw pace (sec/mi) — same run as the stat strip & splits
+  const MP=[545,538,542,550,544,552,558,562,571,566,588,595,602,611,624];
+  const paceAt = d => { const i=Math.min(13.999,Math.max(0,d-0.5)); const a=MP[Math.floor(i)], b=MP[Math.ceil(i)]; const t=i-Math.floor(i); return a+(b-a)*t + 5*Math.sin(d*1.15+0.35); };
+  const elevAt = d => 96 + 46*Math.sin(d*1.15) + 24*Math.sin(d*0.45+1);
+  const hrAt   = d => Math.round(136 + 1.65*d + 3*Math.sin(d*1.15+0.5));
+
+  const S=[]; for(let i=0;i<=MI*4;i++){const d=i/4; S.push({d, pace:paceAt(d), hr:hrAt(d), elev:elevAt(d)});}
+
+  const pMin=528, pMax=642;
+  const yP = s => padT + (s-pMin)*(plotB-padT)/(pMax-pMin);
+  const hMin=132, hMax=168;
+  const yH = h => padT+4 + (hMax-h)*(plotB-padT-8)/(hMax-hMin);
+  const yE = e => plotB - (e-20)*(44/150);
+
+  const HRZ=[{n:"Z1",max:130,c:"#4A9E6B"},{n:"Z2",max:142,c:"#2D8A4E"},{n:"Z3",max:150,c:"#C4873A"},{n:"Z4",max:158,c:"#C45A3A"},{n:"Z5",max:999,c:"#B83A4A"}];
+  const zoneFor = h => HRZ.find(z=>h<z.max)||HRZ[4];
+
+  function el(tag,attrs,txt){const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);if(txt!=null)e.textContent=txt;svg.appendChild(e);return e;}
+  const mono="JetBrains Mono, monospace";
+  const fmtPace = s => Math.floor(s/60)+":"+String(Math.round(s%60)).padStart(2,"0");
+
+  // target band 8:55–9:25 (prescribed — the coach layer)
+  el("rect",{x:padL,y:yP(535),width:x(MI)-padL,height:yP(565)-yP(535),fill:"rgba(147,185,214,.26)"});
+  // pace gridlines + labels (blue text per pace palette)
+  [540,600].forEach(s=>{el("line",{x1:padL,x2:x(MI_PLAN),y1:yP(s),y2:yP(s),stroke:"#E8E4E0","stroke-width":1,"stroke-dasharray":"1 4"});
+    el("text",{x:padL-4,y:yP(s)+2.5,"text-anchor":"end","font-family":mono,"font-size":7.5,fill:"#5E93BE"},fmtPace(s));});
+  // HR labels right
+  [140,150,160].forEach(h=>el("text",{x:x(MI_PLAN)+3,y:yH(h)+2.5,"font-family":mono,"font-size":7.5,fill:"#9B9590"},h));
+  // mile gridlines
+  [5,10].forEach(m=>el("line",{x1:x(m),x2:x(m),y1:padT,y2:plotB,stroke:"#E8E4E0","stroke-width":1,"stroke-dasharray":"1 4"}));
+  // elevation terrain
+  let pth="M"+x(0)+","+yE(S[0].elev); S.forEach(s=>pth+=" L"+x(s.d)+","+yE(s.elev));
+  el("path",{d:pth+" L"+x(MI)+","+plotB+" L"+x(0)+","+plotB+" Z",fill:"#E3DED7",opacity:.9});
+  el("text",{x:x(8.2),y:plotB-3,"font-family":mono,"font-size":7,fill:"#9B9590","letter-spacing":".04em"},"ELEV +1,240 FT");
+  // HR line (app convention rose)
+  el("polyline",{points:S.map(s=>x(s.d)+","+yH(s.hr)).join(" "),fill:"none",stroke:"#B83A4A","stroke-width":1.4,opacity:.85,"stroke-linejoin":"round"});
+  // pace line — blue (three-palette rule)
+  el("polyline",{points:S.map(s=>x(s.d)+","+yP(s.pace)).join(" "),fill:"none",stroke:"#578FC0","stroke-width":2.2,"stroke-linejoin":"round","stroke-linecap":"round"});
+  // unrun ghost
+  el("line",{x1:x(MI),y1:yP(S[S.length-1].pace),x2:x(MI_PLAN),y2:yP(S[S.length-1].pace),stroke:"#9B9590","stroke-width":1.5,"stroke-dasharray":"3 4"});
+  // HR-zone ribbon
+  for(let i=0;i<S.length-1;i++) el("rect",{x:x(S[i].d),y:ribY,width:x(S[i+1].d)-x(S[i].d)+0.4,height:ribH,fill:zoneFor(S[i].hr).c,opacity:.9});
+  // axis
+  [5,10].forEach(m=>el("text",{x:x(m),y:axisY,"text-anchor":"middle","font-family":mono,"font-size":7.5,fill:"#9B9590"},m));
+  el("text",{x:x(MI_PLAN),y:axisY,"text-anchor":"end","font-family":mono,"font-size":7.5,fill:"#9B9590"},"16 MI");
+  // cut marker (coach layer)
+  el("line",{x1:x(MI),y1:10,x2:x(MI),y2:ribY+ribH,stroke:"#D4592A","stroke-width":1.5});
+  el("text",{x:x(MI)-3,y:8,"text-anchor":"end","font-family":mono,"font-size":7.5,"font-weight":600,fill:"#D4592A","letter-spacing":".06em"},"CUT · MI 15");
+  // crosshair
+  const cLine=el("line",{x1:0,x2:0,y1:padT,y2:ribY+ribH,stroke:"#1A1815","stroke-width":1,opacity:.5});
+  const cPace=el("circle",{r:3.5,fill:"#578FC0",stroke:"#F5F3F0","stroke-width":1.5});
+  const cHR=el("circle",{r:3,fill:"#B83A4A",stroke:"#F5F3F0","stroke-width":1.5});
+
+  const roD=document.getElementById("ro-d"),roP=document.getElementById("ro-p"),roH=document.getElementById("ro-h"),roE=document.getElementById("ro-e");
+  function setIdx(i){
+    const s=S[i], cx=x(s.d), z=zoneFor(s.hr);
+    cLine.setAttribute("x1",cx);cLine.setAttribute("x2",cx);
+    cPace.setAttribute("cx",cx);cPace.setAttribute("cy",yP(s.pace));
+    cHR.setAttribute("cx",cx);cHR.setAttribute("cy",yH(s.hr));
+    roD.innerHTML=s.d.toFixed(2)+"<small>mi</small>";
+    roP.innerHTML=fmtPace(s.pace)+"<small>/mi</small>";
+    roH.innerHTML=s.hr+"<small>· "+z.n+"</small>";
+    roE.innerHTML=Math.round(s.elev)+"<small>ft</small>";
+  }
+  setIdx(40); // opens mid-fade
+  function onMove(e){
+    const r=svg.getBoundingClientRect();
+    const cx=((e.touches?e.touches[0].clientX:e.clientX)-r.left)/r.width*W;
+    const d=Math.max(0,Math.min(MI,(cx-padL)*MI_PLAN/(W-padL-padR)));
+    setIdx(Math.round(d*4));
+  }
+  svg.addEventListener("pointermove",onMove);
+  svg.addEventListener("pointerdown",onMove);
+  svg.addEventListener("touchstart",onMove,{passive:true});
+  svg.addEventListener("touchmove",onMove,{passive:true});
+})();
+</script>
+</body>
+</html>

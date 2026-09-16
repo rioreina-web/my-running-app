@@ -200,6 +200,20 @@ final class TrainingPlanViewModel {
         await service.updateWorkout(workout)
     }
 
+    /// Audited athlete self-edit — routes through the edit-scheduled-workout
+    /// edge function so the coach is flagged. Returns true on success.
+    @MainActor
+    func submitWorkoutEdit(_ workout: ScheduledWorkout) async -> Bool {
+        await service.submitWorkoutEdit(workout)
+    }
+
+    /// Audited duplicate-to-day — same edge-function path; inserts a fresh
+    /// 'user_created' row on the target date. Returns true on success.
+    @MainActor
+    func duplicateWorkout(_ workout: ScheduledWorkout, to date: Date) async -> Bool {
+        await service.duplicateWorkout(workout, to: date)
+    }
+
     @MainActor
     func insertScheduledWorkout(_ insert: ScheduledWorkoutInsert) async -> ScheduledWorkout? {
         await service.insertScheduledWorkout(insert)

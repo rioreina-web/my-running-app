@@ -1,0 +1,1426 @@
+import "server-only";
+
+import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  derivePaceTableFromGoal,
+  headlineZone,
+  nearestZoneKey,
+  parsePaceSecPerMile,
+  totalWorkoutMiles,
+  workoutZoneLabel,
+  zoneLabelShort,
+  type AthletePaceTable,
+  type PaceZone,
+} from "@/components/coach/workout-helpers";
+import type {
+  Acwr,
+  CoachableMoment,
+  DashboardData,
+  DashboardDay,
+  BlockStats,
+  KeySessionMark,
+  LastKeySession,
+  LatestFact,
+  LatestSession,
+  LatestSplit,
+  StressLoad,
+  Mood,
+  MoodSummary,
+  NiggleGroup,
+  Progression,
+  WatchItem,
+  WeekContext,
+  WeeklyVolumeWeek,
+  WorkoutDetail,
+  WorkoutSplit,
+} from "./types";
+import {
+  buildChart,
+  buildConditions,
+  buildHeadlineKpis,
+  buildPrescribed,
+  buildSplits,
+  fmtPaceSec,
+  heatAdjHeadline,
+  parseBand,
+  verdictTitle,
+  type EnrichLap,
+} from "./workout-enrichment";
+import { isKeySession as resolveKeySession } from "./key-session";
+
+// ── Row shapes we read (the client is untyped, so we assert these) ──────────
+interface LogRow {
+  id: string;
+  workout_date: string;
+  workout_distance_miles: number | null;
+  workout_pace_per_mile: string | null;
+  workout_type: string | null;
+  mood: string | null;
+  cleaned_notes: string | null;
+  /** Prescription/description text — NOT the `workout_notes` table (that's a
+   *  separate note/run-split project that nothing reads yet). */
+  workout_notes: string | null;
+  // Enrichment (P1) — all best-effort; a missing column degrades one block.
+  workout_duration_minutes: number | null;
+  weather_actual: Record<string, unknown> | null;
+  /** Weighted minutes for this session. Null until the scorer has run. */
+  stress_load: number | null;
+  effort_load: number | null;
+  density_pct: number | null;
+}
+/**
+ * One reconciliation — the prescribed-vs-actual verdict for a single log.
+ * `adjusted_pace_delta_seconds` is HEAT-ADJUSTED, and that is the one we
+ * render: an athlete 10 s/mi slow in 80°F dew has not slipped, and the raw
+ * delta would say they had. Same source the roster's pace adherence uses.
+ */
+interface ReconRow {
+  training_log_id: string;
+  scheduled_workout_id: string | null;
+  target_pace_seconds_per_mile: number | null;
+  actual_pace_seconds_per_mile: number | null;
+  adjusted_target_pace_seconds: number | null;
+  adjusted_pace_delta_seconds: number | null;
+  hit_target: boolean | null;
+}
+
+/** Newest plan edit, for "last plan change" on the block strip. */
+interface PlanAdjRow {
+  action_type: string | null;
+  trigger_type: string | null;
+  applied_at: string | null;
+}
+
+interface PlanRow {
+  id: string;
+  name: string;
+  start_date: string;
+  end_date: string;
+  target_time_seconds: number | null;
+}
+interface MomentRow {
+  id: string;
+  rule_id: string | null;
+  severity: string | null;
+  summary: string | null;
+  action_type: string | null;
+  triggered_at: string | null;
+}
+interface StateRow {
+  goal_time_seconds: number | null;
+  acwr: number | null;
+  monotony_7d: number | null;
+  strain_7d: number | null;
+  fitness_trend: string | null;
+  fitness_vs_6mo_ago_label: string | null;
+  mood_trend: string | null;
+  last_mood: string | null;
+}
+interface MentionRow {
+  id: string;
+  training_log_id: string | null;
+  body_area: string;
+  side: string | null;
+  verbatim_quote: string;
+  mentioned_at: string;
+}
+interface LapRow {
+  workout_id: string;
+  lap_index: number;
+  distance_meters: number | null;
+  avg_pace_sec_per_mile: number | null;
+  // Enrichment columns (running_workout_laps). Absent on old rows → the block
+  // that needs them is simply omitted.
+  heat_adjusted_pace_sec_per_mile: number | null;
+  avg_heart_rate: number | null;
+  temp_f: number | null;
+  dew_point_f: number | null;
+  heat_category: string | null;
+  total_elevation_gain: number | null;
+  is_rest: boolean | null;
+}
+interface ScheduledRow {
+  id: string;
+  workout_type: string | null;
+  workout_data: { steps?: import("@/components/coach/workout-helpers").WorkoutStep[]; name?: string } | null;
+  date: string | null;
+  /** Plan intent. null = nothing said. Requires migration 20260810190200. */
+  is_key_session?: boolean | null;
+}
+interface DayOverrideRow {
+  date: string;
+  value: boolean;
+}
+interface FeatureLoadRow {
+  training_log_id: string;
+  quality_load: number | null;
+}
+interface PaceProfileRow {
+  marathon_pace_seconds: number | null;
+}
+interface SettingsRow {
+  display_name: string | null;
+  bio: string | null;
+  avatar_path: string | null;
+  timezone: string | null;
+}
+interface ReadRow {
+  training_log_id: string;
+  body: string;
+  question: string;
+}
+
+// Initials for the avatar: first letters of up to two name words ("Maya Chen"
+// → "MC"), or the first two letters of a single word ("Rio" → "RI"). Falls
+// back to the id slice when there's no name.
+function initialsFrom(name: string, fallbackId: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
+  if (words.length === 1 && words[0].length >= 2) return words[0].slice(0, 2).toUpperCase();
+  if (words.length === 1) return words[0][0].toUpperCase();
+  return fallbackId.slice(0, 2).toUpperCase();
+}
+
+// ── Lookup tables ───────────────────────────────────────────────────────────
+// Real stored workout_type vocabulary (verified against the DB): easy,
+// recovery, long_run, interval, intervals, tempo, threshold, race, steady,
+// moderate, progression, strides, other, rest. Keep every spelling.
+const WORKOUT_ZONE: Record<string, PaceZone | null> = {
+  easy: "easy",
+  recovery: "recovery",
+  long_run: "longRun",
+  long: "longRun",
+  moderate: "moderate",
+  steady: "steady",
+  tempo: "threshold",
+  threshold: "threshold",
+  interval: "fiveK",
+  intervals: "fiveK",
+  fartlek: "fiveK",
+  progression: "steady",
+  strides: "fiveK",
+  race: "mp",
+  other: "easy",
+  rest: null,
+};
+// KEY_TYPES and QUALITY_ZONES lived here — a fourth vocabulary of workout_type
+// spellings and a fourth zone set, feeding a three-clause rule with two
+// constants (12 miles, 2.5 quality miles) that existed nowhere else. All of it
+// is deleted. The one definition is ./key-session.ts, which reads the same
+// three inputs the athlete's app does. Do not add a type set back here: that
+// is precisely how four rules became five.
+const TYPE_LABEL: Record<string, string> = {
+  easy: "Easy",
+  recovery: "Recovery",
+  long_run: "Long run",
+  long: "Long run",
+  moderate: "Moderate",
+  steady: "Steady",
+  tempo: "Tempo",
+  threshold: "Threshold",
+  interval: "Intervals",
+  intervals: "Intervals",
+  fartlek: "Fartlek",
+  progression: "Progression",
+  strides: "Strides",
+  race: "Race",
+  other: "Session",
+  rest: "Rest",
+};
+// Slow → fast; picks a day's headline zone when uploads span several.
+const ZONE_RANK: Record<PaceZone, number> = {
+  recovery: 0,
+  easy: 1,
+  longRun: 2,
+  moderate: 3,
+  steady: 4,
+  mp: 5,
+  hm: 6,
+  threshold: 7,
+  tenK: 8,
+  fiveK: 9,
+  threeK: 10,
+  mile: 11,
+};
+const MOODS = new Set<Mood>(["energized", "positive", "neutral", "tired", "struggling", "injured"]);
+const MOOD_ORDER: Mood[] = ["energized", "positive", "neutral", "tired", "struggling", "injured"];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const DOWS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+// ── Small helpers ───────────────────────────────────────────────────────────
+async function safe<T>(q: PromiseLike<{ data: T | null; error: unknown }>): Promise<T | null> {
+  try {
+    const { data, error } = await q;
+    return error ? null : data;
+  } catch {
+    return null;
+  }
+}
+const parseDate = (iso: string) => {
+  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
+  return new Date(y, m - 1, d);
+};
+const isoOf = (dt: Date) =>
+  `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+const dateLabel = (dt: Date) => `${MONTHS[dt.getMonth()]} ${dt.getDate()}`;
+const dowLabel = (dt: Date) => DOWS[dt.getDay()];
+const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+const trimMiles = (mi: number) => (Number.isInteger(mi) ? `${mi}` : mi.toFixed(1));
+
+/** Signed seconds-per-mile vs target, as a label. Null stays null — "no
+ *  verdict yet" and "on pace" are different answers and must not collapse. */
+const deltaLabel = (sec: number | null): string | null => {
+  if (sec == null) return null;
+  const r = Math.round(sec);
+  if (r === 0) return "on pace";
+  return `${r > 0 ? "+" : "\u2212"}${Math.abs(r)} s/mi`;
+};
+
+/** mm:ss from seconds per mile. Named to avoid shadowing the local
+ *  `paceLabel` inside assembleKeyDetail. */
+const fmtPaceLabel = (sec: number | null | undefined): string | undefined => {
+  if (sec == null) return undefined;
+  const t = Math.round(Number(sec));
+  if (!Number.isFinite(t) || t <= 0) return undefined;
+  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
+};
+const numMiles = (v: number | null) => Number(v ?? 0);
+function fmtHMS(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.round(seconds % 60);
+  return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+function mondayOf(dt: Date): Date {
+  const d = new Date(dt);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return d;
+}
+const zoneOf = (type: string | null): PaceZone | null => WORKOUT_ZONE[type ?? "easy"] ?? "easy";
+const typeLabel = (type: string | null) => TYPE_LABEL[type ?? "easy"] ?? cap(type ?? "easy");
+// Side-from-quote fallback (trap §4.3): the extractor often leaves `side`
+// NULL even when the athlete plainly said "left"/"right". This surfaces a
+// literal word already in their own quote — not an inference — before
+// falling back to no side prefix.
+function sideFromQuote(quote: string): string | null {
+  if (/\bleft\b/i.test(quote)) return "left";
+  if (/\bright\b/i.test(quote)) return "right";
+  return null;
+}
+function niggleArea(m: MentionRow): string {
+  const area = cap(m.body_area.replace(/_/g, " "));
+  const side = m.side ?? sideFromQuote(m.verbatim_quote);
+  return side ? `${cap(side)} ${area.toLowerCase()}` : area;
+}
+function prettyRule(id: string): string {
+  return id.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+function relTime(iso: string | null): string {
+  if (!iso) return "";
+  const days = Math.round((Date.now() - new Date(iso).getTime()) / 86400000);
+  if (days <= 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 7) return `${days} days ago`;
+  if (days < 14) return "Last week";
+  return `${Math.round(days / 7)} weeks ago`;
+}
+
+/**
+ * Read one athlete's real data and shape it into the dashboard payload.
+ * The caller MUST have already gated coach access to `athleteId`.
+ *
+ * Coach-scoped tables (training_logs, training_plans, coachable_moments) are
+ * read through the RLS cookie client; athlete_state and body_mentions are read
+ * through the service-role client (spec §3). Every read is best-effort — a
+ * missing table/column degrades that section, it never 500s the page.
+ *
+ * The daily overlay is one entry PER CALENDAR DAY: multiple uploads on a day
+ * are summed into one bar, segmented by pace zone.
+ */
+export async function buildDashboardFromSupabase(athleteId: string): Promise<DashboardData> {
+  const supabase = await createClient();
+  const admin = createAdminClient();
+
+  const since = new Date();
+  since.setDate(since.getDate() - 90);
+  const sinceISO = since.toISOString().slice(0, 10);
+  // Derived key-session status never applies to a day that hasn't happened;
+  // a declaration does. See ./key-session.ts.
+  const todayISO = new Date().toISOString().slice(0, 10);
+
+  const [logs, plan, moments, state, mentions, paceProfile, settings] = await Promise.all([
+    safe<LogRow[]>(
+      supabase
+        .from("training_logs")
+        .select(
+          "id, workout_date, workout_distance_miles, workout_pace_per_mile, workout_type, mood, cleaned_notes, workout_notes, workout_duration_minutes, weather_actual, stress_load, effort_load, density_pct",
+        )
+        .eq("user_id", athleteId)
+        .gte("workout_date", sinceISO)
+        .order("workout_date", { ascending: true })
+        .limit(400),
+    ).then((d) => d ?? []),
+    safe<PlanRow>(
+      supabase
+        .from("training_plans")
+        .select("id, name, start_date, end_date, target_time_seconds")
+        .eq("user_id", athleteId)
+        .eq("status", "active")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ),
+    safe<MomentRow[]>(
+      supabase
+        .from("coachable_moments")
+        .select("id, rule_id, severity, summary, action_type, triggered_at")
+        .eq("athlete_user_id", athleteId)
+        .eq("status", "open")
+        .order("triggered_at", { ascending: false })
+        .limit(6),
+    ).then((d) => d ?? []),
+    safe<StateRow>(
+      admin
+        .from("athlete_state")
+        .select("goal_time_seconds, acwr, monotony_7d, strain_7d, fitness_trend, fitness_vs_6mo_ago_label, mood_trend, last_mood")
+        .eq("user_id", athleteId)
+        .maybeSingle(),
+    ),
+    safe<MentionRow[]>(
+      admin
+        .from("body_mentions")
+        .select("id, training_log_id, body_area, side, verbatim_quote, mentioned_at")
+        .eq("user_id", athleteId)
+        .gte("mentioned_at", sinceISO)
+        .order("mentioned_at", { ascending: true }),
+    ).then((d) => d ?? []),
+    safe<PaceProfileRow>(
+      admin.from("athlete_pace_profiles").select("marathon_pace_seconds").eq("user_id", athleteId).maybeSingle(),
+    ),
+    // Profile (name + bio) from the SETTINGS surface. Read through the
+    // service-role client for the already-gated athlete, matching how
+    // athlete_state / body_mentions are read above (athlete_settings SELECT is
+    // owner-only, so the coach's cookie client wouldn't see it).
+    safe<SettingsRow>(
+      admin
+        .from("athlete_settings")
+        .select("display_name, bio, avatar_path, timezone")
+        .eq("user_id", athleteId)
+        .maybeSingle(),
+    ),
+  ]);
+
+  // Per-lap splits + the athlete's own pace table, so each run's miles land in
+  // the zone its splits were ACTUALLY run at (not one zone from its type).
+  const logIds = logs.map((l) => l.id);
+  const laps = logIds.length
+    ? (await safe<LapRow[]>(
+        admin
+          .from("running_workout_laps")
+          .select(
+            "workout_id, lap_index, distance_meters, avg_pace_sec_per_mile, heat_adjusted_pace_sec_per_mile, avg_heart_rate, temp_f, dew_point_f, heat_category, total_elevation_gain, is_rest",
+          )
+          .in("workout_id", logIds)
+          .order("lap_index", { ascending: true })
+          .limit(10000),
+      )) ?? []
+    : [];
+
+  // Prescribed-vs-actual verdicts, keyed by training_log_id. This is what
+  // fills the log's "vs plan" column and the whole key-session strip — until
+  // now `delta` was hardcoded null and no band could answer "did it land?".
+  const recons = logIds.length
+    ? (await safe<ReconRow[]>(
+        supabase
+          .from("workout_reconciliations")
+          .select(
+            "training_log_id, scheduled_workout_id, target_pace_seconds_per_mile, actual_pace_seconds_per_mile, adjusted_target_pace_seconds, adjusted_pace_delta_seconds, hit_target",
+          )
+          .eq("user_id", athleteId)
+          .in("training_log_id", logIds),
+      )) ?? []
+    : [];
+  const reconByLogId = new Map<string, ReconRow>();
+  for (const r of recons) reconByLogId.set(r.training_log_id, r);
+
+  // Prescriptions for the linked scheduled_workouts — batched by id (spec §3
+  // row 1). There is no scheduled_workout_id column on training_logs; the
+  // only path from a log to its prescription is via workout_reconciliations
+  // above. Read through the RLS cookie client (coach-scoped, same as logs).
+  const scheduledIds = Array.from(
+    new Set(recons.map((r) => r.scheduled_workout_id).filter((v): v is string => !!v)),
+  );
+  const scheduled = scheduledIds.length
+    ? (await safe<ScheduledRow[]>(
+        supabase
+          .from("scheduled_workouts")
+          .select("id, workout_type, workout_data, date")
+          .in("id", scheduledIds),
+      )) ?? []
+    : [];
+  const scheduledById = new Map<string, ScheduledRow>();
+  for (const s of scheduled) scheduledById.set(s.id, s);
+
+  // Newest plan edit — athlete shift or coach rewrite, whichever is latest.
+  // select("*") on purpose: several columns are still pending a db push and a
+  // named select would error the whole query rather than degrade one line.
+  const planAdjs =
+    (await safe<PlanAdjRow[]>(
+      supabase
+        .from("plan_adjustments")
+        .select("*")
+        .eq("user_id", athleteId)
+        .order("applied_at", { ascending: false })
+        .limit(1),
+    )) ?? [];
+
+  // Cached coach reads (the AI observation), keyed by training_log_id. Written
+  // only by the coach-workout-read edge function; read here through the admin
+  // client (RLS SELECT is coach-scoped, so the cookie client wouldn't see it).
+  const reads = logIds.length
+    ? (await safe<ReadRow[]>(
+        admin
+          .from("coach_workout_reads")
+          .select("training_log_id, body, question")
+          .in("training_log_id", logIds),
+      )) ?? []
+    : [];
+  const readByLogId = new Map<string, ReadRow>();
+  for (const r of reads) readByLogId.set(r.training_log_id, r);
+
+  // Next key session — the soonest upcoming quality/long day on the active plan
+  // (best-effort; absent when there's no plan or no upcoming key day).
+  const upcomingKey = plan
+    ? (await safe<ScheduledRow[]>(
+        supabase
+          .from("scheduled_workouts")
+          .select("id, workout_type, workout_data, date")
+          .eq("plan_id", plan.id)
+          .gte("date", new Date().toISOString().slice(0, 10))
+          .in("workout_type", ["tempo", "intervals", "long_run", "race"])
+          .order("date", { ascending: true })
+          .limit(1),
+      )) ?? []
+    : [];
+
+  // Prescribed weekly mileage — summed from the plan's scheduled workouts in
+  // the window, bucketed by Monday week. Gives weekContext its "of N planned".
+  const planWorkouts = plan
+    ? (await safe<ScheduledRow[]>(
+        supabase
+          .from("scheduled_workouts")
+          .select("id, workout_type, workout_data, date, is_key_session")
+          .eq("plan_id", plan.id)
+          .gte("date", sinceISO)
+          .limit(500),
+      )) ?? []
+    : [];
+  // ── The three key-session inputs (see ./key-session.ts) ──────────────────
+  //
+  // Plan intent, keyed by date. A day is intended-key if ANY session that day
+  // says so; intended-NOT-key only if a session says false and none says true.
+  // On a doubles day, one key session makes the day a key day.
+  const planIntentByDate = new Map<string, boolean>();
+  for (const sw of planWorkouts) {
+    if (!sw.date || sw.is_key_session === null || sw.is_key_session === undefined) continue;
+    planIntentByDate.set(sw.date, (planIntentByDate.get(sw.date) ?? false) || sw.is_key_session);
+  }
+
+  // The athlete's own declarations. Read through the admin client: RLS on
+  // day_overrides is athlete-scoped (`user_id = auth.uid()`), so the coach's
+  // cookie client would correctly see none of them.
+  const overrideRows =
+    (await safe<DayOverrideRow[]>(
+      admin
+        .from("day_overrides")
+        .select("date, value")
+        .eq("user_id", athleteId)
+        .eq("field", "is_key_session")
+        .gte("date", sinceISO),
+    )) ?? [];
+  const overrideByDate = new Map<string, boolean>();
+  for (const o of overrideRows) overrideByDate.set(o.date, o.value);
+
+  // The derived stimulus: Σ quality_load per day.
+  //
+  // NOTE this sums the raw log rows, where the iOS side sums DEDUPED ones. A
+  // cross-source duplicate (the same run from Strava and HealthKit) could in
+  // principle be counted twice here. In practice only the GPS row carries laps,
+  // so only it gets a non-null quality_load and the duplicate contributes zero
+  // — but if a day ever stars for the coach and not the athlete, this is the
+  // first place to look.
+  const featureRows = logIds.length
+    ? (await safe<FeatureLoadRow[]>(
+        admin
+          .from("workout_features")
+          .select("training_log_id, quality_load")
+          .in("training_log_id", logIds),
+      )) ?? []
+    : [];
+  const loadByLogId = new Map<string, number>();
+  for (const f of featureRows) {
+    if (f.quality_load != null) loadByLogId.set(f.training_log_id, f.quality_load);
+  }
+
+  const plannedByWeek = new Map<string, number>();
+  for (const sw of planWorkouts) {
+    if (!sw.date) continue;
+    const steps = sw.workout_data?.steps;
+    if (!steps || steps.length === 0) continue;
+    const mi = totalWorkoutMiles(steps);
+    if (mi <= 0) continue;
+    const monISO = isoOf(mondayOf(parseDate(sw.date)));
+    plannedByWeek.set(monISO, (plannedByWeek.get(monISO) ?? 0) + mi);
+  }
+  const athletePaces: AthletePaceTable | undefined =
+    paceProfile?.marathon_pace_seconds && Number(paceProfile.marathon_pace_seconds) > 0
+      ? derivePaceTableFromGoal(Number(paceProfile.marathon_pace_seconds), "marathon")
+      : undefined;
+  const lapsByWorkout = new Map<string, LapRow[]>();
+  for (const lap of laps) {
+    const arr = lapsByWorkout.get(lap.workout_id);
+    if (arr) arr.push(lap);
+    else lapsByWorkout.set(lap.workout_id, [lap]);
+  }
+  const zmCache = new Map<string, Partial<Record<PaceZone, number>>>();
+  // Miles per pace zone for ONE run — each lap classified by its own pace,
+  // falling back to the workout type only when a run has no laps at all.
+  function workoutZoneMiles(l: LogRow): Partial<Record<PaceZone, number>> {
+    const cached = zmCache.get(l.id);
+    if (cached) return cached;
+    const out: Partial<Record<PaceZone, number>> = {};
+    const wl = lapsByWorkout.get(l.id);
+    if (wl && wl.length) {
+      for (const lap of wl) {
+        const mi = Number(lap.distance_meters ?? 0) / 1609.344;
+        if (mi <= 0) continue;
+        const pace = Number(lap.avg_pace_sec_per_mile ?? 0);
+        const zone: PaceZone = pace > 0 ? nearestZoneKey(pace, athletePaces) : zoneOf(l.workout_type) ?? "easy";
+        out[zone] = (out[zone] ?? 0) + mi;
+      }
+    } else {
+      const zone = zoneOf(l.workout_type);
+      const mi = numMiles(l.workout_distance_miles);
+      if (zone && mi > 0) out[zone] = mi;
+    }
+    zmCache.set(l.id, out);
+    return out;
+  }
+  const sumZoneMap = (zm: Partial<Record<PaceZone, number>>) =>
+    Object.values(zm).reduce((s, v) => s + (v ?? 0), 0);
+
+  // ── mentions indexed for day + niggle joins ──
+  const mentionByDate = new Map<string, MentionRow>();
+  for (const m of mentions) {
+    const k = m.mentioned_at.slice(0, 10);
+    if (!mentionByDate.has(k)) mentionByDate.set(k, m);
+  }
+
+  // ── logs grouped by calendar day ──
+  const logsByDate = new Map<string, LogRow[]>();
+  for (const l of logs) {
+    const k = l.workout_date.slice(0, 10);
+    const arr = logsByDate.get(k);
+    if (arr) arr.push(l);
+    else logsByDate.set(k, [l]);
+  }
+
+  // ── enrichment precomputes (P1) ──
+  const METERS_PER_MILE = 1609.344;
+  // ACWR value + band once (mirrors the acwr block below; needed in-loop).
+  const acwrVal = state?.acwr != null ? Number(state.acwr) : undefined;
+  const acwrBand: WeekContext["acwrBand"] | undefined =
+    acwrVal == null
+      ? undefined
+      : acwrVal < 0.6
+        ? "detraining"
+        : acwrVal < 0.8
+          ? "low"
+          : acwrVal <= 1.3
+            ? "sweet"
+            : acwrVal <= 1.5
+              ? "high"
+              : "spike";
+  const bandPhrase = (b: WeekContext["acwrBand"]) =>
+    ({
+      detraining: "below the training band",
+      low: "building",
+      sweet: "in the sweet band",
+      high: "the high end of the sweet band",
+      spike: "a spike above the sweet band",
+    })[b];
+
+  // Next key session (same for every day this read).
+  let nextKey: WeekContext["nextKey"] | undefined;
+  const uk = upcomingKey[0];
+  if (uk) {
+    const steps = uk.workout_data?.steps;
+    const z = (steps ? headlineZone(steps, athletePaces) : null) ?? zoneOf(uk.workout_type) ?? "mp";
+    const lbl = (steps ? workoutZoneLabel(steps, athletePaces) : null) ?? typeLabel(uk.workout_type);
+    const udt = uk.date ? parseDate(uk.date) : null;
+    const when = udt ? `${dowLabel(udt)} ${dateLabel(udt)}` : "";
+    nextKey = { label: when ? `${lbl} · ${when}` : lbl, zone: z as PaceZone };
+  }
+
+  const weightedLapPace = (lps: EnrichLap[]): number | null => {
+    let num = 0;
+    let den = 0;
+    for (const lp of lps) {
+      const mi = Number(lp.distance_meters ?? 0) / METERS_PER_MILE;
+      const p = Number(lp.avg_pace_sec_per_mile ?? 0);
+      if (mi > 0 && p > 0) {
+        num += p * mi;
+        den += mi;
+      }
+    }
+    return den > 0 ? num / den : null;
+  };
+
+  // `training_logs` has no separate start_time column — workout_date is
+  // TIMESTAMPTZ and carries the real clock time. Convert to the athlete's own
+  // zone when athlete_settings.timezone is on file; otherwise label the time
+  // as UTC rather than silently rendering UTC as if it were local.
+  const athleteTimeZone = settings?.timezone || undefined;
+  const fmtStart = (workoutDate: string): string | undefined => {
+    const dtp = new Date(workoutDate);
+    if (Number.isNaN(dtp.getTime())) return undefined;
+    const formatted = new Intl.DateTimeFormat("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+      timeZone: athleteTimeZone ?? "UTC",
+    }).format(dtp);
+    return athleteTimeZone ? formatted : `${formatted} UTC`;
+  };
+
+  // Assemble the enriched drill-down for one key day. Every block is
+  // best-effort — a thin run (no laps, no prescription) still yields a valid
+  // (if sparse) detail, so the drawer never breaks.
+  function assembleKeyDetail(args: {
+    primary: LogRow;
+    totalMiles: number;
+    sessions: number;
+    fallbackSplits: WorkoutSplit[];
+    dt: Date;
+    iso: string;
+    hasNiggle: boolean;
+  }): WorkoutDetail {
+    const { primary, totalMiles, fallbackSplits, dt, iso, hasNiggle } = args;
+    const primaryLaps = (lapsByWorkout.get(primary.id) ?? []) as unknown as EnrichLap[];
+    const primaryScheduledId = reconByLogId.get(primary.id)?.scheduled_workout_id;
+    const sched = primaryScheduledId ? scheduledById.get(primaryScheduledId) : undefined;
+    const prescribed = buildPrescribed(sched?.workout_data ?? null, totalMiles, athletePaces);
+    const band = parseBand(prescribed?.window);
+    const plannedMi = prescribed?.distance ?? totalMiles;
+    const cutMarker = prescribed && totalMiles + 0.05 < prescribed.distance ? Math.round(totalMiles * 10) / 10 : undefined;
+    const durationSec = primary.workout_duration_minutes ? Number(primary.workout_duration_minutes) * 60 : undefined;
+
+    let paceLabel = primary.workout_pace_per_mile ? `${primary.workout_pace_per_mile}/mi` : undefined;
+    if (!paceLabel) {
+      const avg = weightedLapPace(primaryLaps);
+      if (avg != null) paceLabel = `${fmtPaceSec(avg)}/mi`;
+    }
+
+    const heatAdj = heatAdjHeadline(primaryLaps, band);
+    const kpis = buildHeadlineKpis({
+      actualMiles: Math.round(totalMiles * 10) / 10,
+      plannedMiles: prescribed?.distance,
+      durationSec,
+      timeEst: prescribed?.timeEst,
+      paceLabel,
+      window: prescribed?.window,
+      heatAdj,
+    });
+
+    const conditions = buildConditions(primaryLaps, primary.weather_actual, fmtStart(primary.workout_date));
+
+    // Chart band: prescription window when present, else collapse to the run's
+    // weighted average (an invisible band — no false target).
+    let bandLow = band?.low;
+    let bandHigh = band?.high;
+    if (bandLow == null || bandHigh == null) {
+      const avg = weightedLapPace(primaryLaps) ?? 540;
+      bandLow = avg;
+      bandHigh = avg;
+    }
+    const chart = buildChart(primaryLaps, { bandLow, bandHigh, plannedMi, cutAtMi: cutMarker });
+
+    const isLong =
+      ["long_run", "long"].includes((primary.workout_type ?? "").toLowerCase()) || totalMiles >= 12;
+    const enriched = buildSplits(primaryLaps, {
+      isLong,
+      bandHigh: band?.high ?? Number.POSITIVE_INFINITY,
+      plannedMi,
+      ranMi: totalMiles,
+    });
+    const splitBlock = enriched ?? { splitLabel: "Sessions this day", splits: fallbackSplits };
+
+    // Body: absence is information. Only when this run carries no niggle.
+    let bodyContext: WorkoutDetail["bodyContext"];
+    if (!hasNiggle) {
+      const recent = [...mentions].reverse().find((m) => m.mentioned_at.slice(0, 10) <= iso);
+      if (recent) {
+        const quiet = Math.max(
+          0,
+          Math.round((dt.getTime() - parseDate(recent.mentioned_at).getTime()) / 86400000),
+        );
+        bodyContext = {
+          line: "No niggles mentioned on this run.",
+          sub: `${niggleArea(recent)} last flagged ${dateLabel(parseDate(recent.mentioned_at))} — quiet for ${quiet} day${quiet === 1 ? "" : "s"}.`,
+        };
+      } else {
+        bodyContext = { line: "No niggles mentioned on this run." };
+      }
+    }
+
+    // Week & load.
+    let weekContext: WeekContext | undefined;
+    if (acwrVal != null && acwrBand) {
+      const mon = mondayOf(dt);
+      const weekEnd = new Date(mon);
+      weekEnd.setDate(weekEnd.getDate() + 7);
+      const weekRuns = logs
+        .filter((l) => {
+          const d = parseDate(l.workout_date);
+          return d >= mon && d < weekEnd && (l.workout_type ?? "") !== "rest" && numMiles(l.workout_distance_miles) > 0;
+        })
+        .sort((a, b) => a.workout_date.localeCompare(b.workout_date));
+      const upto = weekRuns.filter((l) => l.workout_date.slice(0, 10) <= iso);
+      const milesSoFar = Math.round(upto.reduce((s, l) => s + numMiles(l.workout_distance_miles), 0) * 10) / 10;
+      const milesPlanned = Math.round(plannedByWeek.get(isoOf(mon)) ?? 0);
+      const acwr = Math.round(acwrVal * 100) / 100;
+      const volumeClause =
+        milesPlanned > 0
+          ? `**${milesSoFar.toFixed(1)} of ${milesPlanned} mi** planned`
+          : `**${milesSoFar.toFixed(1)} mi** logged`;
+      weekContext = {
+        runOfWeek: `Run ${upto.length} of ${weekRuns.length}`,
+        milesSoFar,
+        milesPlanned,
+        acwr,
+        acwrBand,
+        loadLine: `Run ${upto.length} of ${weekRuns.length} this week · ${volumeClause}. This run brought ACWR to **${acwr.toFixed(2)}** — ${bandPhrase(acwrBand)}.`,
+        nextKey,
+      };
+    }
+
+    const cachedRead = readByLogId.get(primary.id);
+
+    // "The session as written" — the prescription/description COLUMN
+    // (training_logs.workout_notes), a machine reading, not the athlete's
+    // memo (cleaned_notes, rendered separately in .drip-voice).
+    const sessionAsWritten = primary.workout_notes?.trim() || undefined;
+    const effortParts: string[] = [];
+    if (primary.effort_load != null) effortParts.push(`Effort load ${Math.round(Number(primary.effort_load))}`);
+    if (primary.density_pct != null) effortParts.push(`density ${Number(primary.density_pct).toFixed(1)}%`);
+    if (primary.stress_load != null) effortParts.push(`stress ${Math.round(Number(primary.stress_load))}`);
+    const effortLine = effortParts.length ? effortParts.join(" · ") : undefined;
+
+    return {
+      kpis,
+      verdictTitle: prescribed
+        ? verdictTitle(typeLabel(primary.workout_type), totalMiles, prescribed.distance)
+        : undefined,
+      splitLabel: splitBlock.splitLabel,
+      splits: splitBlock.splits,
+      sessionAsWritten,
+      effortLine,
+      prescribed,
+      conditions,
+      chart,
+      weekContext,
+      bodyContext,
+      read: cachedRead ? { body: cachedRead.body, question: cachedRead.question } : undefined,
+    };
+  }
+
+  // 35-day window ending on the most recent logged day (or today).
+  const endDate = logs.length ? parseDate(logs[logs.length - 1].workout_date) : new Date();
+  // The most recent date with an actual run. Drives §01's lede and tells the
+  // loop to enrich that day even when it is not a key session.
+  const latestLoggedISO = (() => {
+    for (let i = logs.length - 1; i >= 0; i -= 1) {
+      const l = logs[i];
+      if (numMiles(l.workout_distance_miles) > 0) return l.workout_date;
+    }
+    return null;
+  })();
+
+  const days: DashboardDay[] = [];
+  const dateToDayId = new Map<string, string>();
+
+  for (let i = 34; i >= 0; i--) {
+    const dt = new Date(endDate);
+    dt.setDate(dt.getDate() - i);
+    const iso = isoOf(dt);
+    const dayLogs = logsByDate.get(iso) ?? [];
+    const runLogs = dayLogs.filter((l) => (l.workout_type ?? "") !== "rest" && numMiles(l.workout_distance_miles) > 0);
+
+    const zoneMiles: Partial<Record<PaceZone, number>> = {};
+    for (const l of runLogs) {
+      for (const [z, mi] of Object.entries(workoutZoneMiles(l))) {
+        zoneMiles[z as PaceZone] = (zoneMiles[z as PaceZone] ?? 0) + (mi ?? 0);
+      }
+    }
+    const totalMiles = sumZoneMap(zoneMiles);
+
+    const logged = dayLogs.length > 0;
+    const isRest = totalMiles === 0;
+    const zonesPresent = Object.keys(zoneMiles) as PaceZone[];
+    const headline = zonesPresent.length
+      ? zonesPresent.slice().sort((a, b) => ZONE_RANK[b] - ZONE_RANK[a])[0]
+      : null;
+    const primary = runLogs.slice().sort((a, b) => numMiles(b.workout_distance_miles) - numMiles(a.workout_distance_miles))[0];
+    const moodLogged = Boolean(primary && primary.mood && MOODS.has(primary.mood as Mood));
+    const mood: Mood = moodLogged ? (primary!.mood as Mood) : "neutral";
+    const mention = mentionByDate.get(iso);
+    const niggle = mention ? { area: niggleArea(mention), quote: mention.verbatim_quote } : null;
+    // A day is key by the ONE definition: what the athlete said, else what the
+    // plan intended, else whether the day's summed stimulus clears the floor.
+    // The coach now sees exactly what the athlete sees — including a day the
+    // athlete explicitly un-marked, which no amount of derivation can re-star.
+    //
+    // Σ over the day's logs. Undefined (not 0) when nothing on this day was
+    // scored, so "no work" and "not scored yet" stay distinguishable.
+    const scored = runLogs
+      .map((l) => loadByLogId.get(l.id))
+      .filter((v): v is number => v !== undefined);
+    const dayLoad = scored.length ? scored.reduce((a, b) => a + b, 0) : undefined;
+
+    const key = resolveKeySession({
+      override: overrideByDate.get(iso),
+      planIntent: planIntentByDate.get(iso),
+      dayLoad,
+      isFuture: iso > todayISO,
+    });
+    const sessions = runLogs.length;
+
+    // Weighted-minutes stress load for the day — Train's per-day/week Load
+    // column. Distinct from `dayLoad` above (quality_load, the key-session
+    // stimulus threshold) — this is training_logs.stress_load, summed.
+    const stressScored = runLogs
+      .map((l) => l.stress_load)
+      .filter((v): v is number => v != null);
+    const dayStressLoad = stressScored.length ? stressScored.reduce((a, b) => a + b, 0) : undefined;
+
+    const id = dayLogs[0]?.id ?? `rest-${iso}`;
+    dateToDayId.set(iso, id);
+
+    const label = isRest
+      ? "Rest"
+      : sessions > 1
+        ? `${sessions} sessions · ${trimMiles(totalMiles)} mi`
+        : `${typeLabel(primary.workout_type)} ${trimMiles(totalMiles)} mi`;
+    const actual = isRest
+      ? null
+      : sessions > 1
+        ? `${trimMiles(totalMiles)} mi · ${sessions} sessions`
+        : `${trimMiles(totalMiles)} mi${primary.workout_pace_per_mile ? ` · ${primary.workout_pace_per_mile}/mi` : ""}`;
+
+    const splits: WorkoutSplit[] = runLogs.map((l) => ({
+      name: `${typeLabel(l.workout_type)} ${trimMiles(numMiles(l.workout_distance_miles))} mi`,
+      pace: l.workout_pace_per_mile,
+      onTarget: true,
+    }));
+
+    // Prescribed vs actual, heat-adjusted. `delta` was hardcoded null before
+    // this — every band that claims to answer "did it land?" reads it.
+    const recon = primary ? reconByLogId.get(primary.id) : undefined;
+    const deltaSec =
+      recon?.adjusted_pace_delta_seconds != null
+        ? Number(recon.adjusted_pace_delta_seconds)
+        : null;
+    const dayOnTarget =
+      recon?.hit_target != null ? recon.hit_target : deltaSec != null ? deltaSec <= 0 : false;
+
+    // The lede needs splits and conditions, and the most recent run is usually
+    // an easy day — which never qualified for enrichment. Enrich it too.
+    const isLatestLogged = !isRest && iso === latestLoggedISO;
+
+    days.push({
+      id,
+      date: iso,
+      dateLabel: dateLabel(dt),
+      dow: dowLabel(dt),
+      label,
+      zone: isRest ? null : headline,
+      zoneMiles,
+      miles: totalMiles,
+      actual,
+      delta: deltaLabel(deltaSec),
+      onTarget: dayOnTarget,
+      key: key && !isRest,
+      mood,
+      moodLogged: isRest ? undefined : moodLogged,
+      niggle,
+      note: (primary?.cleaned_notes ?? "").trim(),
+      logged,
+      load: dayStressLoad,
+      sessions,
+      detail:
+        (key || isLatestLogged) && !isRest
+          ? assembleKeyDetail({
+              primary,
+              totalMiles,
+              sessions,
+              fallbackSplits: splits,
+              dt,
+              iso,
+              hasNiggle: niggle != null,
+            })
+          : undefined,
+    });
+  }
+
+  // ── weekly volume (12 Monday weeks, from logs) ──
+  const thisMon = mondayOf(new Date());
+  const weekBuckets = Array.from({ length: 12 }, (_, i) => {
+    const start = new Date(thisMon);
+    start.setDate(start.getDate() - (11 - i) * 7);
+    return { start, label: dateLabel(start), zoneMiles: {} as Partial<Record<PaceZone, number>> };
+  });
+  for (const l of logs) {
+    const wz = workoutZoneMiles(l);
+    if (!Object.keys(wz).length) continue;
+    const dt = parseDate(l.workout_date);
+    for (const w of weekBuckets) {
+      const end = new Date(w.start);
+      end.setDate(end.getDate() + 7);
+      if (dt >= w.start && dt < end) {
+        for (const [z, mi] of Object.entries(wz)) {
+          w.zoneMiles[z as PaceZone] = (w.zoneMiles[z as PaceZone] ?? 0) + (mi ?? 0);
+        }
+        break;
+      }
+    }
+  }
+  const weeklyVolume: WeeklyVolumeWeek[] = weekBuckets.map((w, i) => ({
+    label: w.label,
+    zoneMiles: w.zoneMiles,
+    targetMiles: 0,
+    current: i === weekBuckets.length - 1,
+  }));
+
+  // ── niggles (grouped body_mentions), linked to the day by date ──
+  const byArea = new Map<string, MentionRow[]>();
+  for (const m of mentions) {
+    const area = niggleArea(m);
+    const arr = byArea.get(area);
+    if (arr) arr.push(m);
+    else byArea.set(area, [m]);
+  }
+  const niggles: NiggleGroup[] = [...byArea.entries()]
+    .map(([area, list]) => {
+      const latest = list[list.length - 1];
+      return {
+        area,
+        mentions: list.length,
+        latestDate: dateLabel(parseDate(latest.mentioned_at)),
+        latestQuote: latest.verbatim_quote,
+        otherDates: list.slice(0, -1).map((x) => dateLabel(parseDate(x.mentioned_at))),
+        quotes: list.map((m) => ({
+          date: m.mentioned_at.slice(0, 10),
+          dateLabel: dateLabel(parseDate(m.mentioned_at)),
+          quote: m.verbatim_quote,
+        })),
+        recurrence: list.length >= 3,
+        linkDayId: dateToDayId.get(latest.mentioned_at.slice(0, 10)),
+      };
+    })
+    // Newest-mentioned area first (spec §2.3) — not mentions desc, so a
+    // single fresh mention in a new area doesn't get buried under an old
+    // cluster's tally.
+    .sort((a, b) => b.quotes[b.quotes.length - 1].date.localeCompare(a.quotes[a.quotes.length - 1].date));
+
+  // ── mood (per day; unlogged days render faint, excluded from the mix) ──
+  const strip = days.slice(-28).map((d) => ({
+    date: d.date,
+    dateLabel: d.dateLabel,
+    mood: d.mood,
+    logged: d.logged !== false && d.miles > 0,
+  }));
+  const loggedDays = days.filter((d) => d.logged !== false && d.miles > 0);
+  const counts = new Map<Mood, number>();
+  for (const d of loggedDays) counts.set(d.mood, (counts.get(d.mood) ?? 0) + 1);
+  const distribution = MOOD_ORDER.filter((m) => counts.get(m)).map((m) => ({ mood: m, count: counts.get(m)! }));
+  const topMood = distribution.slice().sort((a, b) => b.count - a.count)[0]?.mood;
+  const mood: MoodSummary = {
+    strip,
+    distribution,
+    caption: topMood
+      ? `**${cap(topMood)}** was the most-logged mood across ${loggedDays.length} training days.`
+      : "No mood logged in this window yet.",
+  };
+
+  // ── acwr (athlete_state) ──
+  let acwr: Acwr | undefined;
+  if (state && state.acwr != null) {
+    const v = Number(state.acwr);
+    const band: Acwr["band"] =
+      v < 0.6 ? "detraining" : v < 0.8 ? "low" : v <= 1.3 ? "sweet" : v <= 1.5 ? "high" : "spike";
+    const bandLabel = { detraining: "Detraining", low: "Building", sweet: "Sweet spot", high: "Caution", spike: "Spike" }[band];
+    acwr = {
+      value: v,
+      band,
+      bandLabel,
+      monotony7d: Number(state.monotony_7d ?? 0),
+      strain7d: Math.round(Number(state.strain_7d ?? 0)),
+    };
+  }
+
+  // ── progression (trend + goal; no point predictions — hard rule #7) ──
+  let progression: Progression | undefined;
+  if (state) {
+    const goalTime = state.goal_time_seconds ? fmtHMS(state.goal_time_seconds) : "";
+    const trendText = state.fitness_vs_6mo_ago_label ?? "";
+    const ft = state.fitness_trend ?? "";
+    const trendArrow: Progression["trendArrow"] = /up|improv|ris/i.test(ft)
+      ? "up"
+      : /down|declin|fall/i.test(ft)
+        ? "down"
+        : "flat";
+    if (goalTime || trendText) {
+      progression = {
+        prediction: undefined,
+        goalTime,
+        gapLabel: "",
+        trendArrow,
+        trendText,
+        fitnessSeries: [],
+        fitnessMonths: [],
+        races: [],
+        projection: { rangeLabel: "", goalLabel: "", xLabel: "" },
+      };
+    }
+  }
+
+  // ── coachable moments ──
+  const momentsOut: CoachableMoment[] = moments.map((m) => ({
+    id: m.id,
+    kind: prettyRule(m.rule_id ?? m.action_type ?? "Observation"),
+    when: relTime(m.triggered_at),
+    observation: m.summary ?? "",
+    softQuestion: "",
+    severity: (["high", "med", "low"].includes(m.severity ?? "") ? m.severity : "low") as CoachableMoment["severity"],
+  }));
+
+  // ── watch list (derived) ──
+  const watchList: WatchItem[] = [];
+  for (const g of niggles) {
+    if (g.recurrence) {
+      watchList.push({
+        severity: "warn",
+        title: `${g.area} — **${g.mentions} mentions**`,
+        detail: `Most recent ${g.latestDate}. Recurrence flagged.`,
+      });
+    }
+  }
+  if (acwr && acwr.band === "spike") {
+    watchList.push({
+      severity: "warn",
+      title: "Load spike",
+      detail: `ACWR ${acwr.value.toFixed(2)} — above the sweet spot.`,
+    });
+  }
+
+  // ── header ──
+  let weekNumber = 0;
+  let totalWeeks = 0;
+  if (plan) {
+    const start = parseDate(plan.start_date);
+    const end = parseDate(plan.end_date);
+    totalWeeks = Math.max(1, Math.round((end.getTime() - start.getTime()) / (7 * 86400000)) + 1);
+    weekNumber = Math.min(totalWeeks, Math.max(1, Math.floor((Date.now() - start.getTime()) / (7 * 86400000)) + 1));
+  }
+  const goalSecs = state?.goal_time_seconds ?? plan?.target_time_seconds ?? null;
+
+  // Name resolves from the profile the coach/athlete set; falls back to the
+  // "Athlete <id>" placeholder so an un-named athlete still renders cleanly.
+  const displayName = settings?.display_name?.trim() || `Athlete ${athleteId.slice(0, 6)}`;
+
+  // Sign a short-lived URL for the athlete's photo (private bucket). Best-
+  // effort: a missing file / bucket just falls back to the monogram.
+  let avatarUrl: string | undefined;
+  if (settings?.avatar_path) {
+    const signed = await safe(
+      admin.storage.from("avatars").createSignedUrl(settings.avatar_path, 3600),
+    );
+    avatarUrl = signed?.signedUrl ?? undefined;
+  }
+
+  const header = {
+    name: displayName,
+    initials: initialsFrom(displayName, athleteId),
+    athleteId,
+    profileName: settings?.display_name?.trim() || undefined,
+    bio: settings?.bio?.trim() || undefined,
+    avatarUrl,
+    planName: plan?.name ?? "No active plan",
+    weekNumber,
+    totalWeeks,
+    goalTime: goalSecs ? fmtHMS(goalSecs) : undefined,
+    goalNote: goalSecs ? "Target finish" : undefined,
+  };
+
+  // ── pace key (the athlete's own pace per zone) ──
+  const KEY_ZONES: PaceZone[] = [
+    "easy",
+    "moderate",
+    "steady",
+    "mp",
+    "hm",
+    "threshold",
+    "tenK",
+    "fiveK",
+    "threeK",
+    "mile",
+  ];
+  const fmtPace = (sec: number) => {
+    const s = Math.round(sec);
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  };
+  const paceKey = athletePaces
+    ? KEY_ZONES.filter((z) => athletePaces[z]).map((z) => ({
+        zone: z,
+        label: zoneLabelShort(z),
+        pace: fmtPace(athletePaces[z]!),
+      }))
+    : undefined;
+
+  // ── §01 the lede, §02 key sessions, §03 the block, §05 stress ──────────
+  //
+  // All four are derived from data already in scope. Every one degrades to
+  // undefined rather than to a zero — "not scored yet" and "zero" are
+  // different answers and the UI must be able to tell them apart.
+
+  const runDays = days.filter((d) => d.logged !== false && d.zone !== null);
+  const latestDay = runDays.length ? runDays[runDays.length - 1] : undefined;
+
+  const latest: LatestSession | undefined = latestDay
+    ? (() => {
+        const det = latestDay.detail;
+        const cond = det?.conditions;
+        const facts: LatestFact[] = [];
+        facts.push({ label: "Distance", value: trimMiles(latestDay.miles), unit: "mi" });
+        for (const k of det?.kpis ?? []) {
+          if (facts.length >= 5) break;
+          if (k.k.toLowerCase() === "distance") continue; // already the first fact
+          facts.push({ label: k.k, value: k.v, unit: k.sub });
+        }
+        // Same fallback as the fixture path: an unenriched day still states
+        // its pace rather than showing a lone Distance cell.
+        const paceHit = /\u00B7\s*([0-9]{1,2}:[0-9]{2})\/mi/.exec(latestDay.actual ?? "");
+        if (facts.length < 2 && paceHit) {
+          facts.push({ label: "Pace", value: paceHit[1], unit: "/mi" });
+        }
+        if (facts.length < 5 && cond?.hrAvg) {
+          facts.push({ label: "Avg HR", value: String(cond.hrAvg), unit: "bpm" });
+        }
+        if (facts.length < 5 && cond?.tempF != null) {
+          facts.push({ label: "Conditions", value: String(cond.tempF), unit: "\u00B0F" });
+        }
+
+        // Mile splits from the telemetry the drawer already builds. Fast =
+        // at or under the run's own average, so the marks are self-relative
+        // and never imply a target this run did not have.
+        let splits: LatestSplit[] | undefined;
+        let splitsCaption: string | undefined;
+        const laps = det?.chart?.laps ?? [];
+        if (laps.length >= 2) {
+          const perMile = laps.filter((l) => Number.isFinite(l.paceSec) && l.paceSec > 0);
+          if (perMile.length >= 2) {
+            const avg = perMile.reduce((a, l) => a + l.paceSec, 0) / perMile.length;
+            splits = perMile.slice(0, 16).map((l, i) => ({
+              n: i + 1,
+              pace: fmtPaceSec(l.paceSec),
+              fast: l.paceSec <= avg,
+            }));
+            const fastest = perMile.reduce((a, b) => (b.paceSec < a.paceSec ? b : a));
+            const lastIsFastest = perMile[perMile.length - 1] === fastest;
+            splitsCaption = `Mile splits \u00B7 average ${fmtPaceSec(avg)}${
+              lastIsFastest ? " \u00B7 last mile fastest" : ""
+            }`;
+          }
+        }
+
+        const verdict =
+          latestDay.delta === null
+            ? "Not reconciled against the plan"
+            : latestDay.delta === "on pace"
+              ? "Held \u00B7 on pace"
+              : `${latestDay.delta} vs plan`;
+
+        return {
+          dayId: latestDay.id,
+          whenLabel: `${latestDay.dow} \u00B7 ${latestDay.dateLabel}`,
+          title: latestDay.label,
+          verdict,
+          onTarget: latestDay.delta === null ? true : latestDay.onTarget,
+          facts,
+          splits,
+          splitsCaption,
+          note: latestDay.note,
+          noteMeta: latestDay.note ? `Athlete note \u00B7 ${latestDay.dateLabel}` : undefined,
+          mood: latestDay.mood,
+          key: latestDay.key,
+        };
+      })()
+    : undefined;
+
+  // §02 — six weeks of keyed sessions, oldest first so the strip reads left to
+  // right the way the block was run.
+  const sixWeeksAgo = new Date();
+  sixWeeksAgo.setDate(sixWeeksAgo.getDate() - 42);
+  const sixWeeksISO = sixWeeksAgo.toISOString().slice(0, 10);
+  const keyDays = days.filter((d) => d.key && d.date >= sixWeeksISO && d.zone !== null);
+  const keySessions: KeySessionMark[] = keyDays.map((d, i) => {
+    const primaryLog = logsByDate.get(d.date)?.[0];
+    const rec = primaryLog ? reconByLogId.get(primaryLog.id) : undefined;
+    const target = fmtPaceLabel(rec?.adjusted_target_pace_seconds ?? rec?.target_pace_seconds_per_mile);
+    const ran = fmtPaceLabel(rec?.actual_pace_seconds_per_mile);
+
+    // No prescription to compare against for most athletes (spec §3, §1.3 —
+    // only 4/243 reconciliations populated for the canonical athlete).
+    // Re-based on the athlete's OWN pace zones: informational placement, not
+    // a hit/miss verdict — there's nothing to miss without a target.
+    let zoneLabel: string | undefined;
+    let zoneDeltaSec: number | undefined;
+    if (athletePaces && primaryLog) {
+      const actualSec =
+        (primaryLog.workout_pace_per_mile ? parsePaceSecPerMile(primaryLog.workout_pace_per_mile) : null) ??
+        weightedLapPace((lapsByWorkout.get(primaryLog.id) ?? []) as unknown as EnrichLap[]);
+      if (actualSec != null) {
+        const zone = nearestZoneKey(actualSec, athletePaces);
+        const zoneSec = athletePaces[zone];
+        if (zoneSec != null) {
+          zoneLabel = zoneLabelShort(zone);
+          zoneDeltaSec = Math.round(actualSec - zoneSec);
+        }
+      }
+    }
+
+    return {
+      dayId: d.id,
+      dateLabel: d.dateLabel,
+      title: d.label,
+      subtitle: d.actual ?? undefined,
+      deltaSec:
+        rec?.adjusted_pace_delta_seconds != null ? Math.round(Number(rec.adjusted_pace_delta_seconds)) : null,
+      compare: target && ran ? `${ran} vs ${target}` : undefined,
+      onTarget: d.onTarget,
+      latest: i === keyDays.length - 1,
+      zoneLabel,
+      zoneDeltaSec,
+    };
+  });
+
+  const lastKeyDay = keyDays.length ? keyDays[keyDays.length - 1] : undefined;
+  const lastKey: LastKeySession | undefined =
+    lastKeyDay && lastKeyDay.id !== latestDay?.id
+      ? (() => {
+          const primaryLog = logsByDate.get(lastKeyDay.date)?.[0];
+          const rec = primaryLog ? reconByLogId.get(primaryLog.id) : undefined;
+          return {
+            dayId: lastKeyDay.id,
+            whenLabel: `${lastKeyDay.dow} \u00B7 ${lastKeyDay.dateLabel}`,
+            title: lastKeyDay.label,
+            targetPace: fmtPaceLabel(
+              rec?.adjusted_target_pace_seconds ?? rec?.target_pace_seconds_per_mile,
+            ),
+            actualPace: fmtPaceLabel(rec?.actual_pace_seconds_per_mile),
+            hrAvg: lastKeyDay.detail?.conditions?.hrAvg,
+            tempF: lastKeyDay.detail?.conditions?.tempF,
+            note: lastKeyDay.note || undefined,
+            onTarget: lastKeyDay.onTarget,
+          };
+        })()
+      : undefined;
+
+  // §03 — the block. Two adherence numbers on purpose: sessions RUN and key
+  // sessions HIT answer different questions, and a block can score 86% on the
+  // first while missing every target on the second.
+  const weekStartISO = mondayOf(new Date()).toISOString().slice(0, 10);
+  const thisWeekDays = days.filter((d) => d.date >= weekStartISO && d.zone !== null);
+  const plannedThisWeek = planWorkouts.filter(
+    (w) => w.date && w.date >= weekStartISO && w.workout_type !== "rest",
+  );
+  const eightWeeksAgo = new Date();
+  eightWeeksAgo.setDate(eightWeeksAgo.getDate() - 56);
+  const eightISO = eightWeeksAgo.toISOString().slice(0, 10);
+  const prescribedDates = new Set(
+    planWorkouts
+      .filter((w) => w.date && w.date >= eightISO && w.date <= todayISO && w.workout_type !== "rest")
+      .map((w) => w.date as string),
+  );
+  const ranDates = new Set(runDays.filter((d) => d.date >= eightISO).map((d) => d.date));
+  const ranCount = Array.from(prescribedDates).filter((dt) => ranDates.has(dt)).length;
+  const keyWindow = days.filter((d) => d.key && d.date >= eightISO && d.zone !== null);
+  const keyJudged = keyWindow.filter((d) => d.delta !== null);
+  const keyHit = keyJudged.filter((d) => d.onTarget).length;
+
+  const lastAdj = planAdjs[0];
+  const block: BlockStats | undefined =
+    header.weekNumber && header.totalWeeks
+      ? {
+          weekNumber: header.weekNumber,
+          totalWeeks: header.totalWeeks,
+          phaseLabel: plan?.name ?? undefined,
+          sessionsRun: thisWeekDays.length,
+          sessionsPlanned: plannedThisWeek.length,
+          milesThisWeek: thisWeekDays.reduce((a, d) => a + d.miles, 0),
+          ranOf: prescribedDates.size
+            ? { run: ranCount, prescribed: prescribedDates.size }
+            : undefined,
+          ranPct: prescribedDates.size
+            ? Math.round((ranCount / prescribedDates.size) * 100)
+            : undefined,
+          hitOf: keyJudged.length ? { hit: keyHit, total: keyJudged.length } : undefined,
+          lastChangeLabel: lastAdj?.applied_at
+            ? dateLabel(parseDate(lastAdj.applied_at.slice(0, 10)))
+            : undefined,
+          lastChangeNote: lastAdj
+            ? `${lastAdj.trigger_type === "coach_rewrite" ? "By you" : "By the athlete"}`
+            : undefined,
+        }
+      : undefined;
+
+  // §05 — acute vs chronic weighted minutes. Chronic is the 28-day mean scaled
+  // to a week, so the two numbers are directly comparable.
+  const sevenAgo = new Date();
+  sevenAgo.setDate(sevenAgo.getDate() - 7);
+  const sevenISO = sevenAgo.toISOString().slice(0, 10);
+  const twentyEightAgo = new Date();
+  twentyEightAgo.setDate(twentyEightAgo.getDate() - 28);
+  const twentyEightISO = twentyEightAgo.toISOString().slice(0, 10);
+  const scoredLogs = logs.filter((l) => l.stress_load != null);
+  const acuteSum = scoredLogs
+    .filter((l) => l.workout_date >= sevenISO)
+    .reduce((a, l) => a + Number(l.stress_load), 0);
+  const chronicSum = scoredLogs
+    .filter((l) => l.workout_date >= twentyEightISO)
+    .reduce((a, l) => a + Number(l.stress_load), 0);
+  const stress: StressLoad | undefined = scoredLogs.length
+    ? { acute: Math.round(acuteSum), chronic: Math.round(chronicSum / 4) }
+    : undefined;
+
+  return {
+    header,
+    watchList,
+    moments: momentsOut,
+    days,
+    progression,
+    weeklyVolume,
+    acwr,
+    niggles,
+    mood,
+    paceKey,
+    latest,
+    latestDetail: latestDay?.detail,
+    lastKey,
+    keySessions,
+    block,
+    stress,
+  };
+}

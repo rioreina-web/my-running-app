@@ -1,0 +1,147 @@
+<!doctype html>
+<!-- @dsCard group="Screens" name="AI Insight" subtitle="Same chrome as Voice Log 032c — AI marked only by Times prose and a blue accent" viewport="470x960" -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Post Run Drip · AI Insight</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;700;900&family=JetBrains+Mono:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+<style>
+/* Identical system to Voice Log 032c. The only AI-specific moves: prose set in
+   JetBrains Mono instead of Helvetica, and green instead of red. Nothing else changes. */
+:root{--paper:#FFFFFF;--ink:#111111;--ink-2:#6B6B6B;--ink-3:#9A9A9A;--rule:#EBEBEB;--red:#EE2B24;--red-text:#D31F19;--session:#1F4FA8;--red-wash:rgba(238,43,36,.10);--heat:#A8560A;--ai:#111111;--ai-text:#111111;--sans:"Helvetica Neue",Helvetica,"Archivo",system-ui,sans-serif;--serif:"Times New Roman",Times,serif;--ai-font:"JetBrains Mono",ui-monospace,Menlo,monospace}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:#C6C6C6;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+.stage{min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:28px 20px}
+.phone{width:393px;height:852px;flex:none;background:var(--paper);color:var(--ink);font-family:var(--sans);border-radius:46px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 26px 70px rgba(0,0,0,.3),0 0 0 11px #0C0C0C,0 0 0 12px #2C2C2C}
+a{color:var(--session)}a:hover{color:var(--red-text)}
+button{font-family:var(--sans)}
+
+/* status bar */
+.sb{height:54px;flex:none;padding:0 30px 0 34px;display:flex;align-items:center;justify-content:space-between;font-size:15px;font-weight:700}
+.sb .g{display:flex;align-items:center;gap:6px}
+.sb .bars{display:flex;align-items:flex-end;gap:2px;height:11px}
+.sb .bars i{width:3px;background:var(--ink);border-radius:1px;display:block}
+.sb .bars i:nth-child(1){height:4px}.sb .bars i:nth-child(2){height:6px}.sb .bars i:nth-child(3){height:9px}.sb .bars i:nth-child(4){height:11px}
+.sb .batt{display:flex;align-items:center;justify-content:center;min-width:29px;height:16px;background:var(--ink);color:#fff;border-radius:4px;font-size:10px;font-weight:700;padding:0 4px}
+
+/* header */
+.hd{flex:none;height:56px;padding:0 22px;display:flex;align-items:center;justify-content:space-between}
+.icon{width:44px;height:44px;margin-left:-11px;background:transparent;border:0;display:flex;flex-direction:column;justify-content:center;gap:5px;padding:0 10px;cursor:pointer}
+.icon i{display:block;height:2px;border-radius:2px;background:var(--ink)}
+.link{height:44px;display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;white-space:nowrap;text-decoration:none}
+
+/* plate */
+.plate{flex:none;padding:2px 22px 12px;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
+
+/* tabs — the brand red rule, as everywhere else */
+.tabs{flex:none;display:grid;grid-template-columns:1fr 1fr;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+.tab{height:52px;background:transparent;border:0;border-bottom:2px solid transparent;font-size:13px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;white-space:nowrap;color:var(--ink-2);cursor:pointer}
+.tab.on{color:var(--ink);border-bottom-color:var(--red)}
+
+/* headline */
+.head{flex:none;padding:30px 22px 26px;text-align:center;border-bottom:1px solid var(--rule)}
+.h1{font-size:36px;font-weight:900;letter-spacing:-.04em;line-height:.98;text-transform:uppercase;margin:0}
+.dek{font-family:var(--serif);font-style:italic;font-size:17px;line-height:1.4;color:var(--ink-2);margin:13px auto 0;max-width:30ch}
+
+/* attribution row — same shape as Voice Log's "linked to" */
+.attr{flex:none;padding:14px 22px 15px;border-bottom:1px solid var(--rule);display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.attr .lab{font-family:var(--ai-font);font-size:12px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;white-space:nowrap;color:var(--ai-text)}
+.attr .r{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;color:var(--session);border-bottom:1px solid var(--rule);padding-bottom:2px}
+
+/* the answer — ink mono prose; computed values get weight, never hue */
+.doc{flex:1;min-height:0;overflow-y:auto;padding:18px 22px 24px}
+.doc::-webkit-scrollbar{display:none}
+.doc p{font-family:var(--ai-font);font-size:13px;font-weight:400;line-height:1.72;letter-spacing:-.005em;color:var(--ink);margin:0 0 14px;text-wrap:pretty}
+.doc p:last-child{margin-bottom:0}
+.d{font-weight:500;color:var(--ai-text)}
+.band{font-weight:500;color:var(--session)}
+.said{font-family:var(--serif);font-style:italic;font-size:1.24em;letter-spacing:0;background:var(--red-wash);padding:1px 4px 2px;margin:0 -1px}
+
+/* conditions — the environment the machine reasoned about */
+.cond{flex:none;display:grid;grid-template-columns:repeat(5,1fr);background:#F7F7F5;border-top:1px solid var(--rule);padding:11px 0 12px}
+.cd{display:flex;flex-direction:column;align-items:center;gap:5px;padding:0 4px;border-right:1px solid var(--rule)}
+.cd:last-child{border-right:0}
+.cd span{font-family:var(--ai-font);font-size:14px;font-weight:500;letter-spacing:-.02em;font-variant-numeric:tabular-nums;white-space:nowrap}
+.cd span.hot{color:var(--heat)}
+.cd span i{font-style:normal;font-size:10px;color:var(--ink-2)}
+.cd b{font-size:9px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
+
+/* tab bar */
+.tb{flex:none;display:grid;grid-template-columns:repeat(6,1fr);border-top:1px solid var(--rule);padding:0 4px 6px}
+.tb button{background:transparent;border:0;display:flex;flex-direction:column;align-items:center;gap:7px;padding:12px 0 10px;cursor:pointer}
+.tb .dot{width:6px;height:6px;border-radius:999px;border:1px solid var(--ink-3);background:transparent}
+.tb .lb{font-size:11px;font-weight:500;letter-spacing:.03em;text-transform:uppercase;white-space:nowrap;color:var(--ink-2)}
+.tb button.on .dot{background:var(--red);border-color:var(--red)}
+.tb button.on .lb{color:var(--ink);font-weight:700}
+.home{flex:none;display:flex;justify-content:center;padding:0 0 9px}
+.home i{display:block;width:134px;height:5px;border-radius:999px;background:var(--ink)}
+</style>
+</head>
+<body>
+<div class="stage">
+<div class="phone" data-screen-label="AI Insight">
+
+  <div class="sb">
+    <span>11:02</span>
+    <span class="g">
+      <span class="bars"><i></i><i></i><i></i><i></i></span>
+      <svg width="16" height="12" viewBox="0 0 16 12" fill="none"><path d="M8 11.2 .5 3.6a10.5 10.5 0 0 1 15 0L8 11.2Z" fill="#111"/></svg>
+      <span class="batt">75</span>
+    </span>
+  </div>
+
+  <div class="hd">
+    <button class="icon" aria-label="Menu"><i></i><i></i><i></i></button>
+    <a class="link" href="#">Today <span>&#8599;</span></a>
+  </div>
+
+  <div class="plate">Running Log</div>
+
+  <div class="tabs">
+    <button class="tab on">Insight</button>
+    <button class="tab">More questions</button>
+  </div>
+
+  <div class="head">
+    <h1 class="h1">How was my<br>workout</h1>
+    <p class="dek">A hard long run, run faster than the same session five weeks ago.</p>
+  </div>
+
+  <div class="attr">
+    <span class="lab">AI insight</span>
+    <span class="r">Aug 1 · 14 runs</span>
+  </div>
+
+  <div class="doc">
+    <p>Main work was four sets of 1-mile and 2-mile reps. The 1-mile reps sat consistently in your <span class="band">Steady</span> band <span class="d">5:56–6:02/mi</span>, meeting or slightly exceeding your <span class="d">~6:00/mi</span> target. The 2-mile reps also came in under the <span class="d">~6:25/mi</span> target — three in <span class="band">Moderate</span> <span class="d">6:21–6:23/mi</span>, one in <span class="band">Steady</span> <span class="d">6:16/mi</span>.</p>
+    <p>Heart rate rose progressively across the set, peaking at <span class="d">170 bpm</span> on the seventh rep. Most recoveries stayed in your <span class="band">Easy</span> band; the one after Rep 5 drifted to <span class="band">Moderate</span> at <span class="d">6:57/mi</span>.</p>
+    <p>You called it <span class="said">“pretty fatiguing”</span> with a <span class="said">“high heart rate”</span> and an RPE of <span class="d">8/10</span>, noting <span class="said">“warmer weather.”</span> The data agrees — <span class="d">78°F</span> with a <span class="d">72°F</span> dew point, costing an estimated <span class="d">1.8%</span> on the reps and <span class="d">3.6%</span> on continuous efforts.</p>
+    <p>This matches your established pattern: heat compresses the top end but leaves aerobic work intact.</p>
+  </div>
+
+  <div class="cond">
+    <div class="cd"><span>78&deg;</span><b>Temp</b></div>
+    <div class="cd"><span>72&deg;</span><b>Dew</b></div>
+    <div class="cd"><span class="hot">&minus;1.8%</span><b>Reps</b></div>
+    <div class="cd"><span class="hot">&minus;3.6%</span><b>Continuous</b></div>
+    <div class="cd"><span>8<i>/10</i></span><b>RPE</b></div>
+  </div>
+
+  <div class="tb">
+    <button><span class="dot"></span><span class="lb">Log</span></button>
+    <button><span class="dot"></span><span class="lb">Train</span></button>
+    <button><span class="dot"></span><span class="lb">Trends</span></button>
+    <button><span class="dot"></span><span class="lb">Week</span></button>
+    <button class="on"><span class="dot"></span><span class="lb">Ask</span></button>
+    <button><span class="dot"></span><span class="lb">Sheet</span></button>
+  </div>
+
+  <div class="home"><i></i></div>
+
+</div>
+</div>
+</body>
+</html>

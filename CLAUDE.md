@@ -57,8 +57,20 @@ surface in v1.5. Strength + mobility are deferred future products.
 
 ## Information architecture (athlete-facing)
 
-**Target IA (as of 2026-05-28): four-tab bottom nav — Log · Trends ·
-Train · Coach.** Mental flow: input → overview → detail → synthesis.
+**Shipping IA (as of 2026-08-19): six-tab bottom nav — Log · Train ·
+Trends · Week · Ask · Sheet.** Mental flow: input → plan → overview →
+decision → interrogate → records. Synthesis (Coach) was retired as a tab on
+2026-07-28; the analysis half of it came back on 2026-08-05 as **Ask**,
+first as a sheet from the foot of Trends and then (2026-08-19) as its own
+tab in the slot Charts held.
+
+> ⚠️ **This section said "three tabs" until 2026-08-19 and was wrong from
+> 2026-08-11 onward.** The Sheet landed 08-11 and Ask + Week on 08-19, and
+> none of them updated this doc. `DripTab` in
+> `RunningLog/App/DripTabBar.swift` is the only source of truth for what
+> ships — read the enum, not this paragraph. Anyone reasoning about IA cost
+> from a stale count here will argue for the wrong thing; that exact mistake
+> was made on 2026-08-19.
 
 - **Log** — voice-first front door at top (record button + voice/manual
   toggle) and the 6-month training journal scrolling below. Last 6
@@ -75,6 +87,24 @@ Train · Coach.** Mental flow: input → overview → detail → synthesis.
   past + planned, coach plan layered if present), HISTORY (longer-arc
   analytics — pace × volume distribution, cycle comparison overlays,
   fitness arcs). Plan is a *subset* of Train, not its own tab.
+- **Ask** *(2026-08-05)* — the analysis surface, opened from the foot of
+  Trends (`AskBar` in `RunningLog/Analysis/AskView.swift`). Trends shows the
+  shape of the block; Ask interrogates it. Chip per analyzer, answer as
+  computed fact lines + chart + coverage, narration on top. This is the
+  screen the pace spectrum / threshold / race-prediction content was waiting
+  for when it was parked in Trends v1 — they answer "how fast am I", which
+  Trends deliberately doesn't. See "The Ask surface" below.
+- **Week** *(2026-08-19)* — the weekly decision surface, and the only tab
+  that proposes. Three questions, each answered by its own signal cluster:
+  *am I getting faster* (threshold band + HR efficiency), *am I absorbing the
+  work* (load vs own baseline, niggles, mood, overnight), *what moves the
+  marathon* (long runs, spectrum, long threshold, volume). It ends in
+  glass-box proposals — a diff, the evidence as tappable chips that jump to
+  the source card, and Apply / Adjust / Keep. Nothing writes without a tap.
+  Trends observes and stops; Week reads the same signals and asks what to do.
+  That boundary is the whole reason they are two tabs. See
+  `WEEK-TAB-APPLY.md`. **Fixture-driven as of 2026-08-19 — no live data.**
+
 - **Coach** — the AI Daily Read as observation, on demand. Maya taps
   generate; AI produces a minimal-format paragraph (eyebrow date +
   headline + 2-4 observation sentences + italic soft questions). Voice
@@ -83,10 +113,12 @@ Train · Coach.** Mental flow: input → overview → detail → synthesis.
   anchors and goals silently. Maya can ask Coach to read her journey
   through specific lenses ("how does fitness compare to last cycle?").
 
-**Code as of 2026-05-28 ships 5 tabs** (`Log · Train · Trends · Coach ·
-Plan`, in `RunningLog/App/RunningLogApp.swift:60-140`). The target 4-tab
-IA is the Phase 3 deliverable in Maya's roadmap — Plan collapses into
-Train. See `outputs/maya-product-roadmap-2026-05-28.md` for sequencing.
+**Code as of 2026-08-19 ships 6 tabs** — `DripTab` in
+`RunningLog/App/DripTabBar.swift` declares `log` · `training` · `trends` ·
+`week` · `ask` · `sheet` (the raw values are non-contiguous for historical reasons;
+declaration order is display order). Plan folded into Train's CALENDAR
+mode (2026-07-13); Trends 2 was removed 2026-07-27; Coach (The Read) was
+removed 2026-07-28.
 
 ## Where things live
 
@@ -119,15 +151,19 @@ Train. See `outputs/maya-product-roadmap-2026-05-28.md` for sequencing.
    medical claims.** Defers to the coach. Hard guardrails in system prompts
    enforce this. Niggles classifier vocabulary is closed (see Niggles spec
    below).
-3. **No LLM prompt change ships without running the eval harness.**
-   The harness exists at `supabase/functions/_evals/` (README, runner,
-   rubric primitives, Gemini provider, custom checks). Coverage is
-   partial as of 2026-05-28 — 4 cassettes recorded (3 injury-analysis,
-   1 process-training-memo), 10 stubs need athlete-side inputs filled,
-   1 stub (reschedule-plan) needs production library wired. Run via
-   `_evals/record.ts` with `GEMINI_API_KEY`. Until coverage is complete
-   on the prompt you're touching, supplement with manual review against
-   `docs/coaching/principles.md`.
+3. **Golden prompts don't ship without recorded eval cassettes;
+   everything else ships on manual review.** (Golden-set policy,
+   2026-07-07 — see `outputs/coach-shapeable-ai-architecture-2026-07-07.md`
+   §6.) The golden families are the athlete-facing, safety-baitable
+   surfaces: `daily-read`, `injury-analysis`, `reschedule-plan`,
+   `coaching-agent-*`. Touching one of those prompts requires at least
+   one *recorded* cassette (stubs don't count) in
+   `_evals/cassettes/<prompt>/` — CI blocks otherwise. All other prompt
+   families get a CI *warning* only; their gate is manual review against
+   `docs/coaching/principles.md`, and their cassette coverage is expected
+   to grow from real usage (promote-to-cassette,
+   `outputs/ai-feedback-loop-design-2026-07-07.md`) rather than synthetic
+   authoring. Record via `_evals/record.ts` with `GEMINI_API_KEY`.
 4. **All inserts to `coachable_moments` happen via service-role edge
    function.** No client-side INSERT policy.
 5. **Migrations are append-only.** Never edit a deployed migration; write a
@@ -135,11 +171,20 @@ Train. See `outputs/maya-product-roadmap-2026-05-28.md` for sequencing.
 6. **Use `current_coach_id()` for coach-scoped RLS** (the SECURITY DEFINER
    helper from `20260311120000_fix_coach_rls_recursion.sql`) — direct
    subqueries against `coach_profiles` cause recursion.
-7. **Predictions ship with range + confidence, never a single point.** The
-   marathon-prediction example: `3:08 – 3:14, midpoint 3:11, HIGH
-   CONFIDENCE based on 4 MP workouts and a recent half`. Never
-   `3:09:30 PROJECTED FINISH`. The seconds are math artifact, not
-   meaningful signal. See `outputs/marathon-prediction-honesty.md`.
+7. **Race-time predictions ship as a single number + confidence tier, with
+   the lifetime PR alongside** (revised 2026-07-18; seconds revised
+   2026-08-28). We tried a range (`3:08 – 3:14, midpoint 3:11, HIGH CONF`)
+   but the confidence-scaled band read as *too wide and inaccurate* — a
+   marathon window that beat the athlete's PR at the fast end and spanned 13
+   minutes was worse than one honest estimate. So: show the midpoint as the
+   projection, the HIGH/MEDIUM/LOW tier for certainty, and the demonstrated
+   lifetime PR next to it. **2026-08-28 (owner call): display full seconds at
+   every distance, half/marathon included** — the earlier minute-rounding is
+   retired; the confidence tier, the range, and the PR alongside are what
+   carry the honesty, not coarsened digits. Still never a bare projection
+   with no confidence tier or PR context. See
+   `outputs/marathon-prediction-honesty.md` (range rationale, presentation
+   since revised twice).
 8. **No em-dashes as empty-state placeholders.** Every empty cell uses
    the empty-state component (eyebrow + plain-prose nudge + optional CTA).
    See `outputs/new-user-action-plan.md` and the empty-state component spec.
@@ -205,11 +250,19 @@ race anchor (or goal race time when no anchor exists) via
 **Do not use the legacy seconds-offset ladder** that lived in
 `web/src/app/(app)/pace-chart/page.tsx` — that was a bug, fixed.
 
+**`supabase/functions/_shared/paces.ts` is the source of truth**, specifically
+`TRAINING_MP_SPEED_RATIO`. The ratios below are band midpoints of the canonical
+convention locked 2026-06-04. This table previously documented the pre-2026-06
+values (0.925 / 0.875 / 0.765 / 0.70) — a *different* band convention that made
+the same athlete see different easy paces on web and iOS. If these ever
+disagree with `paces.ts`, `paces.ts` wins and this table is the stale one;
+`_shared/cross-language-pace-contract.test.ts` pins it.
+
 | Zone | Math | Notes |
 |---|---|---|
-| Easy | MP / 0.765 — percentage of MP speed | Aerobic, conversational |
-| Moderate | between Easy and Steady | NEW 2026-05-28; upper aerobic |
-| Steady | MP / 0.925 | Moderate-aerobic, marathon-prep |
+| Easy | MP / 0.75 — percentage of MP speed | Aerobic, conversational |
+| Moderate | MP / 0.85 | NEW 2026-05-28; upper aerobic |
+| Steady | MP / 0.95 | Moderate-aerobic, marathon-prep |
 | MP | anchor (from race anchor or goal_time / race_distance) | Marathon pace |
 | HMP | between MP and LT | NEW 2026-05-28; half marathon pace |
 | LT | 1-hour race pace (interpolated between 10K and HM) | Threshold |
@@ -239,15 +292,89 @@ zones on her real fitness, not on her 3:16 aspiration. Goal time is
 direction; race anchor is reality. Phase 2 of Maya's roadmap wires
 this through. See `outputs/race-performances-feature-plan.md`.
 
-**Workout labels are pace-zone labels.** "Tempo" and "Threshold" are
-dropped as ambiguous — the zone IS the workout label. A workout
-formerly called "Tempo" is now `MP 7 mi` or `HMP 7 mi` depending on
-the actual pace. "Threshold" is `LT 6 mi`. "Intervals" is `5K 5×1km`
-or `3K 4×800` etc. Structural labels survive for `Long` (long run,
-typically Easy/Moderate/Steady pace) and `Long wo` (long run with
-embedded quality references — those references don't carry the
-precision of a pace-zone workout). Non-running labels: `Cross-train`,
-`Strength`, `Rest`, `Race`.
+**Workout labels are session-intent labels; pace zones are NOT workout
+types (revised 2026-08-10 — reverses the 2026-05-28 call).** A pace zone
+describes the pace of a *segment*; a workout type describes the *intent* of
+a session. Collapsing the two made "MP" a workout label, which meant an
+easy long run and a marathon-pace session competed for the same vocabulary.
+
+The offered taxonomy is 11 keys, source of truth `WorkoutLabel.offered` in
+`RunningLog/App/WorkoutLabel.swift`:
+
+| Group | Keys |
+|---|---|
+| Effort | `easy` · `moderate` · `steady` · `recovery` ("Recovery run") |
+| Structural | `long_run` ("Long run") · `long_wo` ("Long run workout") |
+| Session | `threshold` · `intervals` · `fartlek` · `progression` |
+| — | `race` |
+
+- **`tempo` is retired and folds to `threshold` on write** (`WorkoutLabel.normalize`).
+  Only one of the two survives; "Tempo" no longer renders anywhere.
+- **The old `threshold` → `lt` fold is GONE.** Threshold is a session type,
+  LT is a pace zone. They are different things and no longer share a key.
+- `mp` / `hmp` / `lt` / `10k` / `5k` / `3k` / `mile` are no longer offered as
+  workout types. Rows already stored under them still render via
+  `WorkoutLabel.display` and are preserved on edit via
+  `WorkoutLabel.options(including:)` — no migration was run.
+- **Pending:** the per-workout pace-zone label (auto-derived from the
+  session's paces, athlete-overridable after the fact) is designed but NOT
+  built. Until it ships, a workout has no zone label of its own.
+- Non-running labels are unchanged: `Cross-train`, `Strength`, `Rest`.
+
+Every consumer that buckets by `workout_type` must include `threshold`,
+`fartlek` and `long_wo` alongside `tempo`. Updated on 2026-08-10:
+`buildLoadMetrics.ts` (hard sessions), `post-run-reconciliation`,
+`subscribe-to-plan` (×3), `adaptation-rules` (×2), `coaching-daily-read`,
+`ingest-manual-workout` (allowlist). **Not yet updated** — `weekly-coaching-report`,
+`workoutComparison.ts`, `quality-volume.ts`, and several iOS sets in
+`FitnessPredictorService.swift` / `TrainingAnalysisView.swift`.
+
+## The Ask surface (analysis)
+
+**Computed first, narrated second.** Every answer is real math over real rows
+before a model sees it, and the model cannot introduce a number the math
+didn't print. Three layers:
+
+| Layer | Where | What it does |
+|---|---|---|
+| 0 · Route | `supabase/functions/ask/index.ts` | Free text → an analyzer id from a **closed enum**. Regex fast path first, then the cheapest model tier. Chips skip this layer entirely. |
+| 1 · Analyze | `supabase/functions/_shared/analyzers/` | Deterministic. Emits `FactLine[]` + `Coverage` + an optional chart spec. No model. Never writes. |
+| 2 · Narrate | `_shared/prompts/ask-narration.v1.ts` | Two sentences over the fact lines and nothing else. Every numeric token is checked against them. |
+
+**The rule that makes it safe: if a number is not in `facts`, it does not
+exist.** The UI renders from `facts`; the model may speak only `facts`. There
+is no third source. `_shared/analyzers/types.ts:factLinesToStrings` is the
+single seam between layers — the same array is both what the model is shown
+and what the guard licenses, so the two can never disagree. Do not build the
+prompt from `facts` anywhere else.
+
+**Degradation is the design.** Missing API key, rejected number, exhausted
+quota — all produce `narration: null` with the analysis intact and
+`annotated: false`. The facts always render; the narration is a bonus, never
+a dependency. Generalized from `compare-workouts`, which established the
+pattern for one question.
+
+**Cost.** Layer 1 is never rate-limited, so tapping a chip is free. The
+`analysis` bucket is charged only when a Layer-2 call is actually made.
+
+**Adding an analyzer** = one file in `_shared/analyzers/` + one line in its
+`index.ts`. No prompt surgery, no endpoint change, no app release — the chip
+rail is built from the server's `__catalog__` response. Full registry of 50
+analyzers across 11 training principles, with a build-status audit against
+this repo, in `ASK-REGISTRY.md`. Architecture in `ASK-APPLY.md`; Phase A
+placement notes in `ASK-PHASE-A-APPLY.md`.
+
+**Before launch (hard rule #3):** `ask-narration` is a golden family — it is
+athlete-facing and safety-baitable. It needs recorded cassettes in
+`_evals/cassettes/ask-narration/` AND an entry in the golden list in
+`.github/scripts/check_eval_coverage.py`. Neither exists yet. Record first,
+then add the entry, or CI blocks the next PR that touches the prompt.
+
+**Client:** `RunningLog/Analysis/Ask{Models,Service,Components,View}.swift`.
+Note the deliberate key-case split — the response envelope is snake_case, the
+analyzer payload is camelCase (it is the TS interface serialized as-is), so
+`AskResponse` declares explicit `CodingKeys` and no decoder-wide
+`.convertFromSnakeCase` may be introduced.
 
 ## Design system
 
@@ -255,6 +382,66 @@ The canonical visual language is **Post Run Drip** — *"restraint as
 foundation, intensity as accent."* Editorial running magazine. Warm
 paper. Black ink. One coral accent, used like punctuation. The full
 spec lives at `design-system/`.
+
+**The three-palette rule (2026-07-03): blue = pace, warm = mood, coral =
+alert; the three palettes never share hues.** Pace is a single-hue blue
+depth ramp (pale sky `#93B9D6` Easy → navy `#0E1D4E` Mile, ten stops for
+the ten canonical zones) — source of truth
+`RunningLog/Workouts/PaceSpectrum.swift`. Green is mood-only (a "safe
+zone" band goes neutral gray, never green); coral is alert-only (niggles,
+out-of-zone workload, brand punctuation — never a pace fill). The pace
+token was renamed `speed`/`--mood-speed` → `paceFast`/`--pace-fast` to
+move it out of the mood namespace. See `design-system/README.md` and
+`outputs/pace-color-todos-2026-07-03.md`.
+
+> **Hue churn, 2026-08-21.** The ramp was moved to coral, then to wine,
+> then reverted to the blue above — all in one day. Anything in the tree
+> referencing a coral or wine pace ramp is stale. Two findings are worth
+> keeping if it is ever revisited: (1) coral failed because pace is the
+> largest coloured surface in the product, so putting it on the brand hue
+> made orange the dominant colour of every chart and left the accent
+> nothing to point with; (2) a hue sweep of all 360° shows the only free
+> regions are ~200–315° — warm hues are taken by coral and the
+> tired/struggling/injured moods, green by energized/positive, and a
+> neutral gray ramp collides with the `neutral` mood outright.
+
+**The left-rule rule (2026-08-21): the 2pt vertical rule at a block's
+leading edge means MOOD, and nothing else.**
+
+| Rule | Means | Example |
+|---|---|---|
+| Coloured (mood palette) | How the athlete felt | `JournalLogRow`, `TodayPlate18`, `HomeDayPager`, `SheetTabView` |
+| Neutral (`divider` / `paperDeep`) | A block set apart — quote, transcript, nested content. Claims no status. | the transcript inset in `HistoryDetailSheet+Editorial` |
+| Coral | Never. Coral is alert-only, and a left rule is structure. | — |
+
+Written down because it was broken. `WorkoutRecipeView` drew a coral rule
+beside every work rep in THE WORKOUT while the Log feed drew a mood rule at
+the same width and position, so a warm bar meant *"this day went badly"* in
+the feed and *"this is the hard part"* one tap later in the sheet — same
+mark, opposite charge, no announcement. Coral there also broke the
+three-palette rule above: a 2×2mi rep at 5:28 is not an alert.
+
+**Structure gets a shape or an indent, never a coloured bar.** The recipe now
+braces a repeated block on the *right* (`RepeatBrace` in
+`Workouts/WorkoutReceiptSignals.swift`), indents recovery legs, and puts the
+session's totals in a footer. Before adding a marker to a new surface, check
+this table — if the thing you want to say is not mood, the leading edge is
+not where you say it.
+
+**Not yet swept:** three coral blockquote rules predate this and should go
+neutral — `HistoryDetailSheet+Editorial.swift` (memo), `DayDetailSheet.swift`
+(insight callout), `WorkoutStepComponents.swift` (nested recovery editor).
+
+**Slow-end legibility.** The pale zones must read as colour, not as
+unpainted paper: Easy sits at 1.45:1 against `--paper` and Steady at
+2.21:1. This is the constraint that killed the first coral build's Easy
+(`#F4DBC6`, 1.20:1) and it binds any future hue — at the lightness Easy
+needs, every hue is a tint, so check contrast before changing one. Ramp
+copies that must stay in sync: `PaceSpectrum.stops`,
+`IntensityRamp` in `TrainingAnalyticsViewModel.swift` (hexes *and*
+`rgbStops`), the raw stops in `WorkoutReceiptCharts.swift`,
+`design-system/colors_and_type.css`, `web/src/app/globals.css`, and
+`web/src/lib/chart-theme.ts`.
 
 Read `design-system/README.md` first if you're touching any view code.
 It's the source of truth for voice (what we say and how), tokens
@@ -314,25 +501,28 @@ question is settled.
 
 ### IA — current state vs. target (read before touching nav)
 
-**Current code:** iOS ships **5 tabs** (`Log · Train · Trends · Coach
-· Plan`) in `RunningLog/App/RunningLogApp.swift:60-140`.
+**Current code:** iOS ships **3 tabs** (`Log · Trends · Train`) —
+`DripTab` in `RunningLog/App/DripTabBar.swift`, mounted in
+`RunningLog/App/RunningLogApp.swift`.
 
-**Design system:** Documents a 5-tab nav (`LOG · TRAIN · TRENDS · COACH
-· RUNS`) — slightly different (Runs vs Plan as the 5th).
+**Design system:** still documents a 5-tab nav (`LOG · TRAIN · TRENDS ·
+COACH · RUNS`). It is two reductions behind the code. Treat the code as
+truth for nav; the design system remains truth for voice and tokens.
 
-**Target IA as of 2026-05-28:** **4 tabs — `Log · Trends · Train ·
-Coach`.** Plan collapses into Train as a subset (calendar mode shows
-past + planned together; coach-issued plans layer in for athletes on
-plans). Runs as a separate tab is also out. The 4-tab nav reflects
-Maya's needs (input → overview → detail → synthesis) and aligns the
-product with the journey-centric framing.
+**Built but NOT mounted — read this before "rebuilding" anything.**
+Several finished surfaces are in the repo with no route to them. They
+were deliberately unlinked, not abandoned, and grepping for a view name
+will find the file but not tell you it's dark:
 
-Phase 3 of Maya's roadmap untethers Train from `activePlan` and ships
-the 4-tab nav. See `outputs/maya-product-roadmap-2026-05-28.md`.
+| Surface | File | Status |
+|---|---|---|
+| The Read | `Coaching/Read/CoachReadView.swift` | Unlinked 2026-07-28 with the Coach tab. Intact. |
+| Model of You | `Coaching/ModelOfYou/ModelOfYouView.swift` | Never mounted. |
+| Signal Lab | `Analysis/SignalLabView.swift` | Reachable only via the `lab ›` door in the Trends header. |
+| Trends v1 | `Trends/TrendsLegacyTabView.swift` | DEBUG-only, behind the `v1 ›` door. Holds the pace spectrum, threshold miles and race prediction. |
 
-**Until Phase 3 lands**, code still ships 5 tabs. Don't add new
-surfaces to the soon-to-be-removed Plan tab. Don't build "Runs" as
-a separate tab.
+Before adding a surface, check whether the thing you want already
+exists and simply has no door. Before deleting one, check the same.
 
 ### Known iOS drift from the spec
 
@@ -371,15 +561,20 @@ parity is hard (and the three-thing fix path) in
   `(app)/coach`, web `(app)/coach-portal/*`) and none is canonical.
   Don't deepen any of them until dyad-persona work is reinvested in.
   See Phase 6 placeholder in Maya's roadmap.
-- **Eval harness exists; coverage is partial.** Located at
+- **Eval harness: golden-set policy (2026-07-07).** Located at
   `supabase/functions/_evals/` (runner, rubric primitives, Gemini
-  provider, custom checks). 4 cassettes recorded as of 2026-05-28;
-  10 stubs need athlete-side inputs; 1 needs production library
-  wired. Phase 1 of Maya's roadmap closes this out. Until then,
-  prompt changes need manual review against `docs/coaching/principles.md`.
-  **CI now enforces the gate (2026-06-11):** a PR that modifies a file in
-  `_shared/prompts/` fails unless `_evals/cassettes/<prompt>/` exists
-  (`.github/scripts/check_eval_coverage.py`).
+  provider, custom checks). State as of 2026-07-07: 53 cassettes across
+  14 prompt versions — 19 recorded (all of daily-read v3/v4/v5,
+  injury-analysis, 1 process-training-memo), 34 are stubs with rubrics
+  + inputs authored but `recorded_response` empty; filling each is one
+  `record.ts` run with `GEMINI_API_KEY` (~$0.05 for a full re-record).
+  **CI gate (`.github/scripts/check_eval_coverage.py`) blocks only the
+  golden families** (`daily-read`, `injury-analysis`, `reschedule-plan`,
+  `coaching-agent-*`) when touched without a recorded cassette; other
+  prompt families warn only (manual review against
+  `docs/coaching/principles.md` is their gate). Note: reschedule-plan
+  and coaching-agent-* are golden but currently stubs-only — the next
+  PR touching those prompts must record them.
 - **Edge function consolidation pending.** ~39 functions; `parse-*` ×4
   could collapse to one router-dispatched parser. New code should not
   add to overlap clusters.
@@ -387,20 +582,43 @@ parity is hard (and the three-thing fix path) in
   The outbox pair (`20260518100000_coachable_moment_outbox_trigger` +
   `20260518110000_drain_coachable_moment_jobs_cron`) is applied in prod and
   `drain-coachable-moment-jobs` is deployed. Task #23 closed.
-- **`user_profiles` table doesn't exist in production.** Root cause found
-  2026-06-11: the January migration's malformed filename
+- **`user_profiles` ghost table: RESOLVED 2026-06-15.** Root cause (found
+  2026-06-11): the January migration's malformed filename
   (`20260128_152000_user_profile.sql`) parsed as version `20260128`,
   colliding with the applied `fix_vector_search`, so the CLI silently
-  skipped it; file now quarantined in `supabase/migrations_quarantine/`.
-  **Escalated to feature blocker** — the Daily Read cron + workout-trigger
-  migrations are quarantined behind this decision. Defensive workarounds
-  remain across web, iOS, and one edge function. See
-  `outputs/profile-table-audit-2026-05-22.md` and
+  skipped it for 5 months. **Resolution: the table was NOT recreated.** A
+  dedicated SETTINGS surface `athlete_settings` (timezone + home_lat/lon +
+  preferred_run_time) was created (`20260615210000`), and the Daily Read
+  cron + workout-trigger were repointed off `user_profiles` onto
+  `athlete_state` (candidate athletes) + `athlete_settings` (timezone),
+  re-stamped (`20260615220000` / `230000`), and un-quarantined. The
+  `coaching-daily-read` edge function timezone lookup now reads
+  `athlete_settings`. Migrations authored + validated (real PG parser +
+  read-only prod logic checks); **pending `supabase db push` by the team.**
+  **Still open (non-blocking):** repoint the remaining SETTINGS edge-readers
+  (`fetch-workout-weather`, `post-run-reconciliation`, `reconcile-log`) and
+  add an iOS/web `athlete_settings.timezone` writer — until then all
+  athletes default to UTC. See
+  `outputs/user-profiles-ghost-table-resolution-2026-06-15.md`,
+  `outputs/profile-table-audit-2026-05-22.md`, and
   `docs/migration-ledger-reconciliation-2026-06-11.md`.
-- **`_shared/athlete-state.ts` is 1481 LOC with P0 bugs.** Refactor
-  designed at `athlete-state-refactor-design.md`. Blocked on eval
-  harness coverage so we can refactor without silently changing AI
-  behavior. Lands in Phase 6 (memory architecture).
+- **`_shared/athlete-state.ts` is ~2555 LOC; the structural refactor is
+  still pending, but the P0 correctness bugs are fixed.** Refactor designed
+  at `athlete-state-refactor-design.md`. The doc's four P0s have shipped:
+  R3 tenant leak (HOTFIX-H.1, `.eq('user_id')` + `.not('user_id','is',null)`),
+  R4 rebuild race (HOTFIX-H.2, `claim_athlete_state_rebuild` RPC + poll —
+  note: a claim/poll mechanism, not the `pg_advisory_xact_lock` the doc
+  proposed), R6 formerly-null fields (`monotony_7d`, `strain_7d`,
+  `week_compliance_pct`, `fitness_trend` now computed), and R7 pace zones
+  (sourced from PaceEngine, hardcoded multipliers deleted). Also fixed:
+  `formatPace` rounding boundary (`"7:60/mi"` → `"8:00/mi"`). Test coverage
+  exists at `_shared/athlete-state.test.ts` (10 tests: tenant isolation,
+  pace projection, prompt ranges, fitness_trend, week_compliance, monotony/
+  strain, formatPace). The remaining P1 work (the 10-builder structural
+  split + event-driven invalidation) is what lands in Phase 6 (memory
+  architecture). Note: the line numbers in the design doc's §10 execution
+  prompts are stale — the file grew ~70% since it was written; grep for the
+  function, don't trust the offsets.
 - **Pace chart `(app)/pace-chart/page.tsx` was buggy** — used a
   seconds-offset ladder; now refactored to call `derivePaceTableFromGoal`
   via `pace-chart-client.tsx`. The buggy version persists in
@@ -419,6 +637,28 @@ parity is hard (and the three-thing fix path) in
 
 Decisions captured during the May 2026 sprint, with deep rationale in
 `outputs/`.
+
+### 2026-07-03 — Coach adaptive plan builder (reverses coach deprioritization)
+
+Rio greenlit reinvesting in coach surfaces. The canonical coach surface is
+the **web coach portal**; the legacy `(app)/coach` route stays slated for
+removal. Full spec + phasing:
+`outputs/adaptive-coach-plan-builder-spec-2026-07-03.md`.
+
+Phase A shipped 2026-07-03: plan-level day-role skeleton
+(`day_structure` now written + read), mileage ramp tool
+(`weekly_mileage_targets` now written + read), shape-flag UI, per-week
+phase tagging (`phase_config.phases`), move-day reason codes (closed
+vocabulary on `shift-day` + web reason chips), and a fix for the silent
+`plan_adjustments` CHECK failure that had been dropping every athlete
+day-move audit row since April (`trigger_type='user_action'` was never in
+the constraint). Migrations `20260703120000` + `20260703121000` authored;
+**pending `supabase db push`** per hard rule #9. `shift-day` +
+`subscribe-to-plan` edge functions need redeploy.
+
+Decided: AI-assisted block rewrites (Phase E) use the constrained-library
+approach (extend `reschedule-plan`'s pattern); athlete feedback is
+available on any run but actively prompted only after key sessions.
 
 ### 2026-05-28 — Maya, the journey reframe, and the IA shift
 
@@ -509,9 +749,11 @@ Highlights:
   moments (load spike + injury risk, schedule conflicts) stay coach-
   only or soften.
 - **Add an LLM call** → Inline prompts are being deprecated; new calls
-  should use `_shared/prompt-library.ts`. Add eval cassette coverage
-  in `_evals/cassettes/<prompt-name>/` before shipping the prompt
-  change.
+  should use `_shared/prompt-library.ts`. If the prompt is in a golden
+  family (hard rule #3), record cassettes in
+  `_evals/cassettes/<prompt-name>/` before shipping; otherwise cassettes
+  are encouraged but the gate is manual review against
+  `docs/coaching/principles.md`.
 - **Add a new table** → Follow `docs/conventions/rls-checklist.md`.
   Include RLS in the same migration.
 - **Change athlete-coach relationship logic** → Touches RLS recursion
@@ -530,6 +772,11 @@ Highlights:
 
 ## Files worth knowing about
 
+- `supabase/functions/_shared/analyzers/` — the Ask analyzer registry
+  (contract in `types.ts`, registration in `index.ts`, row adapters in
+  `data.ts`). Phase A: `compare_session`, `zone_trend`, `load_balance`.
+- `supabase/functions/_shared/narration-guard.ts` — the Layer-2 number guard
+  shared by Ask and `compare-workouts`
 - `supabase/functions/_shared/dataAnalysis.ts` — quant analytics
   (ACWR, volume, compliance, fatigue extraction)
 - `supabase/functions/_shared/weeklyAnalytics.ts` — shared types

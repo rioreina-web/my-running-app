@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Training summary — with headline</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,600;0,700;1,400&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F5F3F0; --rule:#E8E4E0; --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+    --coral:#D4592A; --sage:#A9B89A; --green:#4A9E6B;
+    --font-display:"Crimson Pro",Georgia,serif;
+    --font-body:"PT Serif",Georgia,serif;
+    --font-mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:radial-gradient(circle at 30% 15%, #d8d3cc, #c4bfb7);font-family:var(--font-body);-webkit-font-smoothing:antialiased;padding:48px 24px 80px;}
+  .wrap{max-width:760px;margin:0 auto;}
+  .intro{text-align:center;margin-bottom:36px;}
+  .intro .kick{font-family:var(--font-mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#6b6056;}
+  .intro h1{font-family:var(--font-display);font-weight:700;font-size:29px;color:#26221d;margin-top:8px;letter-spacing:-.01em;}
+  .intro p{font-family:var(--font-body);font-style:italic;font-size:15px;color:#564f47;max-width:580px;margin:10px auto 0;line-height:1.5;}
+
+  .grid{display:flex;flex-direction:column;gap:22px;}
+  .opt{background:var(--paper);border-radius:20px;padding:26px 24px 24px;box-shadow:0 12px 30px rgba(0,0,0,.14);}
+  .opt .tag{font-family:var(--font-mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--coral);font-weight:600;margin-bottom:20px;}
+
+  .eyebrow{font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);}
+  .eyebrow.coral{color:var(--coral);}
+  .caption{font-family:var(--font-mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);}
+  .hdr{display:flex;justify-content:space-between;align-items:baseline;}
+  .display{font-family:var(--font-display);font-weight:700;color:var(--ink);letter-spacing:-.014em;line-height:1.02;}
+
+  .streams{display:grid;grid-template-columns:repeat(3,1fr);margin-top:18px;}
+  .streams .cell{padding:0 14px;border-right:1px solid var(--rule);}
+  .streams .cell:first-child{padding-left:0;}
+  .streams .cell:last-child{border-right:0;}
+  .streams .v{font-family:var(--font-mono);font-weight:600;font-size:28px;color:var(--ink);font-variant-numeric:tabular-nums;line-height:1;}
+  .streams .v small{font-size:13px;color:var(--ink-2);font-weight:500;}
+  .streams .l{font-family:var(--font-mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);margin-top:8px;}
+  .substrip{display:flex;gap:16px;margin-top:18px;padding-top:14px;border-top:1px solid var(--rule);}
+  .substrip span{font-family:var(--font-mono);font-size:11px;color:var(--ink-2);}
+  .substrip b{color:var(--ink);font-weight:700;}
+  .substrip .pos{color:var(--green);font-weight:600;}
+
+  .swatch{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;}
+  .swatch .chip{font-family:var(--font-display);font-weight:700;font-size:17px;color:var(--ink-2);border:1px solid var(--rule);border-radius:8px;padding:5px 12px;}
+  .swatch .chip.on{color:var(--ink);border-color:var(--ink-3);}
+
+  .notes{max-width:680px;margin:40px auto 0;}
+  .notes p{font-family:var(--font-body);font-size:14.5px;line-height:1.55;color:#3f3a33;}
+  .notes b{color:#26221d;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="intro">
+    <div class="kick">Post Run Drip · Training · headline + summary</div>
+    <h1>Headline’s back — just a neutral one.</h1>
+    <p>A title can be editorial without being a coach. “Your training.” states what the screen is; it makes no claim about how the month went. That’s the headline; the counts sit beneath it.</p>
+  </div>
+
+  <div class="grid">
+
+    <!-- Main: headline + stream summary -->
+    <div class="opt">
+      <div class="tag">Headline + three-stream summary</div>
+      <div class="hdr"><span class="eyebrow coral">MAY 31 – JUN 30</span><span class="caption">this month</span></div>
+      <div class="display" style="font-size:34px;margin-top:8px;">Your training.</div>
+      <div class="streams">
+        <div class="cell"><div class="v">41</div><div class="l">Runs logged</div></div>
+        <div class="cell"><div class="v">12</div><div class="l">Voice memos</div></div>
+        <div class="cell"><div class="v">245<small> mi</small></div><div class="l">Volume</div></div>
+      </div>
+      <div class="substrip">
+        <span><b>30:01</b> hrs</span>
+        <span><b>76%</b> easy</span>
+        <span><b>4</b> quality</span>
+        <span class="pos" style="margin-left:auto;">+8% vs May</span>
+      </div>
+    </div>
+
+    <!-- Headline word choices -->
+    <div class="opt">
+      <div class="tag">Neutral headline options — all voice-free</div>
+      <div class="swatch">
+        <span class="chip on">Your training.</span>
+        <span class="chip">This month.</span>
+        <span class="chip">June.</span>
+        <span class="chip">The month.</span>
+        <span class="chip">Training.</span>
+      </div>
+      <p style="font-family:var(--font-body);font-size:13px;color:var(--ink-2);font-style:italic;margin-top:16px;line-height:1.5;">
+        Each just labels the view. None says whether it was good, bad, high or low — that judgment is what would make it read as AI. The headline could also follow the segmenter: “This week.” / “This month.” / “The block.”
+      </p>
+    </div>
+
+  </div>
+
+  <div class="notes">
+    <p><b>The rule of thumb:</b> a headline that <i>names</i> the screen is fine (“Your training.”). A headline that <i>grades</i> it is the tacky AI line (“Strong month.”, “Hard share is creeping.”). Keep the display type, drop the verdict. If you ever want a verdict, it lives on The Read.</p>
+  </div>
+
+</div>
+</body>
+</html>

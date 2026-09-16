@@ -37,7 +37,12 @@ export function MileageChart({ data, height = 240 }: MileageChartProps) {
           <CartesianGrid {...CHART_GRID} />
           <XAxis dataKey="label" {...CHART_AXIS} />
           <YAxis {...CHART_AXIS} />
-          <Tooltip {...CHART_TOOLTIP} />
+          <Tooltip
+            {...CHART_TOOLTIP}
+            // Weekly sums are floats (e.g. 70.61999999999998) — clamp the
+            // scrubber readout to two decimals: "70.62 mi".
+            formatter={(value) => [`${Number(value).toFixed(2)} mi`, "miles"]}
+          />
           <Area
             type="monotone"
             dataKey="miles"

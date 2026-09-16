@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<!-- @template name="App screen" description="A Post Run Drip phone screen — masthead, ledger, feed of entries, tab bar. Start here for any new screen." -->
+<helmet>
+<script src="./ds-base.js"></script>
+<style>*{box-sizing:border-box}html,body{margin:0;padding:0;background:#C6C6C6}</style>
+</helmet>
+<div style="min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:28px 20px">
+<div style="width:393px;height:852px;flex:none;background:#FFFFFF;color:#111111;font-family:var(--font-label);border-radius:46px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 26px 70px rgba(0,0,0,.3),0 0 0 11px #0C0C0C,0 0 0 12px #2C2C2C">
+
+  <div style="height:54px;flex:none;padding:0 30px 0 34px;display:flex;align-items:center;justify-content:space-between;font-family:var(--font-data);font-size:15px;font-weight:600;font-variant-numeric:tabular-nums"><span>10:12</span><span style="display:flex;align-items:center;gap:6px"><span style="display:flex;align-items:flex-end;gap:2px;height:11px"><i style="display:block;width:3px;height:4px;background:#111;border-radius:1px"></i><i style="display:block;width:3px;height:6px;background:#111;border-radius:1px"></i><i style="display:block;width:3px;height:9px;background:#111;border-radius:1px"></i><i style="display:block;width:3px;height:11px;background:#111;border-radius:1px"></i></span><span style="display:flex;align-items:center;justify-content:center;min-width:29px;height:16px;background:#111;color:#fff;border-radius:4px;font-size:10px;font-weight:700;padding:0 4px">84</span></span></div>
+
+  <div style="flex:none;padding:8px 22px 16px;border-bottom:1px solid #EBEBEB;display:flex;align-items:flex-start;justify-content:space-between;gap:16px">
+    <img src="./logo-stacked.png" alt="Post Run Drip" style="height:52px;width:auto;display:block;flex:none">
+    <span style="display:flex;align-items:center;gap:2px;padding-top:6px">
+      <a href="#" style="height:44px;display:flex;align-items:center;font-size:12px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;white-space:nowrap;color:#111;text-decoration:none">This week</a>
+      <button aria-label="Menu" style="width:44px;height:44px;margin-right:-10px;background:transparent;border:0;display:flex;flex-direction:column;justify-content:center;gap:5px;padding:0 10px;cursor:pointer"><i style="display:block;height:2px;border-radius:2px;background:#111"></i><i style="display:block;height:2px;border-radius:2px;background:#111"></i><i style="display:block;height:2px;border-radius:2px;background:#111"></i></button>
+    </span>
+  </div>
+
+  <div style="flex:1;min-height:0;overflow-y:auto;padding:0 22px">
+    <div style="padding:18px 0 16px;border-bottom:1px solid #EBEBEB">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px">
+        <span style="font-size:10px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:#D31F19;white-space:nowrap">This week</span>
+        <span style="font-size:10px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:#6B6B6B;white-space:nowrap">Mon 17 &mdash; Sun 23</span>
+      </div>
+      <div style="display:flex;align-items:flex-end;gap:9px;margin-top:11px">
+        <b style="font-family:var(--font-data);font-size:36px;font-weight:600;letter-spacing:-.04em;line-height:.86;font-variant-numeric:tabular-nums">25.4</b>
+        <span style="font-size:10px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:#6B6B6B;padding-bottom:2px;white-space:nowrap">mi of 32</span>
+        <em style="font-family:var(--font-serif);font-style:italic;font-size:14px;color:#6B6B6B;margin-left:auto;padding-bottom:2px;white-space:nowrap">four to go</em>
+      </div>
+    </div>
+
+    <x-import component-from-global-scope="PostRunDripDesignSystem_019e23.LogEntry" date="Friday 21 Aug" mood="positive" type="Intervals" keyed="{{ true }}" title="6 × 800m." prose="Legs turned over better than Tuesday. The last two reps were the fastest, which almost never happens." stats="{{ statsA }}" byline="Voice 0:42 · transcribed 8:40" hint-size="100%,250px"></x-import>
+
+    <x-import component-from-global-scope="PostRunDripDesignSystem_019e23.LogEntry" date="Thursday 20 Aug" mood="tired" type="Easy" title="Easy 4.4 miles." voice="— still not right, ankle stiff for the first mile, knee finally fine —" stats="{{ statsB }}" hint-size="100%,220px"></x-import>
+
+    <div style="padding:15px 0;border-bottom:1px solid #EBEBEB;display:flex;align-items:baseline;justify-content:space-between;gap:12px">
+      <span style="font-family:var(--font-serif);font-style:italic;font-size:17px;color:#6B6B6B">Wednesday &mdash; rest.</span>
+      <b style="font-size:10px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:#9A9A9A;white-space:nowrap">Nothing logged</b>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:10px;padding:18px 0 26px">
+      <i style="flex:1;height:1px;background:#EBEBEB"></i>
+      <b style="font-size:9px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:#6B6B6B;white-space:nowrap">Earlier</b>
+      <i style="flex:1;height:1px;background:#EBEBEB"></i>
+    </div>
+  </div>
+
+  <div style="flex:none;display:grid;grid-template-columns:repeat(5,1fr);border-top:1px solid #111;padding:0 18px">
+    <button style="background:transparent;border:0;padding:11px 0 9px;display:flex;flex-direction:column;align-items:center;gap:6px;min-height:44px;cursor:pointer"><i style="display:block;width:100%;height:2px;background:#EE2B24"></i><b style="font-size:10px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:#111;white-space:nowrap">Log</b></button>
+    <button style="background:transparent;border:0;padding:11px 0 9px;display:flex;flex-direction:column;align-items:center;gap:6px;min-height:44px;cursor:pointer"><i style="display:block;width:100%;height:2px;background:transparent"></i><b style="font-size:10px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:#6B6B6B;white-space:nowrap">Week</b></button>
+    <button style="background:transparent;border:0;padding:11px 0 9px;display:flex;flex-direction:column;align-items:center;gap:6px;min-height:44px;cursor:pointer"><i style="display:block;width:100%;height:2px;background:transparent"></i><b style="font-size:10px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:#6B6B6B;white-space:nowrap">Plan</b></button>
+    <button style="background:transparent;border:0;padding:11px 0 9px;display:flex;flex-direction:column;align-items:center;gap:6px;min-height:44px;cursor:pointer"><i style="display:block;width:100%;height:2px;background:transparent"></i><b style="font-size:10px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:#6B6B6B;white-space:nowrap">Ask</b></button>
+    <button style="background:transparent;border:0;padding:11px 0 9px;display:flex;flex-direction:column;align-items:center;gap:6px;min-height:44px;cursor:pointer"><i style="display:block;width:100%;height:2px;background:transparent"></i><b style="font-size:10px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:#6B6B6B;white-space:nowrap">Sheet</b></button>
+  </div>
+  <div style="flex:none;display:flex;justify-content:center;padding:6px 0 9px"><i style="display:block;width:134px;height:5px;border-radius:999px;background:#111"></i></div>
+
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      statsA: [
+        { label: "Dist", value: "7.47", unit: "mi" },
+        { label: "Time", value: "53:51" },
+        { label: "Pace", value: "7:13", unit: "/mi" },
+      ],
+      statsB: [
+        { label: "Dist", value: "4.43", unit: "mi" },
+        { label: "Time", value: "31:52" },
+        { label: "Pace", value: "7:12", unit: "/mi" },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

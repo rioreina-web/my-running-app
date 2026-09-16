@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workout detail — viz (real data)</title>
+<style>
+  :root{
+    --paper:#F5F3F0; --card:#FFFFFF; --paper-deep:#E8E4DF; --rule:#E8E4E0;
+    --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+    --coral:#D4592A; --coral-deep:#B84420; --coral-wash:rgba(212,89,42,.12);
+    --amber:#C4873A; --rose:#B83A4A; --green:#2D8A4E; --plum:#6B4A8A;
+    --font-display:"Crimson Pro",Georgia,serif; --font-body:"PT Serif",Georgia,serif;
+    --font-mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font-body);
+    -webkit-font-smoothing:antialiased;padding:34px 20px 70px}
+  .sheet{max-width:760px;margin:0 auto}
+  .eyebrow{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--coral)}
+  h1{font-family:var(--font-display);font-weight:600;font-size:38px;line-height:1.02;margin:7px 0 4px;letter-spacing:-.015em}
+  .sub{font-size:13.5px;color:var(--ink-2);margin:0}
+  .rule{height:1px;background:var(--rule);margin:22px 0}
+
+  /* stat row */
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--rule);
+    border:1px solid var(--rule);border-radius:12px;overflow:hidden;margin-top:20px}
+  .stat{background:var(--card);padding:13px 14px}
+  .stat .k{font-family:var(--font-mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);margin-bottom:6px}
+  .stat .v{font-family:var(--font-display);font-weight:600;font-size:23px;line-height:1;letter-spacing:-.01em}
+  .stat .v small{font-family:var(--font-body);font-weight:400;font-size:12px;color:var(--ink-2);letter-spacing:0}
+
+  .panel{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:20px 18px 14px;margin-top:18px}
+  .panel .lbl{font-family:var(--font-mono);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-2);margin-bottom:4px}
+  .panel .cap{font-size:12.5px;color:var(--ink-2);margin:0 0 6px}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;font-family:var(--font-mono);font-size:10px;letter-spacing:.04em;color:var(--ink-2)}
+  .legend i{display:inline-block;width:11px;height:11px;border-radius:2px;vertical-align:-1px;margin-right:5px}
+  .dotleg{width:9px;height:9px;border-radius:50%;background:var(--plum)}
+
+  .takeaway{background:var(--coral-wash);border:1px solid rgba(212,89,42,.22);border-radius:12px;padding:14px 16px;margin-top:18px;font-size:14.5px;line-height:1.5}
+  .takeaway b{color:var(--coral-deep)}
+
+  .more{margin-top:26px}
+  .more h3{font-family:var(--font-display);font-weight:600;font-size:20px;margin:0 0 2px}
+  .more p{font-size:12.5px;color:var(--ink-2);margin:0 0 14px}
+  .thumbs{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .thumb{background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:13px 13px 10px}
+  .thumb .t{font-family:var(--font-mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+  .thumb .n{font-family:var(--font-display);font-weight:600;font-size:15px;margin:3px 0 1px}
+  .thumb .d{font-size:11.5px;color:var(--ink-2);margin-bottom:9px}
+  svg{display:block;width:100%;height:auto;overflow:visible}
+  .heatwarn{display:inline-flex;align-items:center;gap:8px;margin-top:12px;font-size:12.5px;color:#8a5a14;
+    background:rgba(196,135,58,.14);border:1px solid rgba(196,135,58,.3);border-radius:999px;padding:6px 13px;
+    cursor:pointer;font-family:var(--font-body);text-align:left;transition:background .15s}
+  .heatwarn:hover{background:rgba(196,135,58,.22)}
+  .heatwarn.on{background:var(--coral-wash);border-color:rgba(212,89,42,.4);color:var(--coral-deep)}
+  .heatwarn.on .d{background:var(--coral)}
+  .heatwarn .d{width:7px;height:7px;border-radius:50%;background:var(--amber);flex:0 0 auto}
+  .foot{font-size:11.5px;color:var(--ink-3);line-height:1.5;margin-top:24px}
+  .pill{display:inline-block;font-family:var(--font-mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;
+    padding:3px 9px;border-radius:999px;background:var(--coral-wash);color:var(--coral-deep);margin-left:8px;vertical-align:middle}
+</style>
+</head>
+<body>
+<div class="sheet">
+
+  <div class="eyebrow">Intervals &middot; 5K&ndash;10K pace</div>
+  <h1>9 &times; 1K <span class="pill">quality</span></h1>
+  <p class="sub">Tuesday, May 20 &middot; 9.5 mi total &middot; 66 min</p>
+  <button id="heatwarn" class="heatwarn" onclick="toggleHeat()"><span class="d"></span><span id="heattext">Hot &amp; humid &mdash; 67&deg;F, 67&deg; dew point. Tap to see heat-adjusted splits &rsaquo;</span></button>
+
+  <div class="stats">
+    <div class="stat"><div class="k">Avg work pace</div><div class="v">5:07<small>/mi</small></div></div>
+    <div class="stat"><div class="k">Work volume</div><div class="v">5.6<small>mi (9&times;1K)</small></div></div>
+    <div class="stat"><div class="k">Avg HR · max</div><div class="v">168<small> · 170</small></div></div>
+    <div class="stat"><div class="k">Rep spread</div><div class="v">3<small>s (5:06–5:09)</small></div></div>
+  </div>
+
+  <!-- MAIN REP CHART -->
+  <div class="panel">
+    <div class="lbl">Rep-by-rep</div>
+    <p class="cap">Each bar is a 1K rep; height = how fast (taller = quicker). Dots = average HR. Reference lines are your pace zones.</p>
+    <svg id="chart" viewBox="0 0 720 300" role="img" aria-label="Rep by rep pace and heart rate"></svg>
+    <div class="legend">
+      <span><i style="background:var(--coral)"></i>1K rep (pace)</span>
+      <span><i class="dotleg"></i>avg HR</span>
+      <span><i style="background:var(--paper-deep)"></i>~60s jog recovery</span>
+      <span style="color:var(--ink-3)">dashed = 5K / 10K / threshold pace</span>
+    </div>
+  </div>
+
+  <div class="takeaway">
+    <b>Clean, controlled, even.</b> Nine reps inside a 3-second band at 5:07/mi — right between your 5K and 10K pace — with HR drifting only 162&rarr;170 across the set. That's a strong, well-paced 5K-pace session, not a fade. The kind of workout the old model filed as "9 mi @ 6:20, easy."
+  </div>
+
+  <!-- OTHER SESSIONS (shape thumbnails, real rep distances) -->
+  <div class="more">
+    <h3>Your other sessions read differently</h3>
+    <p>Same engine, different shapes — the viz adapts to the structure it detects.</p>
+    <div class="thumbs">
+      <div class="thumb">
+        <div class="t">May 12 &middot; Intervals</div>
+        <div class="n">Descending ladder</div>
+        <div class="d">6&times;500m &rarr; 600s &rarr; 1mi @ 4:46</div>
+        <svg viewBox="0 0 200 70" class="mini" data-shape="ladder"></svg>
+      </div>
+      <div class="thumb">
+        <div class="t">May 5 &middot; Threshold</div>
+        <div class="n">Mile cruise</div>
+        <div class="d">5&times;1mi @ 5:17, short float</div>
+        <svg viewBox="0 0 200 70" class="mini" data-shape="cruise"></svg>
+      </div>
+      <div class="thumb">
+        <div class="t">Mar 27 &middot; Intervals</div>
+        <div class="n">Short &amp; sharp</div>
+        <div class="d">4&times;300m + 800s @ 4:26</div>
+        <svg viewBox="0 0 200 70" class="mini" data-shape="short"></svg>
+      </div>
+    </div>
+  </div>
+
+  <p class="foot">Real data — <code>running_workout_laps</code> for athlete 03857bf3, May 20 2026. Reps, paces and HR are exactly as recorded; zone reference lines from <code>athlete_state</code>. Thumbnail rep distances are real; their bars are illustrative silhouettes.</p>
+
+</div>
+
+<script>
+  // ---- May 20 reps (real, time-ordered) ----
+  const reps = [
+    {p:307,hr:162},{p:309,hr:168},{p:306,hr:166},{p:307,hr:168},{p:309,hr:169},
+    {p:307,hr:170},{p:309,hr:169},{p:307,hr:169},{p:306,hr:166}
+  ];
+  const ZONES = [
+    {name:"5K 5:02", p:302, c:"#B84420"},
+    {name:"10K 5:14", p:314, c:"#9B9590"},
+    {name:"Thr 5:28", p:328, c:"#C4873A"},
+  ];
+  const W=720,H=300, padL=46,padR=40,padT=22,padB=46;
+  const plotW=W-padL-padR, plotH=H-padT-padB;
+  // pace axis (sec/mi): faster (small) at TOP. range 298..332
+  const pMin=298,pMax=332;
+  const yP = p => padT + (p-pMin)/(pMax-pMin)*plotH;
+  // hr axis: 150..175 mapped to upper band
+  const hrMin=150,hrMax=176;
+  const yHR = h => padT + (1-(h-hrMin)/(hrMax-hrMin))*plotH;
+  const n=reps.length, slot=plotW/n, bw=slot*0.5;
+  const xC = i => padL + slot*i + slot/2;
+  const f=p=>{p=Math.round(p);return `${Math.floor(p/60)}:${String(p%60).padStart(2,'0')}`;};
+  const ADJ=0.02; // heat cost ~2% (67°F / 67° dew)
+  function renderChart(adjOn){
+  let s="";
+  // zone reference lines
+  ZONES.forEach(z=>{
+    const y=yP(z.p);
+    s+=`<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="${z.c}" stroke-width="1" stroke-dasharray="4 4" opacity="0.5"/>`;
+    s+=`<text x="${W-padR+3}" y="${y+3}" font-family="var(--font-mono)" font-size="8.5" fill="${z.c}">${z.name}</text>`;
+  });
+  // rest connectors (jog between reps)
+  for(let i=0;i<n-1;i++){
+    const x1=xC(i)+bw/2, x2=xC(i+1)-bw/2, ym=padT+plotH-6;
+    s+=`<line x1="${x1}" y1="${ym}" x2="${x2}" y2="${ym}" stroke="#E8E4DF" stroke-width="3" stroke-linecap="round"/>`;
+    s+=`<text x="${(x1+x2)/2}" y="${ym-5}" text-anchor="middle" font-family="var(--font-mono)" font-size="7" fill="#9B9590">60s</text>`;
+  }
+  // bars
+  reps.forEach((r,i)=>{
+    const x=xC(i)-bw/2, y=yP(r.p), h=padT+plotH-y;
+    s+=`<rect x="${x}" y="${y}" width="${bw}" height="${h}" rx="2.5" fill="#D4592A"/>`;
+    s+=`<text x="${xC(i)}" y="${y-6}" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#1A1815">${f(r.p)}</text>`;
+    s+=`<text x="${xC(i)}" y="${padT+plotH+15}" text-anchor="middle" font-family="var(--font-mono)" font-size="8.5" fill="#9B9590">${i+1}</text>`;
+  });
+  // heat-adjusted cool-equivalent markers (toggle)
+  if(adjOn){
+    reps.forEach((r,i)=>{
+      const adj=r.p*(1-ADJ), ya=yP(adj), x=xC(i)-bw/2;
+      s+=`<line x1="${x-2}" y1="${ya}" x2="${x+bw+2}" y2="${ya}" stroke="#B84420" stroke-width="1.5" stroke-dasharray="3 2"/>`;
+      s+=`<text x="${xC(i)}" y="${ya-4}" text-anchor="middle" font-family="var(--font-mono)" font-size="8" fill="#B84420">${f(adj)}</text>`;
+    });
+  }
+  // HR polyline + dots
+  let pts=reps.map((r,i)=>`${xC(i)},${yHR(r.hr)}`).join(" ");
+  s+=`<polyline points="${pts}" fill="none" stroke="#6B4A8A" stroke-width="1.5" opacity="0.85"/>`;
+  reps.forEach((r,i)=>{ s+=`<circle cx="${xC(i)}" cy="${yHR(r.hr)}" r="3" fill="#6B4A8A"/>`; });
+  // axis labels
+  s+=`<text x="${padL}" y="${H-16}" font-family="var(--font-mono)" font-size="8.5" fill="#9B9590">REP →</text>`;
+  s+=`<text x="6" y="${padT+8}" font-family="var(--font-mono)" font-size="8" fill="#9B9590">faster</text>`;
+  document.getElementById("chart").innerHTML=s;
+  }
+  renderChart(false);
+
+  // ---- heat toggle ----
+  let heatOn=false;
+  function toggleHeat(){
+    heatOn=!heatOn;
+    const c=document.getElementById("heatwarn");
+    c.classList.toggle("on",heatOn);
+    document.getElementById("heattext").innerHTML = heatOn
+      ? "Heat-adjusted &mdash; cool-air equivalent ~5:01 avg (&minus;6 s/mi). Tap to hide &lsaquo;"
+      : "Hot &amp; humid &mdash; 67&deg;F, 67&deg; dew point. Tap to see heat-adjusted splits &rsaquo;";
+    renderChart(heatOn);
+  }
+
+  // ---- mini shape thumbnails (real rep distances, illustrative heights) ----
+  function mini(svg, dists, heights){
+    const W=200,H=70,pad=6, n=dists.length;
+    const totalD=dists.reduce((a,b)=>a+b,0);
+    let x=pad, out="";
+    dists.forEach((d,i)=>{
+      const w=(d/totalD)*(W-pad*2-(n-1)*4);
+      const h=heights[i]*(H-16), y=H-8-h;
+      out+=`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="2" fill="#D4592A" opacity="${0.55+0.45*heights[i]}"/>`;
+      x+=w+4;
+    });
+    svg.innerHTML=out;
+  }
+  // heights ~ relative intensity (faster rep = taller)
+  mini(document.querySelector('[data-shape=ladder]'),
+       [510,506,504,506,499,501,605,597,1609,1523],
+       [1,1,1,1,1,1,.85,.85,.6,.62]);
+  mini(document.querySelector('[data-shape=cruise]'),
+       [1609,1609,1609,1609,1609],[.7,.7,.7,.7,.7]);
+  mini(document.querySelector('[data-shape=short]'),
+       [304,302,306,300,607,806,787],[1,1,1,1,.8,.7,.7]);
+</script>
+</body>
+</html>

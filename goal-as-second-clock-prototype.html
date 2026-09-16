@@ -1,0 +1,555 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The goal as a second clock</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,300..800;1,300..700&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF; --paper-deep:#E8E4DF;
+  --rule:#E8E4E0; --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-light:#E8764A; --coral-wash:rgba(212,89,42,.12);
+  --energized:#2D8A4E; --tired:#C4873A; --plum:#6B4A8A;
+  --fd:"Crimson Pro",Georgia,serif; --fb:"PT Serif",Georgia,serif;
+  --fm:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#2A2724;font-family:var(--fb);color:var(--ink);
+  -webkit-font-smoothing:antialiased;padding:0 0 80px}
+
+/* ── page chrome ───────────────────────────────────────── */
+.top{max-width:1180px;margin:0 auto;padding:40px 24px 8px;color:#EDE9E4}
+.top h1{font-family:var(--fd);font-weight:700;font-size:38px;line-height:1.08;letter-spacing:-.01em}
+.top h1 em{font-style:italic;font-weight:300;color:#C9B9A8}
+.top p{font-size:15px;line-height:1.6;color:#B5ADA5;max-width:660px;margin-top:14px}
+.warn{max-width:1180px;margin:22px auto 0;padding:11px 24px;background:rgba(212,89,42,.16);
+  border-left:2px solid var(--coral);color:#F0CDBB;font-family:var(--fm);
+  font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;line-height:1.7}
+
+/* ── controls ──────────────────────────────────────────── */
+.controls{position:sticky;top:0;z-index:50;background:rgba(26,24,21,.94);
+  backdrop-filter:blur(8px);border-bottom:1px solid #3A3632;margin-top:28px}
+.controls-in{max-width:1180px;margin:0 auto;padding:14px 24px;display:flex;
+  gap:26px;align-items:center;flex-wrap:wrap}
+.ctl{display:flex;gap:9px;align-items:center}
+.ctl>span{font-family:var(--fm);font-size:9.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:#8A837C}
+.seg{display:flex;border:1px solid #4A443E;border-radius:999px;overflow:hidden}
+.seg button{font-family:var(--fm);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+  padding:6px 13px;background:none;border:none;color:#9B948C;cursor:pointer}
+.seg button.on{background:var(--coral);color:#fff}
+input[type=range]{width:210px;accent-color:var(--coral)}
+.dayread{font-family:var(--fm);font-size:11px;color:#EDE9E4;min-width:118px}
+.dayread b{color:var(--coral)}
+
+/* ── layout ────────────────────────────────────────────── */
+.wrap{max-width:1180px;margin:0 auto;padding:34px 24px 0;
+  display:grid;grid-template-columns:392px 1fr;gap:34px;align-items:start}
+@media(max-width:940px){.wrap{grid-template-columns:1fr}}
+
+.phone{background:var(--paper);border-radius:26px;overflow:hidden;
+  box-shadow:0 20px 60px rgba(0,0,0,.45);position:sticky;top:78px}
+.notch{height:26px;background:var(--paper)}
+
+.side{display:flex;flex-direction:column;gap:26px}
+.panel{background:var(--paper);border-radius:14px;overflow:hidden}
+.panel-h{padding:15px 20px 13px;border-bottom:1px solid var(--rule);
+  display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.panel-h h2{font-family:var(--fd);font-size:19px;font-weight:700}
+.panel-h span{font-family:var(--fm);font-size:9.5px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--ink-3);white-space:nowrap}
+.panel-b{padding:18px 20px 22px}
+.panel-b p{font-size:14px;line-height:1.62;color:var(--ink-2)}
+.panel-b p+p{margin-top:11px}
+.panel-b b{color:var(--ink)}
+
+/* ── shared editorial bits ─────────────────────────────── */
+.strip{display:flex;justify-content:space-between;align-items:baseline;
+  padding:13px 20px 11px;font-family:var(--fm);font-size:10px;font-weight:500;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2)}
+.strip .fig{color:var(--ink-3)}
+.strip .fig.live{color:var(--coral);cursor:pointer}
+.strip .fig.fake{color:var(--ink-3);text-decoration:line-through;opacity:.6}
+.eyebrow{font-family:var(--fm);font-size:10px;font-weight:500;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-2)}
+.eyebrow.coral{color:var(--coral)}
+.rule{height:1px;background:var(--rule)}
+
+/* ── masthead ──────────────────────────────────────────── */
+.mast{padding:6px 20px 17px;border-bottom:2px solid var(--ink);margin:0 0 2px}
+.mast .kick{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px}
+.mast .race{font-family:var(--fd);font-size:29px;font-weight:700;line-height:1.05;
+  letter-spacing:-.015em}
+.mast .race em{font-style:italic;font-weight:300;color:var(--ink-2)}
+.mast .count{font-family:var(--fm);font-size:12px;letter-spacing:.08em;color:var(--coral);
+  white-space:nowrap;padding-left:12px}
+.mast .stand{font-size:13.5px;line-height:1.55;color:var(--ink-2);margin-top:8px;font-style:italic}
+.mast .bar{display:flex;gap:2px;margin-top:12px;height:3px}
+.mast .bar i{flex:1;background:var(--paper-deep);border-radius:1px}
+.mast .bar i.done{background:var(--ink-3)}
+.mast .bar i.now{background:var(--coral)}
+.mast .barlab{display:flex;justify-content:space-between;font-family:var(--fm);
+  font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-top:6px}
+.mast.none{border-bottom:1px solid var(--rule)}
+.mast.none .race{font-size:22px;color:var(--ink-3);font-style:italic;font-weight:300}
+.mast.none .set{margin-top:9px;display:inline-block;font-family:var(--fm);font-size:10px;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--coral);
+  border-bottom:1px solid var(--coral);padding-bottom:2px}
+
+/* ── day body ──────────────────────────────────────────── */
+.day{padding:16px 20px 22px}
+.day .dh{display:flex;justify-content:space-between;align-items:baseline}
+.day .dt{font-family:var(--fd);font-size:33px;font-weight:700;letter-spacing:-.02em}
+.day .dm{font-family:var(--fm);font-size:10px;letter-spacing:.11em;color:var(--ink-3);
+  text-transform:uppercase}
+.sess{margin-top:15px;padding-top:14px;border-top:1px solid var(--rule)}
+.sess .st{font-family:var(--fd);font-size:19px;font-weight:600}
+.sess .sn{font-size:13.5px;line-height:1.55;color:var(--ink-2);margin-top:5px}
+.figs{display:flex;gap:0;margin-top:14px;border-top:1px solid var(--rule);
+  border-bottom:1px solid var(--rule)}
+.figs div{flex:1;padding:11px 0;text-align:center;border-right:1px solid var(--rule)}
+.figs div:last-child{border-right:none}
+.figs .v{font-family:var(--fd);font-size:20px;font-weight:700}
+.figs .v small{font-size:11px;color:var(--ink-3);font-weight:400}
+.figs .l{font-family:var(--fm);font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3);margin-top:3px}
+.rel{margin-top:13px;font-size:13px;line-height:1.6;color:var(--ink-2)}
+.rel b{color:var(--ink);font-style:normal}
+.rel .tag{font-family:var(--fm);font-size:9px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--coral);background:var(--coral-wash);padding:2px 7px;border-radius:999px;
+  margin-right:7px;white-space:nowrap}
+
+/* ── read section 04 ───────────────────────────────────── */
+.read{padding:18px 20px 24px;background:var(--paper-elevated)}
+.slab{display:flex;gap:9px;align-items:baseline;margin-bottom:13px}
+.slab .n{font-family:var(--fm);font-size:10px;color:var(--coral);letter-spacing:.06em}
+.slab .t{font-family:var(--fm);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink)}
+.slab .ph{margin-left:auto;font-family:var(--fm);font-size:8.5px;letter-spacing:.1em;
+  text-transform:uppercase;color:#fff;background:var(--ink-2);padding:2px 7px;border-radius:999px}
+.facts{background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:2px 15px}
+.fact{display:flex;justify-content:space-between;align-items:baseline;padding:11px 0;
+  border-bottom:1px solid var(--rule)}
+.fact:last-child{border-bottom:none}
+.fact .fl{font-size:13px;color:var(--ink-2)}
+.fact .fv{font-family:var(--fd);font-size:19px;font-weight:700}
+.fact .fv small{font-family:var(--fb);font-size:11px;color:var(--ink-3);font-weight:400;
+  margin-left:5px}
+.prose{font-size:14.5px;line-height:1.68;margin-top:14px}
+.prose+.prose{margin-top:10px}
+.cov{margin-top:14px;padding-top:11px;border-top:1px solid var(--rule);
+  font-family:var(--fm);font-size:9px;letter-spacing:.06em;color:var(--ink-3);line-height:1.7}
+.dark{background:var(--paper-deep);border-radius:12px;padding:15px 16px}
+.dark .de{font-family:var(--fm);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink-2);margin-bottom:7px}
+.dark .dp{font-size:13.5px;line-height:1.6;color:var(--ink-2)}
+
+/* ── onboarding ────────────────────────────────────────── */
+.onb{padding:22px 20px 26px}
+.onb .q{font-family:var(--fd);font-size:30px;font-weight:700;line-height:1.1;
+  letter-spacing:-.02em;margin:9px 0 7px}
+.onb .sub{font-size:13.5px;font-style:italic;color:var(--ink-2);line-height:1.55}
+.onb .field{margin-top:20px;border:1px solid var(--ink);border-radius:10px;padding:14px 15px;
+  background:var(--card);font-family:var(--fd);font-size:19px;line-height:1.4;min-height:74px}
+.onb .field.empty{color:var(--ink-3);font-style:italic;border-color:var(--rule);border-style:dashed}
+.onb .caret{display:inline-block;width:1.5px;height:19px;background:var(--coral);
+  vertical-align:-3px;animation:bl 1s steps(1) infinite}
+@keyframes bl{50%{opacity:0}}
+.chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:13px}
+.chip{font-family:var(--fm);font-size:9.5px;letter-spacing:.08em;padding:6px 11px;
+  border:1px solid var(--rule);border-radius:999px;color:var(--ink-2);cursor:pointer;
+  background:none;white-space:nowrap}
+.chip:hover{border-color:var(--coral);color:var(--coral)}
+.parse{margin-top:18px;border-top:1px solid var(--rule);padding-top:15px}
+.prow{display:flex;justify-content:space-between;align-items:baseline;padding:7px 0;font-size:13.5px}
+.prow .pk{font-family:var(--fm);font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--ink-3)}
+.prow .pv{font-family:var(--fd);font-size:16px;font-weight:600}
+.prow .pv.miss{font-family:var(--fb);font-size:13px;font-weight:400;font-style:italic;color:var(--ink-3)}
+.pill{display:inline-block;font-family:var(--fm);font-size:8.5px;letter-spacing:.1em;
+  text-transform:uppercase;padding:2px 7px;border-radius:999px;background:var(--coral-wash);
+  color:var(--coral);margin-left:7px}
+.confirm{margin-top:17px;display:flex;gap:9px}
+.btn{flex:1;font-family:var(--fm);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+  padding:12px;border-radius:10px;border:1px solid var(--ink);background:var(--ink);color:#fff;
+  cursor:pointer}
+.btn.ghost{background:none;color:var(--ink-2);border-color:var(--rule)}
+
+/* ── everywhere strip demo ─────────────────────────────── */
+.every{display:flex;flex-direction:column;gap:9px;margin-top:4px}
+.every .row{background:var(--card);border:1px solid var(--rule);border-radius:9px}
+
+/* ── comparison table ──────────────────────────────────── */
+table{width:100%;border-collapse:collapse;margin-top:4px;font-size:13.5px}
+th,td{text-align:left;padding:9px 11px 9px 0;border-bottom:1px solid var(--rule);
+  vertical-align:top;line-height:1.5}
+th{font-family:var(--fm);font-size:9px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--ink-3);font-weight:500}
+td.no{color:var(--ink-3)}
+td b{color:var(--ink)}
+.hide{display:none!important}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <h1>The goal as a <em>second clock</em></h1>
+  <p>The app keeps calendar time — today, this week, last 28 days. A goal adds the axis runners actually think in: <em>time to the race</em>. Making the goal central isn't a card or a tab. It's printing that second clock wherever the first one already appears — and saying nothing at all when there's no goal to print.</p>
+</div>
+
+<div class="warn">Prototype · every number here is illustrative — WEEK-TAB-APPLY §0 · goal wording taken from real user_goals rows · phase and reachability logic per GOAL-ELEMENT-APPLY §5 and §5A</div>
+
+<div class="controls">
+  <div class="controls-in">
+    <div class="ctl"><span>Goal</span>
+      <div class="seg" id="segGoal">
+        <button data-v="set" class="on">Set</button>
+        <button data-v="none">None</button>
+      </div>
+    </div>
+    <div class="ctl"><span>Reach</span>
+      <div class="seg" id="segReach">
+        <button data-v="at" >At reach</button>
+        <button data-v="stretch" class="on">Stretch</button>
+        <button data-v="asp">Out of reach</button>
+      </div>
+    </div>
+    <div class="ctl"><span>Days out</span>
+      <input type="range" id="days" min="-6" max="150" value="104">
+      <span class="dayread" id="dayread"></span>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <!-- ══════════════ PHONE ══════════════ -->
+  <div class="phone">
+    <div class="notch"></div>
+
+    <div class="strip">
+      <span>LOG · TRAINING JOURNAL</span>
+      <span class="fig live" id="figSlot">CIM −104D</span>
+    </div>
+
+    <!-- masthead -->
+    <div class="mast" id="mast">
+      <div class="kick">
+        <div class="race" id="mRace">CIM <em>· sub-2:20</em></div>
+        <div class="count" id="mCount">−104D</div>
+      </div>
+      <div class="stand" id="mStand">Training projects 2:24 today, medium confidence, against a 2:31 PR.</div>
+      <div class="bar" id="mBar"></div>
+      <div class="barlab"><span id="mBarL">Week 1</span><span id="mBarR">Race week</span></div>
+    </div>
+    <div class="mast none hide" id="mastNone">
+      <div class="race">No race on file.</div>
+      <div class="stand">Everything below still works. Nothing above it is invented.</div>
+      <span class="set">Set a goal ↗</span>
+    </div>
+
+    <!-- day -->
+    <div class="day">
+      <div class="dh">
+        <div class="dt">Sunday.</div>
+        <div class="dm" id="dRel">Aug 24 · −104D</div>
+      </div>
+      <div class="sess">
+        <div class="st">20 miles, last 6 at marathon pace</div>
+        <div class="sn">Warm through, closed hard. Dew point 71 — the whole thing ran wet.</div>
+      </div>
+      <div class="figs">
+        <div><div class="v">20.1<small> mi</small></div><div class="l">Distance</div></div>
+        <div><div class="v">5:31<small> /mi</small></div><div class="l">Closing 6</div></div>
+        <div><div class="v">148<small> bpm</small></div><div class="l">Avg HR</div></div>
+      </div>
+      <div class="rel" id="dayRel">
+        <span class="tag">Second clock</span><b>The longest run of the block so far</b>, and the first to carry marathon-pace work at the end.
+      </div>
+    </div>
+
+    <div class="rule"></div>
+
+    <!-- read §04 -->
+    <div class="read">
+      <div class="slab"><span class="n">04</span><span class="t">Against the goal</span>
+        <span class="ph" id="phBadge">CAPACITY</span></div>
+
+      <div id="readFacts"></div>
+      <div id="readProse"></div>
+      <div class="cov" id="readCov"></div>
+    </div>
+  </div>
+
+  <!-- ══════════════ SIDE ══════════════ -->
+  <div class="side">
+
+    <div class="panel">
+      <div class="panel-h"><h2>1 · One sentence, minute one</h2><span>Onboarding step 3</span></div>
+      <div class="onb">
+        <div class="eyebrow">A goal</div>
+        <div class="q">What are you<br>training for?</div>
+        <div class="sub">— in your own words. The app works out the rest and asks you to confirm. —</div>
+
+        <div class="field" id="onbField">Run sub 2:20 at CIM<span class="caret"></span></div>
+
+        <div class="chips">
+          <button class="chip" data-g="0">Run sub 2:20 at CIM</button>
+          <button class="chip" data-g="1">Sub 1:10 at Austin Half</button>
+          <button class="chip" data-g="2">Run up to 90 mpw</button>
+          <button class="chip" data-g="3">Stay healthy and BQ</button>
+        </div>
+
+        <div class="parse" id="onbParse"></div>
+
+        <div class="confirm">
+          <button class="btn">That's right</button>
+          <button class="btn ghost">Fix it</button>
+        </div>
+      </div>
+      <div class="panel-b" style="border-top:1px solid var(--rule)">
+        <p><b>Why a text field beats the chip row.</b> Every real goal on file is already a sentence — <em>"Run sub 2:20 at CIM"</em>, <em>"Run a sub 1:10 at Austin Half Marathon"</em>, <em>"Run up to 90 mpw"</em>. The chips and time picker throw away the race name, and the race name is what lets <b>race-intel</b> find the actual date, course and weather. One field produces a goal the whole system can use; three controls produce one it can't.</p>
+        <p><b>The date is not optional.</b> Without it there is no second clock — no countdown, no phase, no week-of-block. Today onboarding invents one 120 days out. A goal with a made-up date is worse than no goal, because everything downstream believes it.</p>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-h"><h2>2 · The same clock, everywhere</h2><span>PlateStrip</span></div>
+      <div class="panel-b" style="padding-bottom:16px">
+        <p>One value in one slot, on every plate in the app. It is already built — <b>TrainingDateline</b> — and already documented as this slot's correct value. Three call sites still print a fake figure number instead.</p>
+      </div>
+      <div style="padding:0 20px 20px" class="every" id="everyRows"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-h"><h2>3 · Orientation, never a score</h2><span>The rule</span></div>
+      <div class="panel-b">
+        <table>
+          <tr><th style="width:47%">The goal is</th><th>The goal is not</th></tr>
+          <tr><td><b>A compass.</b> Which way is the race, and how far.</td><td class="no">A fuel gauge. No percent-ready, no progress bar.</td></tr>
+          <tr><td><b>A time axis.</b> Week 9 of 15 beats "August 24".</td><td class="no">A deadline that makes a bad week a failure.</td></tr>
+          <tr><td><b>A frame.</b> It decides what a number <em>means</em>.</td><td class="no">A pace source. Fitness sets paces; the goal never does.</td></tr>
+          <tr><td><b>Their words.</b> Quoted back, not converted.</td><td class="no">A grade on whether they're good enough yet.</td></tr>
+        </table>
+        <p style="margin-top:14px">An athlete can hold a goal they aren't fit for — that is the normal condition of having one. Every element above has to stay true in that case, which is why none of them score anything.</p>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-h"><h2>4 · It has to be able to end</h2><span>Lifecycle</span></div>
+      <div class="panel-b">
+        <table>
+          <tr><th style="width:30%">State</th><th>What the app does</th></tr>
+          <tr><td><b>Draft</b></td><td>Parsed, not yet confirmed. Countdown reads as provisional; nothing settles on it.</td></tr>
+          <tr><td><b>Live</b></td><td>The second clock runs. Phase drives what §04 is about.</td></tr>
+          <tr><td><b>Race week</b></td><td>Clock goes quiet. Names the goal and the projection. Makes no calls.</td></tr>
+          <tr><td><b>Result</b></td><td>Asks for the finish. Never infers a race from a fast run.</td></tr>
+          <tr><td><b>Closed</b></td><td>Archives, becomes an anchor for the next projection, and asks what's next.</td></tr>
+        </table>
+        <p style="margin-top:14px"><b>Nothing does this today.</b> Two goals are active right now; one had a target date of 3 April. A goal that can't finish isn't central — it's furniture.</p>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+/* ── state ─────────────────────────────────────────────── */
+const S={goal:'set',reach:'stretch',days:104};
+
+const RACE={name:'CIM',date:'6 Dec'};
+const PROJ={label:'2:24',pace:'5:29',paceSec:329.5,pr:'2:31'};
+const REACH={
+  at:     {goal:'sub-2:25', gs:'5:32', gap:'3s', dir:'inside',  band:'0.9%',  share:'11.2', shareDelta:'+4.1', pace:331.8},
+  stretch:{goal:'sub-2:20', gs:'5:20', gap:'9s', dir:'outside', band:'2.8%',  share:'6.0',  shareDelta:'+3.8', pace:320.4},
+  asp:    {goal:'sub-2:10', gs:'4:57', gap:'32s',dir:'outside', band:'10.8%', share:null,   shareDelta:null,   pace:297.5}
+};
+const GOALS=[
+  {raw:'Run sub 2:20 at CIM', race:'California International Marathon',
+   dist:'Marathon', time:'2:20:00', date:'6 Dec 2026', framing:'sub 2:20', intel:true},
+  {raw:'Sub 1:10 at Austin Half', race:'Austin Half Marathon',
+   dist:'Half', time:'1:10:00', date:'15 Feb 2027', framing:'sub 1:10', intel:true},
+  {raw:'Run up to 90 mpw', race:null, dist:null, time:null, date:null,
+   framing:'90 miles a week', intel:false},
+  {raw:'Stay healthy and BQ', race:null, dist:'Marathon', time:null, date:null,
+   framing:'BQ', intel:false}
+];
+
+/* ── phase ─────────────────────────────────────────────── */
+function phase(d){
+  if(d<0) return 'after';
+  if(d<=7) return 'quiet';
+  if(d<=29) return 'readiness';
+  if(d<=99) return 'specificity';
+  return 'capacity';
+}
+function countdown(d){
+  if(d<0)  return '+'+Math.abs(d)+'D';
+  if(d===0)return 'TODAY';
+  if(d<100)return '−'+d+'D';
+  return '−'+Math.round(d/7)+'W';
+}
+
+/* ── read §04 content ──────────────────────────────────── */
+function facts(){
+  const r=REACH[S.reach], p=phase(S.days), asp=S.reach==='asp';
+  let h='<div class="facts">';
+  h+=row('Days to '+RACE.name, countdown(S.days).replace('−',''), S.days<0?'past':'');
+  h+=row('Projection · Marathon', PROJ.label, 'medium confidence');
+  h+=row('Lifetime PR · Marathon', PROJ.pr, '2025 · official');
+  h+=row('Goal · '+r.goal, r.gap, r.dir+' · per mile');
+  if(!asp && p!=='quiet' && p!=='after')
+    h+=row('Share at goal pace · 56d', r.share+'%', r.shareDelta+' vs first half');
+  h+='</div>';
+  return h;
+}
+function row(l,v,s){
+  return '<div class="fact"><span class="fl">'+l+'</span><span class="fv">'+v+
+         (s?'<small>'+s+'</small>':'')+'</span></div>';
+}
+
+function prose(){
+  const r=REACH[S.reach], p=phase(S.days), asp=S.reach==='asp';
+  let a='',b='';
+  if(p==='after'){
+    a='CIM was '+Math.abs(S.days)+' days ago and there is no result on file yet. Add it and the goal closes out properly.';
+    b='The next projection then anchors on a race you actually ran instead of on training data.';
+  } else if(p==='quiet'){
+    a='CIM on the '+RACE.date+'. '+r.goal.replace('sub-','Sub-')+', against a '+PROJ.pr+' PR, with the training projecting a '+PROJ.label+' today.';
+    b='';
+  } else if(asp){
+    a=r.goal.replace('sub-','Sub-')+' needs '+r.gs+' a mile. Today the training projects '+PROJ.label+', which is '+PROJ.pace+' — about '+r.gap+' a mile away, and that is a different gear rather than a different week.';
+    b='So this reads the engine, not the pace work: whether the projection is moving toward it across the block. Counting miles at '+r.gs+' would count zero every week and tell you nothing you did not already know.';
+  } else if(p==='capacity'){
+    a=r.goal.replace('sub-','Sub-')+' at CIM is '+(S.reach==='at'?'a little under':'seven minutes under')+' the '+PROJ.pr+' you ran. Today the training projects a '+PROJ.label+', on medium confidence.';
+    b='Only '+r.share+'% of the last four weeks has been at goal pace, which is what a block this far out should look like. The engine gets built first and the pace work goes on top of it later.';
+  } else if(p==='specificity'){
+    a=r.goal.replace('sub-','Sub-')+' needs '+r.gs+' a mile for twenty-six of them, and that is '+r.gap+' a mile '+r.dir+' where the training projects today.';
+    b=r.share+'% of the last four weeks has sat at that pace, '+r.shareDelta.replace('+','up ')+' from the first half of the window. That share is the thing moving right now, not the mileage.';
+  } else {
+    a='The work for CIM is done or it is not. Across the block, 34 miles landed at goal pace across nine sessions, most of it in the last six weeks and most of it inside long runs.';
+    b='The gap to '+r.gs+' is '+r.gap+' a mile, on medium confidence. Nothing new gets built from here.';
+  }
+  let h='<p class="prose">'+a+'</p>';
+  if(b) h+='<p class="prose">'+b+'</p>';
+  if(asp && p!=='quiet' && p!=='after'){
+    h+='<div class="dark" style="margin-top:14px"><div class="de">Not counting goal pace yet</div>'+
+       '<div class="dp">Goal pace for '+r.goal+' is around '+r.gs+' a mile. Today’s projection puts marathon pace nearer '+PROJ.pace+', so there are no miles at goal pace to count. This picks up when the two are close enough to be the same work.</div></div>';
+  }
+  return h;
+}
+function coverage(){
+  const r=REACH[S.reach];
+  let m=['12 runs · 4 weeks','goal read from a confirmed race on file'];
+  if(REACH[S.reach].share===null) m.push('specificity withheld — goal pace is '+r.band+' outside the projection');
+  else m.push('counted within 2% of goal pace');
+  m.push('this goal has not been confirmed yet');
+  return m.join(' · ');
+}
+
+/* ── everywhere rows ───────────────────────────────────── */
+const SURFACES=[['LOG · TRAINING JOURNAL',1],['TRAIN · ANALYSIS',1],
+                ['TRENDS · THE LONG VIEW',1],['INJURY · LIVING LOG',0]];
+function everyRows(){
+  const c=countdown(S.days);
+  return SURFACES.map(([s,live])=>{
+    const fig = S.goal==='none' ? '<span class="fig"></span>'
+      : '<span class="fig live">'+RACE.name+' '+c+'</span>';
+    return '<div class="row"><div class="strip"><span>'+s+'</span>'+fig+'</div></div>';
+  }).join('');
+}
+
+/* ── onboarding parse ──────────────────────────────────── */
+let gi=0;
+function parse(){
+  const g=GOALS[gi];
+  let h='';
+  h+=prow('Their words','"'+g.raw+'"',false);
+  h+=prow('Race', g.race || 'none named', !g.race);
+  h+=prow('Distance', g.dist || 'not stated', !g.dist);
+  h+=prow('Target time', g.time || 'none — that is allowed', !g.time);
+  h+=prow('Date', g.date || 'needs asking', !g.date);
+  h+=prow('Framing', g.framing, false);
+  if(g.intel) h+='<div style="margin-top:10px"><span class="pill">race-intel found the course</span></div>';
+  if(!g.date) h+='<div style="margin-top:10px"><span class="pill">one follow-up: when is it?</span></div>';
+  return h;
+}
+function prow(k,v,miss){
+  return '<div class="prow"><span class="pk">'+k+'</span><span class="pv'+(miss?' miss':'')+'">'+v+'</span></div>';
+}
+
+/* ── render ────────────────────────────────────────────── */
+function render(){
+  const has=S.goal==='set', d=S.days, p=phase(d), c=countdown(d);
+
+  document.getElementById('mast').classList.toggle('hide',!has);
+  document.getElementById('mastNone').classList.toggle('hide',has);
+
+  document.getElementById('figSlot').outerHTML =
+    has ? '<span class="fig live" id="figSlot">'+RACE.name+' '+c+'</span>'
+        : '<span class="fig" id="figSlot"></span>';
+
+  if(has){
+    document.getElementById('mRace').innerHTML = RACE.name+' <em>· '+REACH[S.reach].goal+'</em>';
+    document.getElementById('mCount').textContent = c;
+    document.getElementById('mStand').textContent =
+      p==='after' ? 'Race day has passed. Add the result and this closes out.'
+      : p==='quiet' ? 'Race week. The training is what it is.'
+      : 'Training projects '+PROJ.label+' today, medium confidence, against a '+PROJ.pr+' PR.';
+    const wk=Math.max(1,Math.min(15,16-Math.ceil(Math.max(d,0)/7)));
+    let bar='';
+    for(let i=1;i<=15;i++) bar+='<i class="'+(i<wk?'done':i===wk?'now':'')+'"></i>';
+    document.getElementById('mBar').innerHTML=bar;
+    document.getElementById('mBarL').textContent = d<0?'Block complete':'Week '+wk+' of 15';
+  }
+
+  document.getElementById('dRel').textContent = has ? 'Aug 24 · '+c : 'Aug 24';
+  document.getElementById('dayRel').innerHTML = has
+    ? '<span class="tag">Second clock</span><b>The longest run of the block so far</b>, and the first to carry marathon-pace work at the end.'
+    : '<b>The longest run on file</b>, and the first to carry marathon-pace work at the end.';
+
+  document.getElementById('phBadge').textContent = has ? p.toUpperCase() : 'NO GOAL';
+  document.getElementById('phBadge').style.background = has ? '' : 'var(--ink-3)';
+
+  if(has){
+    document.getElementById('readFacts').innerHTML = facts();
+    document.getElementById('readProse').innerHTML = prose();
+    document.getElementById('readCov').textContent = coverage();
+  } else {
+    document.getElementById('readFacts').innerHTML =
+      '<div class="dark"><div class="de">Against the goal · no goal set</div><div class="dp">There is no race or target on file, so there is nothing to measure the week against. Set one and this section becomes the most useful part of the Read.</div></div>';
+    document.getElementById('readProse').innerHTML='';
+    document.getElementById('readCov').textContent='';
+  }
+
+  document.getElementById('everyRows').innerHTML = everyRows();
+  document.getElementById('onbField').innerHTML =
+    GOALS[gi].raw+'<span class="caret"></span>';
+  document.getElementById('onbParse').innerHTML = parse();
+
+  document.getElementById('dayread').innerHTML =
+    has ? '<b>'+c+'</b> · '+p : '—';
+}
+
+/* ── wiring ────────────────────────────────────────────── */
+function seg(id,key){
+  document.getElementById(id).addEventListener('click',e=>{
+    const b=e.target.closest('button'); if(!b)return;
+    [...b.parentNode.children].forEach(x=>x.classList.remove('on'));
+    b.classList.add('on'); S[key]=b.dataset.v; render();
+  });
+}
+seg('segGoal','goal'); seg('segReach','reach');
+document.getElementById('days').addEventListener('input',e=>{
+  S.days=+e.target.value; render();
+});
+document.querySelectorAll('.chip').forEach(c=>c.addEventListener('click',()=>{
+  gi=+c.dataset.g; render();
+}));
+render();
+</script>
+</body>
+</html>

@@ -13,6 +13,7 @@
 //  Service + models stay untouched.
 //
 
+import Charts
 import Supabase
 import SwiftUI
 
@@ -35,6 +36,7 @@ struct FitnessPredictorView: View {
     @Environment(VitalManager.self) private var vitalManager
     @Bindable var trainingViewModel: TrainingPlanViewModel
     @State private var predictor = FitnessPredictorService()
+    @State private var showingAdjust = false
 
     var body: some View {
         ZStack {
@@ -51,8 +53,19 @@ struct FitnessPredictorView: View {
                         trailingBottom: "TRENDS · " + Date().editorialMonthYearString
                     )
 
-                    // ── Refresh affordance ───────────────────────────────
+                    // ── Adjust + refresh affordances ─────────────────────
                     HStack {
+                        Button { showingAdjust = true } label: {
+                            HStack(spacing: 4) {
+                                Text("ADJUST FITNESS")
+                                    .font(.dripCaption(10))
+                                    .tracking(1.4)
+                                Image(systemName: "slider.horizontal.3")
+                                    .font(.system(size: 10, weight: .semibold))
+                            }
+                            .foregroundStyle(Color.drip.textSecondary)
+                        }
+                        .buttonStyle(.plain)
                         Spacer()
                         Button(action: predict) {
                             HStack(spacing: 4) {
@@ -78,6 +91,13 @@ struct FitnessPredictorView: View {
                     // ── Network error (quiet, italic, between hairlines) ─
                     if let error = predictor.errorMessage {
                         offlineNotice(error)
+                    }
+
+                    // ── "Was this a race?" candidates ────────────────────
+                    // 2026-07-17 race gathering. Above the predictions list;
+                    // only when the server has tagged something pending.
+                    if !predictor.raceCandidates.isEmpty {
+                        raceCandidatesSection
                     }
 
                     if let predictions = predictor.predictions {
@@ -167,6 +187,9 @@ struct FitnessPredictorView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Color.drip.background, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
+        .sheet(isPresented: $showingAdjust) {
+            AdjustFitnessSheet()
+        }
         .task {
             async let historyTask: () = predictor.fetchHistory()
             async let predictTask: () = loadPredictions()
@@ -263,12 +286,8 @@ struct FitnessPredictorView: View {
                         .foregroundStyle(Color.drip.textPrimary)
                 }
                 Spacer()
-                if let range = RacePredictionFormatting.range(for: race) {
-                    Text(range)
-                        .font(.dripCaption(11))
-                        .monospacedDigit()
-                        .foregroundStyle(Color.drip.textTertiary)
-                }
+                // Range retired 2026-07-18 — one projected number per distance;
+                // the confidence tier + the lifetime PR below carry the context.
             }
             // Single per-mile pace (model only carries one). Marquee coral.
             HStack {
@@ -280,7 +299,78 @@ struct FitnessPredictorView: View {
                     .foregroundStyle(Color.drip.coral)
             }
             .padding(.top, 2)
+            // 2026-07-17 race gathering: lifetime PR beneath the projection —
+            // the demonstrated mark next to the modeled one. No PR on file at
+            // this distance → render nothing.
+            if let pr = predictor.prLine(forDistance: race.distance) {
+                Text(pr)
+                    .font(.dripCaption(10))
+                    .monospacedDigit()
+                    .foregroundStyle(Color.drip.textTertiary)
+            }
         }
+        .padding(.vertical, 14)
+        .overlay(alignment: .bottom) {
+            if !isLast { DripHairline() }
+        }
+    }
+
+    // MARK: Race candidates (2026-07-17 race gathering)
+    //
+    // The server flags race-shaped runs; the athlete owns the call. One row
+    // per candidate: eyebrow, what we saw, confirm or not. Detection, never
+    // decision — nothing is tagged until she says so. One coral per row
+    // cluster: the confirm action carries it, the eyebrow stays ink.
+
+    private var raceCandidatesSection: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(predictor.raceCandidates.enumerated()), id: \.element.id) { idx, candidate in
+                candidateRow(candidate, isLast: idx == predictor.raceCandidates.count - 1)
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 14)
+        .overlay(alignment: .bottom) {
+            DripHairline().padding(.horizontal, 24)
+        }
+    }
+
+    private func candidateRow(_ candidate: RaceCandidate, isLast: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            DripEyebrow(text: "LOOKS LIKE A RACE")
+            Text(predictor.candidateSummary(candidate))
+                .font(.dripCaption(15))
+                .fontWeight(.semibold)
+                .monospacedDigit()
+                .foregroundStyle(Color.drip.textPrimary)
+            Text("Fast for its distance, race shape. Your call.")
+                .font(.dripBody(13).italic())
+                .foregroundStyle(Color.drip.textSecondary)
+                .lineSpacing(2)
+            HStack(spacing: 18) {
+                Button {
+                    Task { await predictor.confirmRaceCandidate(candidate) }
+                } label: {
+                    Text("CONFIRM RACE")
+                        .font(.dripCaption(10))
+                        .tracking(1.4)
+                        .foregroundStyle(Color.drip.coral)
+                }
+                .buttonStyle(.plain)
+                Button {
+                    Task { await predictor.dismissRaceCandidate(candidate) }
+                } label: {
+                    Text("NOT A RACE")
+                        .font(.dripCaption(10))
+                        .tracking(1.4)
+                        .foregroundStyle(Color.drip.textTertiary)
+                }
+                .buttonStyle(.plain)
+                Spacer()
+            }
+            .padding(.top, 4)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 14)
         .overlay(alignment: .bottom) {
             if !isLast { DripHairline() }
@@ -468,7 +558,7 @@ private struct TrainingSection: View {
 
     enum TrainingTab: String, CaseIterable {
         case paces = "PACES"
-        case stimulus = "STIMULUS"
+        case stimulus = "TRAINING LOAD"
     }
 
     var body: some View {
@@ -514,44 +604,56 @@ private struct TrainingSection: View {
     private func pacesContent(_ paces: TrainingPacesSummary) -> some View {
         VStack(spacing: 0) {
             DripHairline()
-            paceRow("Easy",      paces.easyPace,      Color.drip.energized)
+            paceRow("Easy",     "conversational — most of your miles", paces.easyPace,     NamedPace.easy.color)
             DripHairline()
-            paceRow("Long Run",  paces.longRunPace,   Color.drip.positive)
+            paceRow("Moderate", "comfortable, but working",            paces.moderatePace, NamedPace.moderate.color)
             DripHairline()
-            paceRow("Marathon",  paces.marathonPace,  Color.drip.coral.opacity(0.7))
+            paceRow("Steady",   "controlled, just under race pace",    paces.steadyPace,   NamedPace.steady.color)
             DripHairline()
-            paceRow("Threshold", paces.thresholdPace, Color.drip.coral)
+            paceRow("Marathon", "goal marathon race pace",             paces.marathonPace, NamedPace.mp.color)
             DripHairline()
-            paceRow("Interval",  paces.intervalPace,  Color.drip.tired)
+            paceRow("HMP",      "half-marathon race pace",             paces.hmpPace,      NamedPace.hm.color)
+            DripHairline()
+            paceRow("10K",      "10K race pace — longer intervals",    paces.tenKPace,     NamedPace.tenK.color)
+            DripHairline()
+            paceRow("5K",       "5K race pace — short, fast reps",     paces.fiveKPace,    NamedPace.fiveK.color)
             DripHairline()
         }
         .padding(.top, 4)
     }
 
-    private func paceRow(_ label: String, _ pace: String, _ marker: Color) -> some View {
+    private func paceRow(_ label: String, _ subtitle: String, _ pace: String, _ marker: Color) -> some View {
         HStack(spacing: 12) {
             RoundedRectangle(cornerRadius: 1)
                 .fill(marker)
-                .frame(width: 3, height: 18)
-            Text(label)
-                .font(.dripBody(14))
-                .foregroundStyle(Color.drip.textPrimary)
-            Spacer()
+                .frame(width: 3, height: 30)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.dripBody(14))
+                    .foregroundStyle(Color.drip.textPrimary)
+                Text(subtitle)
+                    .font(.dripCaption(10))
+                    .foregroundStyle(Color.drip.textTertiary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
             Text(pace)
                 .font(.dripCaption(12))
                 .fontWeight(.semibold)
                 .monospacedDigit()
                 .foregroundStyle(Color.drip.textPrimary)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
         }
         .padding(.vertical, 12)
     }
 
     private func stimulusContent(_ s: TrainingStimulusInfo) -> some View {
         HStack(spacing: 0) {
-            stimulusCell(String(format: "%.0f", s.weeklyMiles),       unit: "mi",  label: "PER WEEK",  trend: s.volumeTrend)
-            stimulusCell(String(format: "%.0f", s.runsPerWeek),       unit: "ct",  label: "RUNS / WK", trend: nil)
-            stimulusCell(String(format: "%.0f", s.stimulusMinutes),   unit: "min", label: "HARD MIN",  trend: s.stimulusTrend)
-            stimulusCell("\(s.structuredSessions)",                   unit: "ct",  label: "QUALITY",   trend: nil)
+            stimulusCell(String(format: "%.0f", s.weeklyMiles),       unit: "mi",  label: "MILES / WEEK",  trend: s.volumeTrend)
+            stimulusCell(String(format: "%.0f", s.runsPerWeek),       unit: "",    label: "RUNS / WEEK",   trend: nil)
+            stimulusCell(String(format: "%.0f", s.stimulusMinutes),   unit: "min", label: "HARD EFFORT",   trend: s.stimulusTrend)
+            stimulusCell("\(s.structuredSessions)",                   unit: "",    label: "KEY SESSIONS",  trend: nil)
         }
         .padding(.vertical, 10)
         .overlay(alignment: .top) { DripHairline() }
@@ -624,11 +726,11 @@ private struct FitnessTrendSection: View {
                 }
             }
 
-            TrendSparkline(
+            TrendChart(
                 snapshots: chronological,
                 keyPath: \.predicted10kSeconds,
                 label: "10K",
-                height: 72
+                height: 170
             )
 
             Button {
@@ -648,11 +750,11 @@ private struct FitnessTrendSection: View {
             .buttonStyle(.plain)
 
             if showAllDistances {
-                VStack(spacing: 10) {
-                    TrendSparkline(snapshots: chronological, keyPath: \.predictedMileSeconds,     label: "MILE",     height: 44)
-                    TrendSparkline(snapshots: chronological, keyPath: \.predicted5kSeconds,       label: "5K",       height: 44)
-                    TrendSparkline(snapshots: chronological, keyPath: \.predictedHalfSeconds,     label: "HALF",     height: 44)
-                    TrendSparkline(snapshots: chronological, keyPath: \.predictedMarathonSeconds, label: "MARATHON", height: 44)
+                VStack(spacing: 22) {
+                    TrendChart(snapshots: chronological, keyPath: \.predictedMileSeconds,     label: "MILE",     height: 150)
+                    TrendChart(snapshots: chronological, keyPath: \.predicted5kSeconds,       label: "5K",       height: 150)
+                    TrendChart(snapshots: chronological, keyPath: \.predictedHalfSeconds,     label: "HALF",     height: 150)
+                    TrendChart(snapshots: chronological, keyPath: \.predictedMarathonSeconds, label: "MARATHON", height: 150)
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
@@ -696,18 +798,84 @@ private struct InlineChangeReadout: View {
     }
 }
 
-// MARK: - Sparkline (canvas kept; spec said "keep canvas, drop card shell")
+// MARK: - Trend chart (Swift Charts: real X/Y axes, horizontal scroll, tap-to-read)
+//
+// Replaces the axis-less sparkline. Y is predicted race time with faster (lower
+// seconds) plotted higher — so "fitter" reads as "up," matching the old canvas.
+// We negate the seconds to reverse the axis, then re-label the ticks with the
+// real time. X is the snapshot date. When history is longer than the visible
+// window the plot scrolls horizontally; tapping a point reveals its date + time.
 
-private struct TrendSparkline: View {
+private struct TrendChart: View {
     let snapshots: [FitnessSnapshot]
     let keyPath: KeyPath<FitnessSnapshot, Int>
     let label: String
-    var height: CGFloat = 80
+    var height: CGFloat = 150
 
-    private var latestValue: Int { snapshots.last.map { $0[keyPath: keyPath] } ?? 0 }
+    /// Days shown at once before the plot starts scrolling.
+    private let visibleDays = 84
 
-    private var formattedTime: String {
-        let total = latestValue
+    @State private var selectedDate: Date?
+    @State private var scrollX: Date?
+
+    // MARK: Derived data
+
+    private struct Point: Identifiable {
+        let id: UUID
+        let date: Date
+        let seconds: Int
+        var plotY: Double { -Double(seconds) }   // negate → faster plots higher
+    }
+
+    private var points: [Point] {
+        snapshots
+            .map { Point(id: $0.id, date: $0.createdAt, seconds: $0[keyPath: keyPath]) }
+            .sorted { $0.date < $1.date }
+    }
+
+    private var minSec: Int { points.map(\.seconds).min() ?? 0 }
+    private var maxSec: Int { points.map(\.seconds).max() ?? 1 }
+
+    /// Padded Y domain (in negated space).
+    private var yDomain: ClosedRange<Double> {
+        let pad = max(Double(maxSec - minSec) * 0.15, 5)
+        return (-(Double(maxSec) + pad)) ... (-(Double(minSec) - pad))
+    }
+
+    /// Three evenly spaced Y ticks, in negated space.
+    private var yTicks: [Double] {
+        let mid = (minSec + maxSec) / 2
+        return [maxSec, mid, minSec].map { -Double($0) }
+    }
+
+    private var firstDate: Date { points.first?.date ?? Date() }
+    private var lastDate: Date { points.last?.date ?? Date() }
+    private var spanSeconds: TimeInterval { max(lastDate.timeIntervalSince(firstDate), 86_400) }
+
+    /// Pad the X domain a hair so end points and markers aren't clipped.
+    private var xDomain: ClosedRange<Date> {
+        let pad = spanSeconds * 0.04
+        return firstDate.addingTimeInterval(-pad) ... lastDate.addingTimeInterval(pad)
+    }
+
+    /// Visible window: whole span if short, else `visibleDays`.
+    private var visibleLength: TimeInterval {
+        let full = xDomain.upperBound.timeIntervalSince(xDomain.lowerBound)
+        return min(Double(visibleDays) * 86_400, full)
+    }
+
+    private var defaultScrollStart: Date {
+        xDomain.upperBound.addingTimeInterval(-visibleLength)
+    }
+
+    private var selectedPoint: Point? {
+        guard let selectedDate else { return nil }
+        return points.min {
+            abs($0.date.timeIntervalSince(selectedDate)) < abs($1.date.timeIntervalSince(selectedDate))
+        }
+    }
+
+    private func fmt(_ total: Int) -> String {
         let h = total / 3600
         let m = (total % 3600) / 60
         let s = total % 60
@@ -715,71 +883,110 @@ private struct TrendSparkline: View {
         return String(format: "%d:%02d", m, s)
     }
 
+    // MARK: Body
+
     var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 10) {
+            // Compact header: label + current (or selected) time.
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(label)
                     .font(.dripCaption(10))
                     .tracking(1.4)
                     .foregroundStyle(Color.drip.textTertiary)
-                Text(formattedTime)
-                    .font(.dripCaption(height > 60 ? 16 : 13))
+                Text(fmt(selectedPoint?.seconds ?? points.last?.seconds ?? 0))
+                    .font(.dripCaption(16))
                     .fontWeight(.semibold)
                     .monospacedDigit()
                     .foregroundStyle(Color.drip.textPrimary)
+                if let sel = selectedPoint {
+                    Text(sel.date.formatted(.dateTime.month(.abbreviated).day()))
+                        .font(.dripCaption(9))
+                        .tracking(1.0)
+                        .foregroundStyle(Color.drip.coral)
+                }
+                Spacer()
             }
-            .frame(width: 70, alignment: .leading)
 
-            GeometryReader { geo in
-                let values = snapshots.map { Double($0[keyPath: keyPath]) }
-                let minVal = (values.min() ?? 0) * 0.995
-                let maxVal = (values.max() ?? 1) * 1.005
-                let range = max(maxVal - minVal, 1)
+            chart
+                .frame(height: height)
+        }
+        .padding(.vertical, 4)
+    }
 
-                ZStack {
-                    Path { path in
-                        guard values.count >= 2 else { return }
-                        let stepX = geo.size.width / CGFloat(values.count - 1)
-                        path.move(to: CGPoint(x: 0, y: geo.size.height))
-                        for (i, val) in values.enumerated() {
-                            let y = (val - minVal) / range * Double(geo.size.height)
-                            path.addLine(to: CGPoint(x: CGFloat(i) * stepX, y: y))
-                        }
-                        path.addLine(to: CGPoint(x: CGFloat(values.count - 1) * stepX, y: geo.size.height))
-                        path.closeSubpath()
-                    }
-                    .fill(
-                        LinearGradient(
-                            colors: [Color.drip.coral.opacity(0.22), Color.drip.coral.opacity(0.02)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
+    private var chart: some View {
+        Chart {
+            ForEach(points) { p in
+                AreaMark(
+                    x: .value("Date", p.date),
+                    y: .value("Time", p.plotY)
+                )
+                .interpolationMethod(.monotone)
+                .foregroundStyle(
+                    .linearGradient(
+                        colors: [Color.drip.coral.opacity(0.22), Color.drip.coral.opacity(0.02)],
+                        startPoint: .top,
+                        endPoint: .bottom
                     )
+                )
 
-                    Path { path in
-                        guard values.count >= 2 else { return }
-                        let stepX = geo.size.width / CGFloat(values.count - 1)
-                        for (i, val) in values.enumerated() {
-                            let y = (val - minVal) / range * Double(geo.size.height)
-                            if i == 0 { path.move(to: CGPoint(x: 0, y: y)) }
-                            else { path.addLine(to: CGPoint(x: CGFloat(i) * stepX, y: y)) }
-                        }
-                    }
-                    .stroke(Color.drip.coral, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+                LineMark(
+                    x: .value("Date", p.date),
+                    y: .value("Time", p.plotY)
+                )
+                .interpolationMethod(.monotone)
+                .foregroundStyle(Color.drip.coral)
+                .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+            }
 
-                    if let last = values.last {
-                        let x = geo.size.width
-                        let y = (last - minVal) / range * Double(geo.size.height)
-                        Circle()
-                            .fill(Color.drip.coral)
-                            .frame(width: 5, height: 5)
-                            .position(x: x, y: y)
+            // Latest point marker.
+            if let last = points.last {
+                PointMark(x: .value("Date", last.date), y: .value("Time", last.plotY))
+                    .foregroundStyle(Color.drip.coral)
+                    .symbolSize(24)
+            }
+
+            // Tap selection.
+            if let sel = selectedPoint {
+                RuleMark(x: .value("Date", sel.date))
+                    .foregroundStyle(Color.drip.textTertiary.opacity(0.35))
+                    .lineStyle(StrokeStyle(lineWidth: 1))
+                PointMark(x: .value("Date", sel.date), y: .value("Time", sel.plotY))
+                    .foregroundStyle(Color.drip.coral)
+                    .symbolSize(60)
+            }
+        }
+        .chartYScale(domain: yDomain)
+        .chartXScale(domain: xDomain)
+        .chartYAxis {
+            AxisMarks(position: .leading, values: yTicks) { value in
+                AxisGridLine()
+                    .foregroundStyle(Color.drip.textTertiary.opacity(0.15))
+                AxisValueLabel {
+                    if let v = value.as(Double.self) {
+                        Text(fmt(Int((-v).rounded())))
+                            .font(.dripCaption(9))
+                            .monospacedDigit()
+                            .foregroundStyle(Color.drip.textTertiary)
                     }
                 }
             }
-            .frame(height: height)
         }
-        .padding(.vertical, 4)
+        .chartXAxis {
+            AxisMarks(values: .automatic(desiredCount: 4)) { _ in
+                AxisGridLine()
+                    .foregroundStyle(Color.drip.textTertiary.opacity(0.12))
+                AxisValueLabel(format: .dateTime.month(.abbreviated).day())
+                    .font(.dripCaption(9))
+                    .foregroundStyle(Color.drip.textTertiary)
+            }
+        }
+        .chartScrollableAxes(.horizontal)
+        .chartXVisibleDomain(length: visibleLength)
+        .chartScrollPosition(x: Binding(
+            get: { scrollX ?? defaultScrollStart },
+            set: { scrollX = $0 }
+        ))
+        .chartXSelection(value: $selectedDate)
     }
 }
 

@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workout detail — conditions in the header, charts intact</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@300;400;600;700&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   Post Run Drip — Foundations (mirrored from colors_and_type.css)
+   ============================================================ */
+:root{
+  --paper:#F5F3F0; --paper-elevated:#FAFAF8; --paper-deep:#E8E4DF; --rule:#E8E4E0;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-deep:#B84420;
+  --mood-neutral:#9B9590; --mood-tired:#C4873A;
+
+  /* ---- Chart · HR zones (RE-STEPPED — see the note in column 4) ----
+     Validated light, surface #F5F3F0: lightness band PASS, chroma floor
+     PASS, CVD separation PASS (worst adjacent ΔE 9.8 protan), normal-vision
+     floor PASS (worst 16.9). Contrast WARN is discharged by the legend,
+     which labels every zone with its name and its minutes. */
+  --z1:#6BA0D8; --z2:#4A9E6B; --z3:#D6A431; --z4:#D4592A; --z5:#8F2A1E;
+
+  /* ---- Chart · diverging pair for splits (faster ↔ slower) ----
+     Validated: all checks PASS, adjacent ΔE 27.0 normal / 19.6 protan.
+     Neutral gray midpoint, per the diverging rule. */
+  --faster:#3F7CB5; --slower:#D4592A; --mid:#C9C3BC;
+
+  --font-display:"Crimson Pro",Georgia,serif;
+  --font-body:"PT Serif",Georgia,serif;
+  --font-mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:#DEDAD4;color:var(--ink);font-family:var(--font-body);
+  -webkit-font-smoothing:antialiased;padding:28px 20px 40px}
+
+/* ---- study chrome (not part of the app) ---- */
+.study-hd{max-width:1700px;margin:0 auto 24px}
+.study-hd h1{font-family:var(--font-display);font-weight:700;font-size:26px;margin:0 0 8px}
+.study-hd p{margin:0 0 6px;font-size:14px;color:#4A4540;line-height:1.55;max-width:88ch}
+.study-hd code{font-family:var(--font-mono);font-size:12.5px;background:rgba(0,0,0,.06);
+  padding:1px 5px;border-radius:4px}
+.rail{display:flex;gap:24px;align-items:flex-start;max-width:1700px;margin:0 auto;flex-wrap:wrap}
+.col{width:392px}
+.col-hd{margin-bottom:11px;padding:0 2px;min-height:118px}
+.col-hd .tag{font-family:var(--font-mono);font-size:9px;letter-spacing:.14em;
+  text-transform:uppercase;color:#6B6560;display:block;margin-bottom:5px}
+.col-hd h2{font-family:var(--font-display);font-weight:700;font-size:19px;margin:0 0 5px}
+.col-hd p{margin:0;font-size:12.5px;line-height:1.5;color:#4A4540}
+
+.phone{width:392px;height:860px;background:var(--paper);border-radius:22px;
+  box-shadow:0 6px 22px rgba(0,0,0,.13);border:1px solid rgba(0,0,0,.05);
+  overflow-y:auto;overflow-x:hidden;position:relative;
+  scrollbar-width:thin;scrollbar-color:#CFC9C2 transparent}
+.phone::-webkit-scrollbar{width:6px}
+.phone::-webkit-scrollbar-thumb{background:#CFC9C2;border-radius:99px}
+.pad{padding:0 20px}
+
+/* ---- shared type ---- */
+.eyebrow{font-family:var(--font-mono);font-size:10px;font-weight:500;letter-spacing:.13em;
+  color:var(--ink-2);text-transform:uppercase}
+.eyebrow.coral{color:var(--coral)}
+.eyebrow.tert{color:var(--ink-3)}
+.hair{height:1px;background:var(--rule)}
+.rule{display:flex;align-items:center;gap:8px}
+.rule::before,.rule::after{content:"";flex:1;height:1px;background:var(--rule)}
+.rule i{width:3px;height:3px;border-radius:99px;background:var(--rule);display:block}
+
+/* ---- sheet chrome ---- */
+.grab{width:36px;height:5px;border-radius:99px;background:#C9C3BC;margin:10px auto 0}
+.sheetbar{display:flex;justify-content:space-between;padding:12px 20px 6px}
+.pill{font-family:var(--font-display);font-size:16px;font-weight:600;background:#FBFAF8;
+  border-radius:99px;padding:9px 20px;box-shadow:0 1px 3px rgba(0,0,0,.07)}
+.pill.edit{color:var(--coral)}
+.hdr-eyebrow{font-family:var(--font-mono);font-size:10px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--ink-2)}
+.headline{font-family:var(--font-display);font-weight:700;font-size:33px;line-height:1.05;
+  margin:9px 0 0}
+.headline .dot{color:var(--coral)}
+.chips{display:flex;gap:9px;align-items:center;margin-top:13px}
+.chip{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;
+  display:inline-flex;align-items:center;gap:6px;background:#E9E5E0;color:var(--ink-2);
+  border-radius:99px;padding:6px 12px}
+.chip .sw{width:6px;height:6px;border-radius:99px;background:var(--mood-neutral)}
+.chip.bare{background:none;padding:6px 0;color:var(--ink-3)}
+
+/* ---- TIER 1 — primary stat line ---- */
+.grid{display:flex;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+.grid .cell{flex:1;padding:15px 0 14px;padding-left:13px;border-left:1px solid var(--rule)}
+.grid .cell:first-child{border-left:0;padding-left:0}
+.grid .cell .k{font-family:var(--font-mono);font-size:8.5px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-3);margin-bottom:8px}
+.grid .cell .v{font-family:var(--font-mono);font-weight:600;font-size:16.5px;
+  font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.grid .cell .v .u{font-size:10px;font-weight:400;color:var(--ink-2);margin-left:2px}
+.grid.nobot{border-bottom:0}
+
+/* ---- TIER 2 — conditions, three treatments ---- */
+.cond{display:flex}
+.cond .c{flex:1}
+.cond .c .v{font-family:var(--font-mono);font-weight:600;font-size:11.5px;
+  font-variant-numeric:tabular-nums;color:var(--ink-2);letter-spacing:-.01em}
+.cond .c .v .u{font-size:8px;font-weight:400;color:var(--ink-3);margin-left:1px}
+.cond .c .k{font-family:var(--font-mono);font-size:7.5px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--ink-3);margin-top:5px}
+.cond.bare{padding:11px 0 2px}
+.cond.band{background:var(--paper-deep);border-radius:0 0 11px 11px;padding:12px 0}
+.cond.band .c{padding-left:13px}
+.cond.band .c:first-child{padding-left:11px}
+.cond.band .c .v{color:var(--ink)}
+.pacenote{font-family:var(--font-mono);font-size:9px;letter-spacing:.02em;color:var(--coral);
+  margin-top:7px;white-space:nowrap}
+.pacenote .sep{color:var(--ink-3);margin:0 4px}
+.pacenote .dim{color:var(--ink-3);margin-left:2.5px}
+
+/* ---- memo / summary / recipe ---- */
+.memo{background:#FBFAF8;border-radius:14px;padding:15px 16px;margin-top:16px;
+  box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.memo .top{display:flex;align-items:center;gap:10px}
+.memo .top .r{margin-left:auto;color:var(--ink-3);font-size:14px}
+.memo q{display:block;font-family:var(--font-body);font-style:italic;font-size:13.5px;
+  color:var(--ink);margin-top:11px;quotes:none}
+.watch{display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(196,135,58,.35);
+  background:rgba(196,135,58,.09);border-radius:99px;padding:8px 15px;margin-top:15px;
+  font-family:var(--font-mono);font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;
+  color:#8A6220}
+.watch .sw{width:6px;height:6px;border-radius:99px;background:var(--mood-tired)}
+.summary p{font-family:var(--font-body);font-size:14.5px;line-height:1.62;margin:11px 0 0}
+.readwords{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--ink-3);margin-top:12px}
+.recipe{margin-top:11px}
+.recipe div{font-family:var(--font-body);font-size:13.5px;color:var(--ink-2);line-height:1.62}
+.sigpill{display:inline-flex;align-items:center;gap:9px;background:#FBFAF8;border-radius:99px;
+  padding:9px 16px;box-shadow:0 1px 2px rgba(0,0,0,.05);font-family:var(--font-mono);
+  font-size:11px;letter-spacing:.1em;text-transform:uppercase;margin-top:13px}
+.sigpill .sw{width:7px;height:7px;border-radius:99px;background:var(--mood-tired)}
+.sigpill b{font-weight:600;letter-spacing:0;text-transform:none}
+
+/* ============================================================
+   ACT 2 — SPLITS. Deviation from the run's own average, not a
+   skyline of absolute pace: on a steady run every bar is the
+   same height and the chart says nothing. Polarity is the job,
+   so it's a diverging form with a neutral zero line.
+   ============================================================ */
+.splithd{display:flex;align-items:baseline;margin-bottom:2px}
+.splithd .avg{margin-left:auto;font-family:var(--font-mono);font-size:9px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-3)}
+.splitchart{position:relative;margin-top:10px}
+.splitchart svg{display:block;width:100%;overflow:visible}
+.splitlegend{display:flex;gap:16px;margin-top:9px;font-family:var(--font-mono);font-size:8.5px;
+  letter-spacing:.11em;text-transform:uppercase;color:var(--ink-3)}
+.splitlegend i{width:7px;height:7px;border-radius:2px;display:inline-block;margin-right:5px;
+  vertical-align:-1px}
+
+/* ============================================================
+   ACT 3 — TRACES. Disclosure rows, each carrying a summary stat
+   so a closed row still says something.
+   ============================================================ */
+.trace{border-bottom:1px solid var(--rule)}
+.trace .hd{display:flex;align-items:center;gap:8px;padding:12px 0;cursor:pointer;
+  user-select:none}
+.trace .hd .t{font-family:var(--font-mono);font-size:10px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--ink)}
+.trace .hd .s{margin-left:auto;font-family:var(--font-mono);font-size:8.5px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.trace .hd .chev{font-size:9px;color:var(--ink-3);transition:transform 180ms
+  cubic-bezier(.2,.7,.2,1);display:inline-block}
+.trace.open .hd .chev{transform:rotate(90deg)}
+.trace .bd{display:none;padding-bottom:16px}
+.trace.open .bd{display:block}
+
+/* zone bar — stacked, 2px surface gaps between segments */
+.zbar{display:flex;height:10px;border-radius:99px;overflow:hidden;gap:2px;margin-top:4px}
+.zbar span{display:block;border-radius:2px}
+.zbar span:first-child{border-radius:99px 2px 2px 99px}
+.zbar span:last-child{border-radius:2px 99px 99px 2px}
+.zlegend{margin-top:11px}
+.zlegend .row{display:flex;align-items:center;gap:8px;padding:3px 0;
+  font-family:var(--font-mono);font-size:9.5px;color:var(--ink-2)}
+.zlegend .row i{width:8px;height:8px;border-radius:2px;flex:none}
+.zlegend .row .n{letter-spacing:.11em;text-transform:uppercase;color:var(--ink-3);width:26px}
+.zlegend .row .m{margin-left:auto;font-variant-numeric:tabular-nums;color:var(--ink)}
+
+/* telemetry — synced lanes, one shared time axis, each lane its own y-scale.
+   Small multiples, NOT a dual-axis plot. */
+.tel{position:relative}
+.tel svg{display:block;width:100%;overflow:visible}
+.lanelab{font-family:var(--font-mono);font-size:8px;letter-spacing:.12em;text-transform:uppercase;
+  fill:var(--ink-3)}
+.laneval{font-family:var(--font-mono);font-size:9px;font-weight:600;fill:var(--ink);
+  font-variant-numeric:tabular-nums}
+.axlab{font-family:var(--font-mono);font-size:8px;fill:var(--ink-3);
+  font-variant-numeric:tabular-nums}
+.tip{position:absolute;pointer-events:none;background:#241F1B;color:#F5F3F0;border-radius:7px;
+  padding:7px 9px;font-family:var(--font-mono);font-size:9.5px;line-height:1.5;
+  white-space:nowrap;opacity:0;transition:opacity 110ms ease;z-index:9;
+  font-variant-numeric:tabular-nums;box-shadow:0 3px 10px rgba(0,0,0,.2)}
+.tip.on{opacity:1}
+.tip b{color:#fff;font-weight:600}
+.tip .dim{color:#9B9590}
+
+/* route */
+.routebox{background:var(--paper-deep);border-radius:10px;padding:12px;margin-top:4px}
+.routebox svg{display:block;width:100%}
+
+/* ---- sticky rail ---- */
+.stickyzone{position:sticky;top:0;z-index:20;background:var(--paper)}
+.railline{display:flex;align-items:center;height:0;overflow:hidden;opacity:0;
+  transition:height 180ms cubic-bezier(.2,.7,.2,1),opacity 140ms ease;
+  border-bottom:1px solid var(--rule);padding:0 20px}
+.phone.stuck .railline{height:42px;opacity:1}
+.railline .n{font-family:var(--font-mono);font-weight:600;font-size:12.5px;
+  font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.railline .n .u{font-size:9px;font-weight:400;color:var(--ink-3);margin-left:1px}
+.railline .sep{color:var(--rule);margin:0 9px;font-size:11px}
+.railline .who{margin-left:auto;font-family:var(--font-mono);font-size:8.5px;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+
+.note{margin-top:12px;padding:12px 14px;border-left:2px solid var(--coral);
+  background:rgba(212,89,42,.06);border-radius:0 8px 8px 0;font-size:12.5px;
+  line-height:1.55;color:#4A4540}
+.note.ok{border-color:#2D8A4E;background:rgba(45,138,78,.07)}
+.note b{font-weight:700}
+.note code{font-family:var(--font-mono);font-size:11.5px;background:rgba(0,0,0,.06);
+  padding:1px 4px;border-radius:3px}
+.note table{border-collapse:collapse;width:100%;margin-top:8px;font-family:var(--font-mono);
+  font-size:10.5px}
+.note td{padding:3px 0;border-bottom:1px solid rgba(0,0,0,.06);vertical-align:top}
+.note td:first-child{padding-right:10px;white-space:nowrap}
+.sw-inline{width:9px;height:9px;border-radius:2px;display:inline-block;margin-right:5px;
+  vertical-align:-1px}
+.hint{max-width:1700px;margin:0 auto 18px;font-family:var(--font-mono);font-size:11px;
+  letter-spacing:.06em;color:#5A554F}
+</style>
+</head>
+<body>
+
+<div class="study-hd">
+  <h1>Conditions in the header — with the receipt's charts intact</h1>
+  <p>Aug 13, real data. Temp, dewpoint, heat cost, climb and hill cost move up into the header as
+  a second, quieter tier. Below, <b>the receipt keeps everything it had</b>: Act 2 splits, and
+  Act 3 <code>TRACES</code> — HR zones, the telemetry panel, route — with telemetry auto-expanded
+  because climb ≥ 150 ft, exactly as <code>defaultExpandedTrace()</code> does today.</p>
+  <p>Three header treatments, identical below the fold. Scroll any phone; hover the charts.</p>
+</div>
+
+<div class="hint">↓ scroll inside any phone · hover the splits and the telemetry lanes</div>
+
+<div class="rail" id="rail"></div>
+
+<script>
+/* ============================================================
+   One session's data.
+   ============================================================ */
+var RUN = {
+  day:'Thursday', date:'Aug 13', title:'Steady 11m',
+  dist:'11.01', time:'1:14:34', pace:'6:46', hr:'153',
+  temp:'82°', dew:'72°', heat:'+15', climb:'523', hill:'+6',
+  summary:"I did a steady 11-miler and felt under control, aerobically decent, and solid. " +
+    "Everything felt pretty good except my left knee felt a little bit tight, which I've been " +
+    "noticing for a couple of weeks, even since May. It doesn't feel untrainable, but I'm " +
+    "definitely keeping an eye on it."
+};
+
+/* Mile splits, seconds per mile. Average = 405.6s = 6:46. */
+var SPLITS = [412,404,401,408,399,403,412,418,407,401,397];
+var SPLIT_AVG = SPLITS.reduce(function(a,b){return a+b;},0) / SPLITS.length;
+
+/* Time in HR zone, seconds. Totals 4474s = 1:14:34. */
+var ZONES = [
+  {id:'Z1', s:403,  c:'var(--z1)', hex:'#6BA0D8'},
+  {id:'Z2', s:939,  c:'var(--z2)', hex:'#4A9E6B'},
+  {id:'Z3', s:2326, c:'var(--z3)', hex:'#D6A431'},
+  {id:'Z4', s:671,  c:'var(--z4)', hex:'#D4592A'},
+  {id:'Z5', s:135,  c:'var(--z5)', hex:'#8F2A1E'}
+];
+
+function mmss(sec){ var m=Math.floor(sec/60), s=Math.round(sec%60);
+  return m + ':' + (s<10?'0':'') + s; }
+
+/* Deterministic pseudo-noise — a seeded LCG, so every render and every
+   screenshot is identical. */
+function lcg(seed){ var s=seed; return function(){ s=(s*1103515245+12345)&0x7fffffff;
+  return s/0x7fffffff; }; }
+
+/* Telemetry series over 4474 s, 180 samples. */
+var TEL = (function(){
+  var n=180, rnd=lcg(97), t=[], hr=[], pace=[], alt=[];
+  var baseAlt=210, climbAt=[0.18,0.42,0.63,0.82];
+  for(var i=0;i<n;i++){
+    var f=i/(n-1);
+    t.push(f*4474);
+    /* elevation: four rollers, ~523 ft of total gain */
+    var a=baseAlt;
+    climbAt.forEach(function(c,k){ a += 62*Math.exp(-Math.pow((f-c)/0.075,2)) * (1+0.18*k); });
+    a += 26*Math.sin(f*11) + (rnd()-0.5)*4;
+    alt.push(a);
+    /* HR: warm-up drift then heat drift, lifted on the climbs */
+    var h = 128 + 26*(1-Math.exp(-f*7)) + 9*f;
+    climbAt.forEach(function(c){ h += 12*Math.exp(-Math.pow((f-c)/0.065,2)); });
+    h += (rnd()-0.5)*4;
+    hr.push(h);
+    /* pace: ~406 s/mi, slower on the climbs, quicker at the finish */
+    var p = 406 - 9*Math.pow(f,3);
+    climbAt.forEach(function(c){ p += 20*Math.exp(-Math.pow((f-c)/0.055,2)); });
+    p += (rnd()-0.5)*7;
+    pace.push(p);
+  }
+  return {t:t, hr:hr, pace:pace, alt:alt, n:n};
+})();
+
+/* ============================================================
+   Shared page pieces
+   ============================================================ */
+function chrome(){ return '<div class="grab"></div><div class="sheetbar">' +
+  '<span class="pill edit">Edit</span><span class="pill">Done</span></div>'; }
+
+function masthead(){ return '<div class="pad" style="padding-top:14px"><div class="hair"></div>' +
+  '<div style="height:24px"></div><div class="hdr-eyebrow">' + RUN.day + ' &nbsp;·&nbsp; ' +
+  RUN.date + '</div><h1 class="headline">' + RUN.title + '<span class="dot">.</span></h1>' +
+  '<div class="chips"><span class="chip"><i class="sw"></i>Neutral</span>' +
+  '<span class="chip bare">Strava</span></div></div>'; }
+
+function stickyRail(){ return '<div class="stickyzone"><div class="railline">' +
+  '<span class="n">'+RUN.dist+'<span class="u">mi</span></span><span class="sep">·</span>' +
+  '<span class="n">'+RUN.time+'</span><span class="sep">·</span>' +
+  '<span class="n">'+RUN.pace+'<span class="u">/mi</span></span><span class="sep">·</span>' +
+  '<span class="n">'+RUN.hr+'<span class="u">bpm</span></span>' +
+  '<span class="who">'+RUN.title+'</span></div></div>'; }
+
+function tier1(paceNote, noBottom){
+  return '<div class="grid'+(noBottom?' nobot':'')+'">' +
+    '<div class="cell"><div class="k">Dist</div><div class="v">'+RUN.dist+'<span class="u">mi</span></div></div>' +
+    '<div class="cell"><div class="k">Time</div><div class="v">'+RUN.time+'</div></div>' +
+    '<div class="cell"><div class="k">Pace</div><div class="v">'+RUN.pace+'<span class="u">/mi</span></div>'+(paceNote||'')+'</div>' +
+    '<div class="cell"><div class="k">HR</div><div class="v">'+RUN.hr+'<span class="u">bpm</span></div></div></div>';
+}
+function condCell(v,u,k){ return '<div class="c"><div class="v">'+v+
+  (u?'<span class="u">'+u+'</span>':'')+'</div><div class="k">'+k+'</div></div>'; }
+
+function theWorkout(){ return '<div class="pad" style="margin-top:20px"><div class="rule"><i></i></div></div>' +
+  '<div class="pad" style="margin-top:18px"><div style="display:flex;align-items:baseline">' +
+  '<span class="eyebrow">The Workout</span>' +
+  '<span style="margin-left:auto" class="eyebrow coral">Edit</span></div>' +
+  '<div class="recipe"><div>Distance: 11 miles</div><div>Duration: 75 min</div>' +
+  '<div>Pace: 6:46/mi</div></div></div>'; }
+
+function summaryBlock(){ return '<div class="pad" style="margin-top:22px"><div class="rule"><i></i></div></div>' +
+  '<div class="pad summary" style="margin-top:18px"><div style="display:flex;align-items:baseline">' +
+  '<span class="eyebrow">Summary</span>' +
+  '<span style="margin-left:auto" class="eyebrow tert">▶ Memo &nbsp; Edit</span></div>' +
+  '<p>'+RUN.summary+'</p><div class="readwords">Read the words ↓</div></div>' +
+  '<div class="memo" style="margin-left:20px;margin-right:20px"><div class="top">' +
+  '<span class="chip"><i class="sw"></i>Neutral</span>' +
+  '<span class="eyebrow tert">Voice memo</span><span class="r">›</span></div>' +
+  '<q>"I did a steady 11-miler and felt under control, aerobicall…</q></div>' +
+  '<div class="pad"><div class="watch"><i class="sw"></i>L Knee &nbsp;·&nbsp; Watching ↗</div></div>'; }
+
+/* ============================================================
+   ACT 2 — SPLITS, as deviation from this run's own average.
+   Bars grow from a neutral zero rule: down = quicker, up = slower.
+   4px rounded data-ends, 2px gaps, only the two extremes labelled.
+   ============================================================ */
+function splitsAct(uid){
+  /* H leaves a clear band under the deepest bar for the mile ticks, so a
+     slow-mile label can never land on top of its own axis number. */
+  var W=352, H=120, zeroY=50, maxDev=14, bw=26;
+  var step=(W-bw)/(SPLITS.length-1);
+  var bars='', ticks='';
+  var slowest=0, fastest=0;
+  SPLITS.forEach(function(p,i){
+    if(p>SPLITS[slowest]) slowest=i;
+    if(p<SPLITS[fastest]) fastest=i;
+  });
+  SPLITS.forEach(function(p,i){
+    var d=p-SPLIT_AVG;
+    var h=Math.max(3, Math.abs(d)/maxDev*40);
+    var x=i*step, y=d>0? zeroY : zeroY-h;
+    var fill=d>0?'var(--slower)':'var(--faster)';
+    /* rounded data-end only; the baseline end stays square against zero */
+    var r=d>0
+      ? 'M'+x+','+zeroY+' h'+bw+' v'+(h-4)+' a4,4 0 0 1 -4,4 h'+(-(bw-8))+' a4,4 0 0 1 -4,-4 z'
+      : 'M'+x+','+zeroY+' h'+bw+' v'+(-(h-4))+' a4,4 0 0 0 -4,-4 h'+(-(bw-8))+' a4,4 0 0 0 -4,4 z';
+    bars += '<path d="'+r+'" fill="'+fill+'" data-i="'+i+'" class="sbar"/>';
+    ticks += '<text class="axlab" x="'+(x+bw/2)+'" y="'+(H-3)+'" text-anchor="middle">'+(i+1)+'</text>';
+    if(i===slowest||i===fastest){
+      bars += '<text class="lanelab" x="'+(x+bw/2)+'" y="'+(d>0? zeroY+h+11 : zeroY-h-6)+
+        '" text-anchor="middle" style="fill:'+fill+'">'+mmss(p)+'</text>';
+    }
+  });
+  return '<div class="pad" style="margin-top:26px"><div class="rule"><i></i></div></div>' +
+  '<div class="pad" style="margin-top:18px"><div class="splithd">' +
+  '<span class="eyebrow">Splits</span><span class="avg">Split avg 6:46/mi</span></div>' +
+  '<div class="splitchart" id="sc-'+uid+'">' +
+  '<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" style="height:'+H+'px">' +
+  '<line x1="0" y1="'+zeroY+'" x2="'+W+'" y2="'+zeroY+'" stroke="var(--mid)" stroke-width="1"/>' +
+  bars + ticks + '</svg>' +
+  '<div class="tip" id="tip-'+uid+'"></div></div>' +
+  '<div class="splitlegend"><span><i style="background:var(--faster)"></i>Quicker than avg</span>' +
+  '<span><i style="background:var(--slower)"></i>Slower</span>' +
+  '<span style="margin-left:auto">Mile →</span></div></div>';
+}
+
+/* ============================================================
+   ACT 3 — TRACES. Same rows the app builds in `availableTraces`,
+   in the same reading order, each with its summary stat.
+   ============================================================ */
+function tracesAct(uid){
+  var totalZ = ZONES.reduce(function(a,z){return a+z.s;},0);
+  var zbar = ZONES.map(function(z){
+    return '<span style="width:'+(z.s/totalZ*100)+'%;background:'+z.c+'"></span>'; }).join('');
+  var zleg = ZONES.slice().reverse().map(function(z){
+    return '<div class="row"><i style="background:'+z.c+'"></i><span class="n">'+z.id+'</span>' +
+      '<span class="m">'+Math.round(z.s/60)+' min</span></div>'; }).join('');
+
+  return '<div class="pad" style="margin-top:26px"><div class="rule"><i></i></div></div>' +
+  '<div class="pad" style="margin-top:18px"><span class="eyebrow">Traces</span>' +
+
+  /* HR ZONES — collapsed, summary is the top two zones by time */
+  '<div class="trace" data-tr><div class="hd"><span class="chev">›</span>' +
+  '<span class="t">HR zones</span><span class="s">39 min Z3 · 16 min Z2</span></div>' +
+  '<div class="bd"><div class="zbar">'+zbar+'</div><div class="zlegend">'+zleg+'</div></div></div>' +
+
+  /* TELEMETRY — open by default: climb 523 ft ≥ 150 ft */
+  '<div class="trace open" data-tr><div class="hd"><span class="chev">›</span>' +
+  '<span class="t">Telemetry</span><span class="s">179 spm · 4.2% max grade</span></div>' +
+  '<div class="bd">' + telemetrySVG(uid) + '</div></div>' +
+
+  /* ROUTE — collapsed */
+  '<div class="trace" data-tr><div class="hd"><span class="chev">›</span>' +
+  '<span class="t">Route</span><span class="s">Out &amp; back · 4 rollers</span></div>' +
+  '<div class="bd"><div class="routebox">'+routeSVG()+'</div></div></div>' +
+
+  '<div style="display:flex;align-items:center;padding:14px 0">' +
+  '<span class="eyebrow">Vs. your last similar session</span>' +
+  '<span style="margin-left:auto" class="eyebrow coral">Compare ↗</span></div>' +
+  '<div class="hair"></div><div style="height:70px"></div></div>';
+}
+
+/* Three synced lanes on ONE shared time axis. Each lane has its own
+   y-scale and its own label — small multiples, not a dual-axis plot. */
+function telemetrySVG(uid){
+  var W=352, lanes=[
+    {key:'hr',   lab:'HR',   unit:'bpm', h:56, color:'var(--z4)',  zoneBands:true},
+    {key:'pace', lab:'Pace', unit:'/mi', h:48, color:'var(--faster)'},
+    {key:'alt',  lab:'Elev', unit:'ft',  h:38, color:'var(--ink-3)', area:true}
+  ];
+  var gapY=14, padB=16, y0=6, out='', totalH=y0+padB;
+  lanes.forEach(function(l){ totalH += l.h+gapY; });
+
+  var top=y0;
+  lanes.forEach(function(l){
+    var vals=TEL[l.key], lo=Math.min.apply(null,vals), hi=Math.max.apply(null,vals);
+    var pad=(hi-lo)*0.12; lo-=pad; hi+=pad;
+    /* pace reads "lower is faster", so its lane is flipped to put quick at the top */
+    var flip = l.key==='pace';
+    function X(i){ return i/(TEL.n-1)*W; }
+    function Y(v){ var f=(v-lo)/(hi-lo); if(flip) f=1-f; return top+l.h-f*l.h; }
+
+    /* Zone context behind the HR trace — emphasis, not a rainbow. Tinting
+       all five bands stacks four pastels into a gradient smear that encodes
+       nothing; the story is that ONE zone carried the run. So: fill the
+       dominant zone only, and mark the rest with hairline boundaries. */
+    if(l.zoneBands){
+      var bounds=[[0,.70],[.70,.80],[.80,.88],[.88,.95],[.95,1.30]], maxHR=186;
+      var dom=0; ZONES.forEach(function(z,k){ if(z.s>ZONES[dom].s) dom=k; });
+      bounds.forEach(function(b,k){
+        var zlo=b[0]*maxHR, zhi=b[1]*maxHR;
+        var ya=Y(Math.min(Math.max(zhi,lo),hi)), yb=Y(Math.min(Math.max(zlo,lo),hi));
+        if(yb-ya<=0.5) return;
+        if(k===dom){
+          out+='<rect x="0" y="'+ya+'" width="'+W+'" height="'+(yb-ya)+
+            '" fill="'+ZONES[k].hex+'" opacity="0.15"/>';
+          out+='<text class="lanelab" x="4" y="'+(ya+11)+'" style="fill:'+ZONES[k].hex+
+            ';opacity:.95">'+ZONES[k].id+'</text>';
+        } else if(zhi<hi){
+          out+='<line x1="0" y1="'+ya+'" x2="'+W+'" y2="'+ya+
+            '" stroke="'+ZONES[k].hex+'" stroke-width="1" opacity="0.28"/>';
+        }
+      });
+    }
+    /* hairline baseline, never dashed */
+    out += '<line x1="0" y1="'+(top+l.h)+'" x2="'+W+'" y2="'+(top+l.h)+
+           '" stroke="var(--rule)" stroke-width="1"/>';
+
+    var d='', ad='';
+    vals.forEach(function(v,i){ d += (i?'L':'M')+X(i).toFixed(1)+','+Y(v).toFixed(1)+' '; });
+    if(l.area){
+      ad = d + 'L'+W+','+(top+l.h)+' L0,'+(top+l.h)+' Z';
+      out += '<path d="'+ad+'" fill="var(--ink-3)" opacity="0.18"/>';
+    }
+    out += '<path d="'+d+'" fill="none" stroke="'+l.color+'" stroke-width="2" ' +
+           'stroke-linejoin="round" stroke-linecap="round"/>';
+    out += '<text class="lanelab" x="0" y="'+(top-2)+'">'+l.lab+'</text>';
+    out += '<text class="lanelab" x="'+W+'" y="'+(top-2)+'" text-anchor="end">'+
+           (l.key==='hr'? Math.round(lo+pad)+'–'+Math.round(hi-pad)+' bpm'
+            : l.key==='pace'? mmss(hi-pad)+'–'+mmss(lo+pad)+'/mi'
+            : Math.round(lo+pad)+'–'+Math.round(hi-pad)+' ft')+'</text>';
+    top += l.h+gapY;
+  });
+
+  /* shared x-axis: one set of time labels for all three lanes */
+  [0,0.25,0.5,0.75,1].forEach(function(f){
+    var x=f*W, anch = f===0?'start' : f===1?'end':'middle';
+    out += '<text class="axlab" x="'+x+'" y="'+(totalH-2)+'" text-anchor="'+anch+'">'+
+      mmss(f*4474)+'</text>';
+  });
+  out += '<line class="cross" x1="0" y1="0" x2="0" y2="'+(totalH-padB)+
+         '" stroke="var(--ink)" stroke-width="1" opacity="0"/>';
+
+  return '<div class="tel" id="tel-'+uid+'"><svg viewBox="0 0 '+W+' '+totalH+
+    '" style="height:'+totalH+'px">'+out+'</svg><div class="tip" id="ttip-'+uid+'"></div></div>';
+}
+
+/* Route — the elevation profile as the shape, since the map itself
+   isn't the point in a static mock. */
+function routeSVG(){
+  var W=320,H=54,d='';
+  TEL.alt.forEach(function(v,i){
+    var lo=Math.min.apply(null,TEL.alt), hi=Math.max.apply(null,TEL.alt);
+    d += (i?'L':'M')+(i/(TEL.n-1)*W).toFixed(1)+','+(H-(v-lo)/(hi-lo)*(H-8)-4).toFixed(1)+' ';
+  });
+  return '<svg viewBox="0 0 '+W+' '+H+'" style="height:'+H+'px">' +
+    '<path d="'+d+'L'+W+','+H+' L0,'+H+' Z" fill="var(--ink-3)" opacity="0.2"/>' +
+    '<path d="'+d+'" fill="none" stroke="var(--ink-2)" stroke-width="2" stroke-linejoin="round"/>' +
+    '</svg>';
+}
+
+/* ============================================================
+   THE THREE HEADER VARIANTS
+   ============================================================ */
+var COLS=[
+{
+  id:'A1', tag:'A1 · footnote row', h2:'Bare, hanging off the strip',
+  p:'Five conditions at 11.5px in warm gray — no fill, no dividers. Reads as a caption to the ' +
+    'stat line rather than a second stat line. Lightest touch, least structure.',
+  head:function(){ return '<div class="pad" id="anchor-A1" style="margin-top:22px">' +
+    tier1(null,false) + '<div class="cond bare">' +
+    condCell(RUN.temp,'','Temp')+condCell(RUN.dew,'','Dew')+condCell(RUN.heat,'s/mi','Heat')+
+    condCell(RUN.climb,'ft','Climb')+condCell(RUN.hill,'s/mi','Hill')+'</div></div>'; },
+  foot:'<div class="note ok"><b>Quietest.</b> Nothing boxed, nothing filled — the conditions sit ' +
+    'in the margin of the numbers they qualify. Risk: with no fill or rule they can read as a ' +
+    'floating row.</div>'
+},
+{
+  id:'A2', tag:'A2 · inset band', h2:'One block, two tiers',
+  p:'The paper-deep well you already use for weather, moved up and fused to the bottom of the ' +
+    'strip. Header and conditions become a single object with a bottom radius.',
+  head:function(){ return '<div class="pad" id="anchor-A2" style="margin-top:22px">' +
+    tier1(null,true) + '<div class="cond band">' +
+    condCell(RUN.temp,'','Temp')+condCell(RUN.dew,'','Dew')+condCell(RUN.heat,'s/mi','Heat')+
+    condCell(RUN.climb,'ft','Climb')+condCell(RUN.hill,'s/mi','Hill')+'</div></div>'; },
+  foot:'<div class="note ok"><b>Most legible.</b> Reuses the existing well treatment, so nothing ' +
+    'new enters the design system. The two tiers read unmistakably as one header. Costs the most ' +
+    'vertical space.</div>'
+},
+{
+  id:'A3', tag:'A3 · pace-anchored', h2:'The costs annotate the pace',
+  p:'Heat and hill are pace penalties, so they hang under PACE in coral — the cell they actually ' +
+    'modify. Temp, dew and climb drop to a 3-up footnote as pure environment.',
+  head:function(){
+    var note='<div class="pacenote">+15<span class="dim">heat</span><span class="sep">·</span>' +
+      '+6<span class="dim">hill</span></div>';
+    return '<div class="pad" id="anchor-A3" style="margin-top:22px">' + tier1(note,false) +
+      '<div class="cond bare">'+condCell(RUN.temp,'','Temp')+condCell(RUN.dew,'','Dewpoint')+
+      condCell(RUN.climb,'ft','Climb')+'</div></div>'; },
+  foot:'<div class="note"><b>Most opinionated.</b> It says out loud that 6:46 was worth about ' +
+    '6:25 in neutral conditions. Watch the coral budget — that\'s a second coral hit beside the ' +
+    'EDIT link, so one of them should drop to ink-2.</div>'
+}];
+
+document.getElementById('rail').innerHTML = COLS.map(function(c){
+  return '<div class="col"><div class="col-hd"><span class="tag">'+c.tag+'</span>' +
+    '<h2>'+c.h2+'</h2><p>'+c.p+'</p></div>' +
+    '<div class="phone" id="ph-'+c.id+'">' + chrome() + masthead() + stickyRail() +
+    c.head() + theWorkout() + summaryBlock() + splitsAct(c.id) + tracesAct(c.id) +
+    '</div>' + c.foot + '</div>';
+}).join('') +
+
+/* ---- the two findings, as a fourth column ---- */
+'<div class="col"><div class="col-hd"><span class="tag">Found while building</span>' +
+'<h2>Two things worth fixing</h2><p>Both surfaced from the change, not from taste.</p></div>' +
+
+'<div class="note"><b>1 · Two HR zones are the same color.</b> ' +
+'<code>rr_zones</code> currently steps Z3 <span class="sw-inline" style="background:#C4873A"></span>' +
+'<code>#C4873A</code> → Z4 <span class="sw-inline" style="background:#E0742E"></span>' +
+'<code>#E0742E</code>. Measured: <b>ΔE 6.0 in normal vision, 1.4 under deutan</b> — effectively ' +
+'one color. The comment above that function says you already fixed this once for Z4/Z5; the fix ' +
+'moved the collision down a slot rather than removing it.' +
+'<table><tr><td>Now</td><td>' +
+'<span class="sw-inline" style="background:#9B9590"></span>' +
+'<span class="sw-inline" style="background:#4A9E6B"></span>' +
+'<span class="sw-inline" style="background:#C4873A"></span>' +
+'<span class="sw-inline" style="background:#E0742E"></span>' +
+'<span class="sw-inline" style="background:#8F2A1E"></span> FAIL</td></tr>' +
+'<tr><td>Re-stepped</td><td>' +
+'<span class="sw-inline" style="background:#6BA0D8"></span>' +
+'<span class="sw-inline" style="background:#4A9E6B"></span>' +
+'<span class="sw-inline" style="background:#D6A431"></span>' +
+'<span class="sw-inline" style="background:#D4592A"></span>' +
+'<span class="sw-inline" style="background:#8F2A1E"></span> PASS</td></tr></table>' +
+'<div style="margin-top:8px">Z1 also moved off pure gray (it had no chroma, so it collided with ' +
+'Z2 under CVD) onto the pale sky your pace ramp already uses for easy. Worst adjacent pair is ' +
+'now ΔE 16.9 normal / 9.8 protan. Used live in the zone bar and the HR bands above.</div></div>' +
+
+'<div class="note"><b>2 · The trace summaries now duplicate the header.</b> ' +
+'<code>traceSummary</code> returns <code>"153 AVG HR · +523 FT"</code> for telemetry and ' +
+'<code>"11.01 MI"</code> for route. Once those numbers live in the header, a closed row that ' +
+'repeats them says nothing. Swapped here for facts that aren\'t upstairs: ' +
+'<code>179 SPM · 4.2% MAX GRADE</code> and <code>OUT &amp; BACK · 4 ROLLERS</code>.</div>' +
+
+'<div class="note ok"><b>Splits changed form.</b> A skyline of absolute pace is flat on a steady ' +
+'run — eleven near-identical bars. Plotted as deviation from the run\'s own average it shows the ' +
+'shape: mile 8 gave back 12s on the long roller, mile 11 came home 9s quick. Diverging pair ' +
+'validated at ΔE 27.0.</div></div>';
+
+/* ---- behavior ---- */
+COLS.forEach(function(c){
+  var phone=document.getElementById('ph-'+c.id), anchor=document.getElementById('anchor-'+c.id);
+  function sync(){ phone.classList.toggle('stuck',
+    phone.scrollTop > anchor.offsetTop + anchor.offsetHeight - 42); }
+  phone.addEventListener('scroll', sync, {passive:true}); sync();
+
+  /* disclosure rows */
+  phone.querySelectorAll('[data-tr] .hd').forEach(function(hd){
+    hd.addEventListener('click', function(){ hd.parentNode.classList.toggle('open'); });
+  });
+
+  /* splits hover */
+  var sc=document.getElementById('sc-'+c.id), stip=document.getElementById('tip-'+c.id);
+  sc.querySelectorAll('.sbar').forEach(function(b){
+    b.style.cursor='pointer';
+    b.addEventListener('mouseenter', function(){
+      var i=+b.dataset.i, d=SPLITS[i]-SPLIT_AVG;
+      var r=b.getBoundingClientRect(), p=sc.getBoundingClientRect();
+      stip.innerHTML='<b>Mile '+(i+1)+'</b> · '+mmss(SPLITS[i])+'/mi<br>' +
+        '<span class="dim">'+(d<0?'−':'+')+Math.abs(Math.round(d))+'s vs avg</span>';
+      stip.classList.add('on');
+      stip.style.left=Math.min(Math.max(r.left-p.left+r.width/2-52,0),p.width-104)+'px';
+      stip.style.top=(r.top-p.top-46)+'px';
+    });
+    b.addEventListener('mouseleave', function(){ stip.classList.remove('on'); });
+  });
+
+  /* telemetry crosshair */
+  var tel=document.getElementById('tel-'+c.id);
+  if(!tel) return;
+  var svg=tel.querySelector('svg'), cross=svg.querySelector('.cross'),
+      ttip=document.getElementById('ttip-'+c.id);
+  tel.addEventListener('mousemove', function(e){
+    var p=tel.getBoundingClientRect(), f=(e.clientX-p.left)/p.width;
+    f=Math.min(Math.max(f,0),1);
+    var i=Math.round(f*(TEL.n-1)), x=f*352;
+    cross.setAttribute('x1',x); cross.setAttribute('x2',x); cross.setAttribute('opacity','0.28');
+    ttip.innerHTML='<b>'+mmss(TEL.t[i])+'</b><br>'+
+      Math.round(TEL.hr[i])+' bpm<br>'+mmss(TEL.pace[i])+'/mi<br>'+
+      '<span class="dim">'+Math.round(TEL.alt[i])+' ft</span>';
+    ttip.classList.add('on');
+    ttip.style.left=Math.min(Math.max(e.clientX-p.left-40,0),p.width-90)+'px';
+    ttip.style.top='4px';
+  });
+  tel.addEventListener('mouseleave', function(){
+    cross.setAttribute('opacity','0'); ttip.classList.remove('on'); });
+});
+</script>
+</body>
+</html>

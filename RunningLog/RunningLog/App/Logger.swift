@@ -3,8 +3,11 @@ import os
 
 // MARK: - App Logger
 
-/// Centralized logging using os.Logger for better debugging and performance
-enum Log {
+/// Centralized logging using os.Logger for better debugging and performance.
+/// `nonisolated` so loggers are reachable from any context (e.g. the
+/// deliberately off-main-actor `ExternalStreamAdapter`) under the project's
+/// default main-actor isolation. `os.Logger` is `Sendable`, so this is safe.
+nonisolated enum Log {
     private static let subsystem = "PostRunDrip"
 
     /// Logger for HealthKit operations
