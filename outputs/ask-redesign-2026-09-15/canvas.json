@@ -1,0 +1,70 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "title": "1 · Ask (the tab)",
+      "x": 0,
+      "y": 0,
+      "w": 390,
+      "h": 844
+    },
+    {
+      "file": "Compose.dc.html",
+      "title": "2 · Writing a question",
+      "x": 480,
+      "y": 0,
+      "w": 390,
+      "h": 844
+    },
+    {
+      "file": "Reply.dc.html",
+      "title": "3 · The answer",
+      "x": 960,
+      "y": 0,
+      "w": 390,
+      "h": 1180
+    },
+    {
+      "file": "Clarify.dc.html",
+      "title": "4 · Narrowing the question",
+      "x": 1440,
+      "y": 0,
+      "w": 390,
+      "h": 960
+    },
+    {
+      "file": "Asked.dc.html",
+      "title": "5 · Asked (history)",
+      "x": 1920,
+      "y": 0,
+      "w": 390,
+      "h": 1000
+    }
+  ],
+  "annotations": [
+    {
+      "id": "why",
+      "x": 0,
+      "y": -250,
+      "w": 390,
+      "text": "WHAT CHANGED\n\nToday the Ask is a text field under the Read that opens a \"coming soon\" alert, and the surface speaks as a coach.\n\nThis drops the coach persona. No avatar, no \"from your coach\", no first person. The product is a training journal with an analyst that reads it, per the May 28 call: Maya is a data customer with a journaling habit, not a coaching customer. Answers are attributed to the log they came out of.\n\nOPEN: the tab is labelled Ask here, not Coach. That differs from the documented 4-tab IA and is yours to confirm."
+    },
+    {
+      "id": "flow",
+      "x": 480,
+      "y": -170,
+      "w": 390,
+      "text": "FLOW\n\n1 → tap a lens, a pattern from the log, or write.\n2 → attach a run (◆) or a scope, and see exactly which entries the answer will read.\n3 → the answer: one paragraph, evidence chips, what is not in the log, sources, confidence.\n4 → an ambiguous question gets narrowed before it is answered, because sharp and achy pull different entries."
+    },
+    {
+      "id": "voice",
+      "x": 1440,
+      "y": -170,
+      "w": 390,
+      "text": "VOICE RULES\n\nNo persona, no \"I\", no prescriptions, no diagnoses. First person appears only inside Maya's own quoted memos and questions. Observations point at entries rather than telling her what to do. Goal and race anchors shape comparisons silently. All copy is sample text written for Maya (3:28 PB, chasing 3:16)."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}
