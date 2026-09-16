@@ -80,3 +80,54 @@ Deno.test("isUserEdited: only true for the explicit marker", () => {
   assert(!isUserEdited(null));
   assert(!isUserEdited("nope"));
 });
+
+// The 2026-09-07 report. On a real 3 × 30 min session the describe-mode model
+// returned every non-work segment as "recovery", so the athlete's 10-minute
+// warm-up and 12-minute cool-down landed in the RECOVERIES average as if they
+// were jogs between reps. Position settles this, not the model.
+Deno.test("normalizeOverride: leading blocks are the warm-up, trailing the cool-down", () => {
+  const out = normalizeOverride({
+    blocks: [
+      { role: "recovery", distance_miles: 0.62, duration_s: 289, avg_pace_per_mile: "7:45" },
+      { role: "recovery", distance_miles: 0.62, duration_s: 268, avg_pace_per_mile: "7:11" },
+      { role: "work_rep", distance_miles: 4.97, duration_s: 1840, avg_pace_per_mile: "6:10" },
+      { role: "recovery", distance_miles: 0.62, duration_s: 267, avg_pace_per_mile: "7:10" },
+      { role: "work_rep", distance_miles: 4.97, duration_s: 1838, avg_pace_per_mile: "6:10" },
+      { role: "recovery", distance_miles: 0.62, duration_s: 253, avg_pace_per_mile: "6:47" },
+      { role: "recovery", distance_miles: 0.38, duration_s: 183, avg_pace_per_mile: "8:01" },
+    ],
+  });
+
+  assertEquals(out.blocks.map((b) => b.role), [
+    "warmup", "warmup", "work_rep", "recovery", "work_rep", "cooldown", "cooldown",
+  ]);
+  // The recovery BETWEEN the two reps is untouched, and keeps its jog style.
+  assertEquals(out.blocks[3].recovery_style, "jog");
+  // A warm-up is not a recovery, so it carries no recovery style.
+  assertEquals(out.blocks[0].recovery_style, undefined);
+  assertEquals(out.blocks[6].recovery_style, undefined);
+  // Rep numbering still counts only work.
+  assertEquals(out.blocks.filter((b) => b.rep_num !== null).length, 2);
+  assertEquals((out.work as Record<string, unknown>).reps, 2);
+});
+
+Deno.test("normalizeOverride: a hand-set warm-up / cool-down survives unchanged", () => {
+  const out = normalizeOverride({
+    blocks: [
+      { role: "warmup", distance_miles: 1.5, duration_s: 600, avg_pace_per_mile: "6:40" },
+      { role: "work_rep", distance_miles: 1, duration_s: 340, avg_pace_per_mile: "5:40" },
+      { role: "cooldown", distance_miles: 1, duration_s: 480, avg_pace_per_mile: "8:00" },
+    ],
+  });
+  assertEquals(out.blocks.map((b) => b.role), ["warmup", "work_rep", "cooldown"]);
+});
+
+Deno.test("normalizeOverride: a session that is all work keeps every block", () => {
+  const out = normalizeOverride({
+    blocks: [
+      { role: "work_rep", distance_miles: 1, duration_s: 340, avg_pace_per_mile: "5:40" },
+      { role: "work_rep", distance_miles: 1, duration_s: 345, avg_pace_per_mile: "5:45" },
+    ],
+  });
+  assertEquals(out.blocks.map((b) => b.role), ["work_rep", "work_rep"]);
+});

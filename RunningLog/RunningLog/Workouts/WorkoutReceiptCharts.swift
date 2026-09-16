@@ -643,12 +643,21 @@ struct LapSplitsList: View {
 
     var body: some View {
         let ordered = laps.sorted { ($0.lap_index ?? 0) < ($1.lap_index ?? 0) }
-        // 1-based work-rep number per row (recoveries get no number).
+        // 1-based work-rep number per row. A segment that names itself — the
+        // athlete's own warm-up / cool-down from "Fix reps", or the parser's —
+        // keeps its name instead of taking a rep number it never earned: a
+        // corrected "warm-up + 3 × 1k + cool-down" listed 1…5. (2026-09-07)
         var workNo = 0
-        let rows: [(lap: WorkoutLapRow, num: Int?)] = ordered.map { lap in
-            if lap.is_rest == true { return (lap, nil) }
-            workNo += 1
-            return (lap, workNo)
+        let rows: [(lap: WorkoutLapRow, label: String)] = ordered.map { lap -> (lap: WorkoutLapRow, label: String) in
+            switch lap.role ?? "" {
+            case "warmup":   return (lap, "wu")
+            case "cooldown": return (lap, "cd")
+            case "recovery": return (lap, "rec")
+            default:
+                if lap.is_rest == true { return (lap, "rec") }
+                workNo += 1
+                return (lap, "\(workNo)")
+            }
         }
         return VStack(spacing: 0) {
             HStack(spacing: 7) {
@@ -666,7 +675,11 @@ struct LapSplitsList: View {
 
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                 let lap = row.lap
+                // Not-work, for styling and for the heat adjustment: a warm-up
+                // and a cool-down are no more a quality rep than a jog is, and
+                // the adjustment table is calibrated on work.
                 let isRest = lap.is_rest == true
+                    || lap.role == "warmup" || lap.role == "cooldown"
                 let rawPace = lap.avg_pace_sec_per_mile ?? 0
                 // Adjusted only when the toggle is on, the lap is work, the
                 // row actually stores an adjustment, and it moves the
@@ -680,7 +693,7 @@ struct LapSplitsList: View {
                     : PaceZoneScale.recoveryGrey
                 HStack(spacing: 7) {
                     RoundedRectangle(cornerRadius: 2).fill(dot).frame(width: 9, height: 9)
-                    Text(row.num.map { "\($0)" } ?? "rec")
+                    Text(row.label)
                         .font(.dripBody(14))
                         .foregroundStyle(isRest ? Color.drip.textSecondary : Color.drip.textPrimary)
                         .frame(minWidth: 26, alignment: .leading)
